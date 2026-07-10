@@ -1,0 +1,32 @@
+{
+  "name": "@canopy/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./module": {
+      "types": "./src/app.module.ts",
+      "default": "./dist/app.module.js"
+    },
+    "./runtime": {
+      "types": "./src/worker.services.ts",
+      "default": "./dist/worker.services.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@canopy/example": "workspace:*",
+    "@evergreen/canopy": "workspace:*",
+    "@evergreen/db": "workspace:*",
+    "@nestjs/common": "^11.1.3",
+    "@nestjs/core": "^11.1.3",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  }
+}
