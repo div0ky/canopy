@@ -60,8 +60,12 @@ class ReferenceUnitOfWork extends UnitOfWork {
     return Promise.resolve('reference-outbox')
   }
 
-  stageDelivery(_delivery: StagedDelivery): Promise<void> { return Promise.resolve() }
-  transitionDelivery(_transition: DeliveryTransition): Promise<void> { return Promise.resolve() }
+  stageDelivery(_delivery: StagedDelivery): Promise<void> {
+    return Promise.resolve()
+  }
+  transitionDelivery(_transition: DeliveryTransition): Promise<void> {
+    return Promise.resolve()
+  }
 
   afterCommit(callback: () => void | Promise<void>): void {
     this.#afterCommit.push(callback)

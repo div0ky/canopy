@@ -26,9 +26,7 @@ import { SecureIncrementCounterRoute } from './http/secure-increment-counter.rou
 import { ProcessCounterJob } from './jobs/process-counter.job.js'
 import { RecordCounterNotification } from './listeners/record-counter-notification.js'
 import { RecordCounterIncremented } from './listeners/record-counter-incremented.js'
-import {
-  RecordCounterIncrementedAfterCommit,
-} from './listeners/record-counter-incremented-after-commit.js'
+import { RecordCounterIncrementedAfterCommit } from './listeners/record-counter-incremented-after-commit.js'
 import { RecordCounterSaved } from './listeners/record-counter-saved.js'
 import { Counter } from './models/counter.js'
 import { LegacyCustomer } from './models/legacy-customer.js'

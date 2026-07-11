@@ -20,8 +20,8 @@ entry adapter admits immutable execution context
 ```
 
 The reference transaction provider proves transaction entry, commit, rollback, and causal context
-semantics. It is not yet a PostgreSQL transaction. The persistence slice must connect this
-boundary to Drizzle, the Unit of Work, entity-state writes, journal, and outbox.
+semantics. It is not yet a PostgreSQL transaction. The persistence slice must connect this boundary
+to Drizzle, the Unit of Work, entity-state writes, journal, and outbox.
 
 ## Developer-facing proof
 
@@ -120,9 +120,9 @@ execution-scoped service fails compilation.
   guard rejects framework-managed mutation unless an action is active.
 
 Queries do not receive the action transaction boundary, cannot dispatch an action while their
-handler is active, and fail `CurrentExecution.assertWritable()`. The persistence slice will make
-the Unit of Work and model mutation APIs call that guard automatically; arbitrary JavaScript
-object mutation is naturally outside what any framework can prevent.
+handler is active, and fail `CurrentExecution.assertWritable()`. The persistence slice will make the
+Unit of Work and model mutation APIs call that guard automatically; arbitrary JavaScript object
+mutation is naturally outside what any framework can prevent.
 
 ## Compiler proof
 

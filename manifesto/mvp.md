@@ -9,9 +9,9 @@ application without assembling a second framework around Canopy.
 
 ## Product versus proof
 
-A vertical proof validates one risky contract, such as transactional entity-state, journal, and outbox
-writes. A spike evaluates an implementation engine or API. Both are useful implementation tools,
-but neither is the MVP.
+A vertical proof validates one risky contract, such as transactional entity-state, journal, and
+outbox writes. A spike evaluates an implementation engine or API. Both are useful implementation
+tools, but neither is the MVP.
 
 The MVP is achieved only when the required capabilities work together through one manifest,
 lifecycle, execution context, testing model, diagnostic surface, and CLI.
@@ -71,8 +71,8 @@ The MVP must include:
 - Schedule-to-job dispatch through the same worker and execution-context model.
 
 Queue and scheduling behavior must participate in the same application lifecycle and diagnostics as
-HTTP. A separately assembled worker application is not sufficient unless it is a first-party
-Canopy runtime produced from the same manifest.
+HTTP. A separately assembled worker application is not sufficient unless it is a first-party Canopy
+runtime produced from the same manifest.
 
 ## Required communications model
 
@@ -123,8 +123,8 @@ The MVP must include:
 - Diagnostics that explain resolved routes, handlers, policies, observers, listeners, jobs, and
   schedules.
 
-Observability cannot be deferred because the framework's automatic behavior is acceptable only
-when developers can explain what ran, under whose authority, in which phase, and why it failed.
+Observability cannot be deferred because the framework's automatic behavior is acceptable only when
+developers can explain what ran, under whose authority, in which phase, and why it failed.
 
 ## Required developer experience
 
@@ -155,10 +155,10 @@ The MVP reference application should prove one connected business flow:
 8. A queued listener becomes a job with preserved actor and causal metadata.
 9. A worker executes the job with retry, idempotency, and terminal-failure behavior.
 10. A queued notification is delivered through the SendGrid or Twilio plugin and its later delivery
-   status is reconciled through a signed webhook.
+    status is reconciled through a signed webhook.
 11. A schedule later dispatches related work through the same job system.
-12. Logs, traces, metrics, audits, journal entries, outbox records, jobs, messages, and schedule firings can
-    be correlated and inspected through Canopy tooling.
+12. Logs, traces, metrics, audits, journal entries, outbox records, jobs, messages, and schedule
+    firings can be correlated and inspected through Canopy tooling.
 13. A test expresses the flow entirely through Canopy-owned fakes and assertions.
 
 The domain may be small. The framework path must be complete.
@@ -167,8 +167,8 @@ The domain may be small. The framework path must be complete.
 
 The following may be deferred without making the initial product incoherent:
 
-- Optional OAuth, passkey, multifactor, API-key, and machine-auth plugins. First-party bearer
-  access tokens for existing identities are not deferred.
+- Optional OAuth, passkey, multifactor, API-key, and machine-auth plugins. First-party bearer access
+  tokens for existing identities are not deferred.
 - Multiple HTTP, database, queue, cache, mail, or SMS implementations.
 - WebSocket and broadcasting support.
 - A third-party plugin marketplace.

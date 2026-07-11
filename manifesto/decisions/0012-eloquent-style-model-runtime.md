@@ -10,8 +10,8 @@ Canopy will provide Eloquent-style persistent model ergonomics as an MVP require
 may retrieve hydrated models, invoke behavior, mutate state, inspect changes, and explicitly persist
 through model methods such as `save()`.
 
-Canopy implements this experience through an execution-scoped model session, Unit of Work, and
-Data Mapper over Drizzle. Models do not import Drizzle, database clients, table definitions, or row
+Canopy implements this experience through an execution-scoped model session, Unit of Work, and Data
+Mapper over Drizzle. Models do not import Drizzle, database clients, table definitions, or row
 types.
 
 ## Public experience
@@ -19,12 +19,12 @@ types.
 The intended application experience is:
 
 ```ts
-const order = await Order.findOrFail(orderId);
+const order = await Order.findOrFail(orderId)
 
-order.changeShippingAddress(address);
-order.confirm();
+order.changeShippingAddress(address)
+order.confirm()
 
-await order.save();
+await order.save()
 ```
 
 The MVP model API should include:
@@ -63,12 +63,12 @@ One model may map to several records. A record is not automatically the domain e
 
 ## Attachment and hydration
 
-Models hydrated through Canopy are attached to the active execution-scoped `ModelSession`.
-Canopy tracks attachment, original state, current changes, persistence status, and version through
-private framework metadata rather than public model attributes.
+Models hydrated through Canopy are attached to the active execution-scoped `ModelSession`. Canopy
+tracks attachment, original state, current changes, persistence status, and version through private
+framework metadata rather than public model attributes.
 
-For an ordinary single-table model, safe physical-name differences use Laravel-like metadata on
-the model without importing Drizzle:
+For an ordinary single-table model, safe physical-name differences use Laravel-like metadata on the
+model without importing Drizzle:
 
 ```ts
 export class Order extends Model<OrderAttributes> {
@@ -86,16 +86,15 @@ persist(Order).using(
     table: orders,
     id: orders.id,
     version: orders.version,
-    hydrate: row => Order.rehydrate(row),
-    dehydrate: order => order.toPersistence(),
+    hydrate: (row) => Order.rehydrate(row),
+    dehydrate: (order) => order.toPersistence(),
   }),
-);
+)
 ```
 
-Simple metadata is compiled and validated by Canopy. Advanced mapping is infrastructure
-composition. In neither path does feature or domain code import a table object or adapter. The
-complete existing-table contract is recorded by
-[Decision 0023](0023-existing-table-model-auth-mapping.md).
+Simple metadata is compiled and validated by Canopy. Advanced mapping is infrastructure composition.
+In neither path does feature or domain code import a table object or adapter. The complete
+existing-table contract is recorded by [Decision 0023](0023-existing-table-model-auth-mapping.md).
 
 ## Save semantics
 
@@ -116,9 +115,9 @@ Saving a model will:
 10. Run post-persistence, pre-commit lifecycle observers.
 11. Update the model's version, original state, and change metadata.
 
-The write occurs when `save()` is awaited, but the surrounding action transaction commits only
-after the handler and required pre-commit phases complete. A later failure rolls back the state,
-journal, and outbox writes together.
+The write occurs when `save()` is awaited, but the surrounding action transaction commits only after
+the handler and required pre-commit phases complete. A later failure rolls back the state, journal,
+and outbox writes together.
 
 Saving a detached model throws a stable detached-model error. Saving after its execution has ended
 throws a stale-execution error. Saving inside a query or other read-only execution throws a stable
@@ -208,8 +207,8 @@ The MVP must prove:
 The [Eloquent-style model vertical slice](../implementation/eloquent-model-vertical-slice.md)
 implements the first executable proof of declarations, hydration, identity mapping, static lookup,
 instance persistence, dirty tracking, attachment safety, optimistic concurrency, and atomic
-model-driven journal/outbox durability. Mapper composition, observers, transport parity, test
-fakes, and bulk semantics remain required before this proof satisfies the complete MVP contract.
+model-driven journal/outbox durability. Mapper composition, observers, transport parity, test fakes,
+and bulk semantics remain required before this proof satisfies the complete MVP contract.
 
 ## Revisit when
 

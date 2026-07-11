@@ -8,8 +8,8 @@
 ## Decision
 
 The Canopy MVP does not support decorators as a framework declaration syntax. The primary and only
-MVP authoring model uses class roles, Feature role arrays, capability interfaces, constructor
-types, explicit stable IDs, declarative bindings, and typed handler methods.
+MVP authoring model uses class roles, Feature role arrays, capability interfaces, constructor types,
+explicit stable IDs, declarative bindings, and typed handler methods.
 
 Optional Canopy decorators are deferred rather than permanently rejected.
 

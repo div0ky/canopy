@@ -1,9 +1,4 @@
-import {
-  ConsoleLogSink,
-  Logger,
-  MemoryLogSink,
-  SecretString,
-} from '@canopy/core'
+import { ConsoleLogSink, Logger, MemoryLogSink, SecretString } from '@canopy/core'
 import { runWithLogContext } from '@canopy/core/runtime'
 import { describe, expect, it } from 'vitest'
 
@@ -72,17 +67,28 @@ describe('Canopy logging', () => {
 
   it('never lets a broken sink alter application behavior', async () => {
     const logger = new Logger({
-      sink: new class extends MemoryLogSink {
-        override write(): void { throw new Error('sink unavailable') }
-        override flush(): void { throw new Error('flush unavailable') }
-      }(),
+      sink: new (class extends MemoryLogSink {
+        override write(): void {
+          throw new Error('sink unavailable')
+        }
+        override flush(): void {
+          throw new Error('flush unavailable')
+        }
+      })(),
     })
 
     expect(() => logger.info('Still safe')).not.toThrow()
-    expect(() => logger.info('Still safe', Object.defineProperty({}, 'danger', {
-      enumerable: true,
-      get: () => { throw new Error('getter failed') },
-    }))).not.toThrow()
+    expect(() =>
+      logger.info(
+        'Still safe',
+        Object.defineProperty({}, 'danger', {
+          enumerable: true,
+          get: () => {
+            throw new Error('getter failed')
+          },
+        }),
+      ),
+    ).not.toThrow()
     await expect(logger.flush()).resolves.toBeUndefined()
   })
 
@@ -93,6 +99,8 @@ describe('Canopy logging', () => {
       new Error('postgresql://canopy:password@localhost/db token=abc123'),
     )
     expect(sink.records[0]?.message).toBe('Connection failed for Bearer [REDACTED]')
-    expect(sink.records[0]?.error?.message).toBe('postgresql://canopy:[REDACTED]@localhost/db token=[REDACTED]')
+    expect(sink.records[0]?.error?.message).toBe(
+      'postgresql://canopy:[REDACTED]@localhost/db token=[REDACTED]',
+    )
   })
 })

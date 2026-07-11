@@ -11,7 +11,8 @@ export class RecordCounterIncremented extends Listener<CounterIncremented> {
   private readonly execution = this.inject(CurrentExecution)
 
   handle(event: CounterIncremented): void {
-    if (event.payload.amount === 13) throw new Error('Unlucky counter increments are rejected locally.')
+    if (event.payload.amount === 13)
+      throw new Error('Unlucky counter increments are rejected locally.')
     this.recorder.record({
       event: 'counter-incremented',
       phase: 'local',

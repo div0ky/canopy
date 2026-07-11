@@ -80,10 +80,14 @@ export function sanitizeObservationAttributes(
   attributes: Readonly<Record<string, unknown>>,
 ): Readonly<Record<string, JsonValue>> {
   try {
-    return Object.freeze(Object.fromEntries(Object.entries(attributes).map(([key, value]) => [
-      key,
-      isSensitiveKey(key) ? '[REDACTED]' : sanitizeValue(value, new WeakSet(), 0),
-    ])))
+    return Object.freeze(
+      Object.fromEntries(
+        Object.entries(attributes).map(([key, value]) => [
+          key,
+          isSensitiveKey(key) ? '[REDACTED]' : sanitizeValue(value, new WeakSet(), 0),
+        ]),
+      ),
+    )
   } catch {
     return Object.freeze({ observationError: 'attributes_unavailable' })
   }
@@ -108,30 +112,38 @@ function sanitizeValue(value: unknown, seen: WeakSet<object>, depth: number): Js
   if (typeof value === 'bigint') return value.toString()
   if (value instanceof Date) return value.toISOString()
   if (isSecretString(value)) return '[REDACTED]'
-  if (Array.isArray(value)) return value.slice(0, 100).map((entry) => sanitizeValue(entry, seen, depth + 1))
+  if (Array.isArray(value))
+    return value.slice(0, 100).map((entry) => sanitizeValue(entry, seen, depth + 1))
   if (typeof value !== 'object') return String(value)
   if (seen.has(value)) return '[CIRCULAR]'
   seen.add(value)
   try {
-    return Object.fromEntries(Object.entries(value as Record<string, unknown>).slice(0, 100).map(
-      ([key, nested]) => [
-        key,
-        isSensitiveKey(key) ? '[REDACTED]' : sanitizeValue(nested, seen, depth + 1),
-      ],
-    ))
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .slice(0, 100)
+        .map(([key, nested]) => [
+          key,
+          isSensitiveKey(key) ? '[REDACTED]' : sanitizeValue(nested, seen, depth + 1),
+        ]),
+    )
   } finally {
     seen.delete(value)
   }
 }
 
 function isSensitiveKey(key: string): boolean {
-  return /(?:authorization|cookie|password|passwd|secret|token|api[-_]?key|credential|session|csrf|signature)/i.test(key)
+  return /(?:authorization|cookie|password|passwd|secret|token|api[-_]?key|credential|session|csrf|signature)/i.test(
+    key,
+  )
 }
 
 function isSecretString(value: unknown): boolean {
-  return typeof value === 'object' && value !== null
-    && value.constructor?.name === 'SecretString'
-    && String(value) === '[REDACTED]'
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    value.constructor?.name === 'SecretString' &&
+    String(value) === '[REDACTED]'
+  )
 }
 
 function redactText(value: string): string {

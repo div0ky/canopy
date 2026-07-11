@@ -16,14 +16,21 @@ export class TwilioSmsWebhookRoute extends Route {
     const signedParameters = Object.fromEntries(form.entries())
     const signature = request.header('x-twilio-signature') ?? ''
     const authToken = this.config.twilioAuthToken
-    if (!authToken) throw new HttpError(503, 'webhook_not_configured', 'The Twilio webhook is not configured.')
+    if (!authToken)
+      throw new HttpError(503, 'webhook_not_configured', 'The Twilio webhook is not configured.')
     if (!verifyTwilioWebhook(request.raw.url, signedParameters, signature, authToken.reveal())) {
-      throw new HttpError(403, 'invalid_webhook_signature', 'The Twilio webhook signature is invalid.')
+      throw new HttpError(
+        403,
+        'invalid_webhook_signature',
+        'The Twilio webhook signature is invalid.',
+      )
     }
-    await this.actions.execute(RecordDeliveryUpdates, [normalizeTwilioStatus({
-      ...signedParameters,
-      CanopyMessageId: request.query('canopy_message_id') ?? '',
-    })])
+    await this.actions.execute(RecordDeliveryUpdates, [
+      normalizeTwilioStatus({
+        ...signedParameters,
+        CanopyMessageId: request.query('canopy_message_id') ?? '',
+      }),
+    ])
     return new Response(null, { status: 204 })
   }
 }

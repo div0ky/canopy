@@ -3,8 +3,10 @@ import { ActionBus, Auth, CurrentExecution, Http, type HttpRequest, Route } from
 import { SendAuthEmail } from '../actions/send-auth-email.js'
 
 export class ResendVerificationRoute extends Route {
-  static override readonly id = 'resend-verification'; static override readonly access = 'accounts.email.verify'
-  readonly method = 'POST'; readonly path = '/auth/email/verification'
+  static override readonly id = 'resend-verification'
+  static override readonly access = 'accounts.email.verify'
+  readonly method = 'POST'
+  readonly path = '/auth/email/verification'
   private readonly auth = this.inject(Auth)
   private readonly actions = this.inject(ActionBus)
   private readonly execution = this.inject(CurrentExecution)
@@ -12,7 +14,11 @@ export class ResendVerificationRoute extends Route {
     const identity = await this.auth.findIdentity(this.execution.context.authentication.identityId!)
     if (identity && !identity.emailVerified) {
       const grant = await this.auth.issueEmailVerification(identity.id)
-      await this.actions.execute(SendAuthEmail, { kind: 'verification', to: identity.email, token: grant.token.reveal() })
+      await this.actions.execute(SendAuthEmail, {
+        kind: 'verification',
+        to: identity.email,
+        token: grant.token.reveal(),
+      })
     }
     return Http.accepted(null)
   }

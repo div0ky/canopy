@@ -1,10 +1,4 @@
-import {
-  allow,
-  deny,
-  Policy,
-  type PolicyDecision,
-  type PolicyRequest,
-} from '@canopy/core'
+import { allow, deny, Policy, type PolicyDecision, type PolicyRequest } from '@canopy/core'
 
 interface OwnedCounter {
   readonly ownerId: string

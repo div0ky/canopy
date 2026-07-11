@@ -1,154 +1,133 @@
 # Canopy
 
+[![CI](https://github.com/div0ky/canopy/actions/workflows/ci.yml/badge.svg)](https://github.com/div0ky/canopy/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-24-43853d.svg)](.node-version)
+
 Canopy is an opinionated, class-first TypeScript application framework inspired by Laravel's
 coherence and developer experience. It is magical where that magic is safe, deterministic and
-inspectable beneath the surface, trivial for Cultivate to understand, and deliberately difficult
-to misuse.
+inspectable beneath the surface, trivial for Cultivate to understand, and deliberately difficult to
+misuse.
 
-Canopy 0.1 is a functioning framework MVP. The implementation proves one connected application
-model:
+> **Pre-1.0 status:** Canopy is an open-source alpha. Its connected application model is implemented
+> and extensively tested, but APIs may still change and the independent security review required for
+> a production-stability claim is not complete. Use the `next` npm tag.
 
-```text
-Application + Feature declarations
-  → semantic TypeScript compiler
-  → deterministic manifest + constructor registry
-  → typed configuration
-  → dependency container
-  → ready runtime
-  → admitted execution context and scope
-  → transactional actions and read-only queries
-  → PostgreSQL/Drizzle Unit of Work
-  → execution-scoped Eloquent-style ModelSession
-  → hydrated models with find(), save(), delete(), refresh(), and dirty tracking
-  → typed local and after-commit class events
-  → atomic entity state + journal + outbox
-  → compiled Canopy routes over a private Hono engine
-  → actor-aware HTTP requests and normalized responses
-  → transactional jobs and queued listeners
-  → atomic outbox-to-pg-boss handoff
-  → retrying, actor-aware workers with graceful drain
-  → class-first cron and interval schedules
-  → deterministic pg-boss reconciliation and causal system firing
-  → first-party email/password identities and opaque sessions
-  → authenticated HTTP actors, rotation, CSRF enforcement, and revocation
-  → opaque bearer credentials for APIs, CLIs, and automation
-  → compiled default-deny entry and resource authorization policies
-  → first-party signals and Eloquent-style model observers
-  → transactional mail and SMS with SendGrid and Twilio adapters
-  → framework cache, telemetry, diagnostics, and testing fakes
-  → typed correlated runtime observations and the Undergrowth debugger
-  → Arbor generation, migrations, runtime roles, inspection, and recovery
-  → Cultivate-readable application knowledge
-  → idempotent shutdown
-```
-
-The design authority lives in the [Canopy Manifesto](manifesto/index.md). The exact proof already
-implemented is documented in the
-[implementation proofs](manifesto/implementation/index.md).
-
-## Workspace
-
-- `@canopy/core` — application-facing declarations, models, and lifecycle contracts.
-- `@canopy/manifest` — versioned serializable artifact contract.
-- `@canopy/compiler` — strict semantic analysis and deterministic artifact generation.
-- `@canopy/runtime` — artifact validation, configuration, construction, and lifecycle.
-- `@canopy/http-hono` — private Hono fetch engine and lifecycle-coordinated Node host.
-- `@canopy/auth-postgres` — first-party identity, Argon2id credential, browser-session, and PostgreSQL auth adapter.
-- `@canopy/postgres-drizzle` — private PostgreSQL transaction and durability adapter.
-- `@canopy/queue-pg-boss` — private pg-boss queue, outbox handoff, worker, and scheduler adapter.
-- `@canopy/sendgrid` and `@canopy/twilio-sms` — provider adapters behind Canopy communications.
-- `@canopy/testing` — real-manifest harness and auth, persistence, queue, schedule, cache,
-  communications, and telemetry fakes.
-- `@canopy/arbor` — the canonical generator, command, runtime, inspection, and recovery suite.
-- `@canopy/undergrowth` — optional PostgreSQL-backed causal execution debugger and loopback UI.
-- `examples/reference-app` — executable conformance fixture.
-- `examples/persistence-app` — domain-organized auth, HTTP, event, model, queue, worker, schedule, and PostgreSQL
-  fixture.
-- `examples/field-guide` — external-consumer Next.js, Tailwind, and shadcn/ui browser fixture for
-  public HTTP, first-party auth, bearer tokens, protected actions, and queued work.
-
-## Development
-
-Canopy requires Node.js 24 and pnpm.
-
-```bash
-pnpm install
-pnpm check
-pnpm test
-pnpm audit:mvp
-pnpm dev
-```
-
-`pnpm dev` watches application and framework source. Valid edits compile a new immutable graph and
-hot reload a fresh runtime process; invalid edits leave the last good server running.
-
-Browse the configured PostgreSQL database with the framework-pinned Drizzle Studio:
-
-```bash
-pnpm arbor db:studio
-```
-
-Arbor loads `DATABASE_CONNECTION_STRING` from the root `.env`. The local proxy defaults to
-`127.0.0.1:4983`; use `--host=`, `--port=`, or `--verbose` when needed.
-
-Install and open the first-party execution debugger in an application with:
-
-```bash
-pnpm arbor add undergrowth
-pnpm arbor migrate
-pnpm arbor undergrowth
-```
-
-Undergrowth opens on `127.0.0.1:4400`, correlates requests, operations, transactions, models,
-events, jobs, logs, and failures, and stores only recursively redacted, retention-bounded evidence.
-
-Generated `dist/` and `.canopy/` artifacts are intentionally ignored.
-
-## Production containers
-
-`arbor new` generates one multi-stage `Dockerfile`, a `.dockerignore`, and a
-`compose.production.yaml` topology. Build the image once, migrate once, then run that same image as
-web and background roles:
-
-```bash
-docker build -t application .
-docker run --rm application arbor migrate
-docker run -p 3000:3000 application arbor serve --host=0.0.0.0
-docker run application arbor work
-```
-
-`arbor work` consumes queues and admits schedules by default; both are safe to scale horizontally.
-Use `arbor work --without-scheduler` with a separate `arbor schedule` process only when schedule
-admission needs independent resources or fault isolation. Production roles require artifacts
-created by `arbor build` and never compile application source at startup.
-
-## Dependency injection
-
-Framework-facing classes extend their Canopy role. They inherit a class-bound logger and resolve
-declared dependencies from the current execution scope without a constructor:
+## The Canopy experience
 
 ```ts
-export class ListOrdersRoute extends Route {
-  private readonly orders = this.inject(OrderService)
+import { Feature, Route, type HttpRequest } from '@canopy/core'
 
-  handle() {
-    this.logger.info('Listing orders')
-    return this.orders.all()
+export class HealthRoute extends Route {
+  static override readonly id = 'health'
+  static override readonly access = 'public'
+  readonly method = 'GET'
+  readonly path = '/health'
+
+  handle(_request: HttpRequest) {
+    return { status: 'ok' }
   }
+}
+
+export class AppFeature extends Feature {
+  id = 'app'
+  routes = [HealthRoute]
 }
 ```
 
-Optional role dependencies use `this.inject.optional(Port)`. Both required and optional edges are
-compiled into the application manifest. Ordinary services remain plain classes and use constructor
-injection, keeping focused service tests independent from the Canopy runtime.
+The route returns only its payload. Canopy compiles the declaration, constructs its dependencies,
+admits an execution scope, resolves the actor, enforces authorization, adds correlation and trace
+context, records structured evidence, and returns `{ ok: true, data: { status: 'ok' } }`.
 
-## Existing PostgreSQL schemas
+## Create an application
 
-Models can opt into existing tables with `static table`, plus optional `primaryKey`, `columns`,
-`timestamps`, and `versionColumn` overrides. They retain the normal Eloquent-style API and use
-PostgreSQL `xmin` for optimistic concurrency when no version column exists.
+After the alpha packages are published:
 
-First-party auth can explicitly map identity and password fields onto existing tables while
-Canopy continues to own sessions, bearer tokens, challenges, abuse controls, and audit records.
-See the [mapping implementation proof](manifesto/implementation/existing-table-mapping-vertical-slice.md)
-for the exact configuration and guarantees.
+```sh
+pnpm dlx @canopy/arbor@next new MyApplication
+cd my-application
+pnpm install
+cp .env.example .env
+docker compose up -d
+pnpm migrate
+pnpm dev
+```
+
+Arbor generates a domain-organized application with HTTP, PostgreSQL/Drizzle persistence,
+Eloquent-style models, first-party authentication, policies, events, signals, observers, queues,
+schedules, tests, Cultivate knowledge, and production container files.
+
+To work on Canopy itself before package publication, follow the
+[contributor setup](CONTRIBUTING.md#development-setup).
+
+## What is included
+
+- Declaration-only Applications and Features with a fail-closed semantic compiler.
+- Class-first roles with automatic scoped `this.inject()` and class-bound logging.
+- Hono HTTP admission with automatic success and failure envelopes.
+- PostgreSQL/Drizzle transactions, Eloquent-style models, journal, outbox, and cache.
+- Laravel-like events, listeners, signals, observers, jobs, and schedules.
+- First-party email/password, opaque browser-session, and opaque bearer authentication.
+- Default-deny entry and resource authorization.
+- SendGrid mail and Twilio SMS adapters behind Canopy-owned contracts.
+- W3C trace context, structured logs, metrics, diagnostics, and testing fakes.
+- Undergrowth, the causal development debugger.
+- Arbor, the generator, migration, runtime, inspection, and recovery command suite.
+- Cultivate, the generated application knowledge contract for AI-assisted engineering.
+
+## Repository map
+
+| Area                                     | Purpose                                                           |
+| ---------------------------------------- | ----------------------------------------------------------------- |
+| [`packages/core`](packages/core)         | Stable application-facing programming model                       |
+| [`packages/manifest`](packages/manifest) | Versioned inert manifest contract                                 |
+| [`packages/compiler`](packages/compiler) | Semantic TypeScript compiler                                      |
+| [`packages/runtime`](packages/runtime)   | Container, execution, dispatch, and lifecycle                     |
+| [`packages/arbor`](packages/arbor)       | Generator and command suite                                       |
+| [`packages/testing`](packages/testing)   | First-party harnesses and fakes                                   |
+| `packages/*` adapters                    | Hono, PostgreSQL, queues, auth, communications, and Undergrowth   |
+| [`examples`](examples)                   | Runtime, persistence, and external Next.js reference applications |
+| [`docs`](docs)                           | User and maintainer documentation                                 |
+| [`manifesto`](manifesto/index.md)        | Principles, accepted decisions, specifications, and proof ledger  |
+
+## Documentation
+
+- [Getting started](docs/getting-started/index.md)
+- [Application model](docs/concepts/application-model.md)
+- [Events, jobs, and schedules](docs/guides/events-jobs-schedules.md)
+- [Operations and deployment](docs/operations/deployment.md)
+- [Package reference](docs/reference/packages.md)
+- [Upgrading](docs/upgrading/index.md)
+- [Architecture](manifesto/architecture.md)
+- [Security model](manifesto/security.md)
+
+## Development
+
+Canopy supports Node.js 24 and pnpm 11.
+
+```sh
+corepack enable
+pnpm install --frozen-lockfile
+pnpm build
+cp .env.example .env
+docker compose up -d postgres
+pnpm arbor migrate
+pnpm verify
+pnpm dev
+```
+
+`pnpm verify` runs formatting, linting, strict TypeScript, the production Field Guide build,
+coverage, PostgreSQL integration tests, architecture and documentation audits, packed npm package
+validation, Changeset accountability, packed-consumer installation, production dependency
+inspection, and the security audit.
+
+## Community
+
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a change.
+- Use [GitHub Discussions](https://github.com/div0ky/canopy/discussions) for questions and design.
+- Use [GitHub Issues](https://github.com/div0ky/canopy/issues) for reproducible defects.
+- Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
+- See [MAINTAINERS.md](MAINTAINERS.md) and [GOVERNANCE.md](GOVERNANCE.md) for project stewardship.
+- Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+Canopy is licensed under the [Apache License 2.0](LICENSE).

@@ -32,7 +32,6 @@ import {
   ConsoleLogSink,
   type ConsoleLogSinkOptions,
   type LogLevel,
-  type LogRecord,
   type LogSink,
   type MailMessage,
   MailTransport,
@@ -109,6 +108,36 @@ import {
   type SignalHandlerManifestEntry,
 } from '@canopy/manifest'
 
+import {
+  ConfigurationValidationError,
+  ExecutionAdmissionError,
+  ExecutionCleanupError,
+  ExecutionFailureError,
+  OperationDispatchError,
+  RuntimeBootError,
+  RuntimeIntegrityError,
+  RuntimeShutdownError,
+} from './errors.js'
+import {
+  invokeLifecycle,
+  invokePhase,
+  unwindStartup,
+  type LifecycleDeadlines,
+  type LifecycleParticipant,
+} from './lifecycle.js'
+import { ObservationLogSink } from './observation-log-sink.js'
+
+export {
+  ConfigurationValidationError,
+  ExecutionAdmissionError,
+  ExecutionCleanupError,
+  ExecutionFailureError,
+  OperationDispatchError,
+  RuntimeBootError,
+  RuntimeIntegrityError,
+  RuntimeShutdownError,
+} from './errors.js'
+
 export type RuntimeState = 'booting' | 'ready' | 'draining' | 'stopping' | 'disposing' | 'stopped'
 
 type ApplicationDeclaration = abstract new () => CanopyApplication
@@ -121,20 +150,15 @@ export interface BootOptions {
   readonly deadlines?: Partial<LifecycleDeadlines>
   readonly roles?: Partial<{ readonly worker: boolean; readonly scheduler: boolean }>
   readonly providerOverrides?: Readonly<Record<string, object>>
-  readonly logging?: false | {
-    readonly level?: LogLevel
-    readonly sink?: LogSink
-    readonly format?: ConsoleLogSinkOptions['format']
-    readonly color?: boolean
-    readonly destination?: ConsoleLogSinkOptions['destination']
-  }
-}
-
-interface LifecycleDeadlines {
-  readonly start: number
-  readonly drain: number
-  readonly stop: number
-  readonly dispose: number
+  readonly logging?:
+    | false
+    | {
+        readonly level?: LogLevel
+        readonly sink?: LogSink
+        readonly format?: ConsoleLogSinkOptions['format']
+        readonly color?: boolean
+        readonly destination?: ConsoleLogSinkOptions['destination']
+      }
 }
 
 const DEFAULT_DEADLINES: LifecycleDeadlines = {
@@ -147,15 +171,6 @@ const DEFAULT_DEADLINES: LifecycleDeadlines = {
 interface RuntimeArtifacts {
   readonly manifest: CanopyManifest
   readonly registry: RegistryModule
-}
-
-interface LifecycleParticipant {
-  readonly manifest: Pick<
-    ProviderManifestEntry | OperationManifestEntry | RouteManifestEntry | ListenerManifestEntry
-      | JobManifestEntry | SignalHandlerManifestEntry | ObserverManifestEntry | CommandManifestEntry,
-    'id' | 'lifecycle'
-  >
-  readonly instance: object
 }
 
 interface RuntimeGraph {
@@ -171,73 +186,16 @@ interface ExecutionStore {
   job?: import('@canopy/core').CurrentJobContext
 }
 
-export class RuntimeIntegrityError extends Error {
-  override readonly name = 'RuntimeIntegrityError'
-}
-
-export class ConfigurationValidationError extends Error {
-  override readonly name = 'ConfigurationValidationError'
-
-  constructor(readonly issues: readonly string[]) {
-    super(`Canopy configuration is invalid:\n${issues.map((issue) => `- ${issue}`).join('\n')}`)
-  }
-}
-
-export class RuntimeBootError extends Error {
-  override readonly name = 'RuntimeBootError'
-
-  constructor(
-    readonly primaryError: unknown,
-    readonly cleanupErrors: readonly unknown[],
-  ) {
-    super('Canopy failed to boot and completed startup unwind.', { cause: primaryError })
-  }
-}
-
-export class RuntimeShutdownError extends Error {
-  override readonly name = 'RuntimeShutdownError'
-
-  constructor(readonly errors: readonly unknown[]) {
-    super(`Canopy shutdown completed with ${errors.length} lifecycle failure(s).`)
-  }
-}
-
-export class ExecutionAdmissionError extends Error {
-  override readonly name = 'ExecutionAdmissionError'
-}
-
-export class OperationDispatchError extends Error {
-  override readonly name = 'OperationDispatchError'
-}
-
-export class ExecutionFailureError extends Error {
-  override readonly name = 'ExecutionFailureError'
-
-  constructor(
-    readonly primaryError: unknown,
-    readonly cleanupErrors: readonly unknown[],
-  ) {
-    super('Canopy execution failed and scoped cleanup also reported failures.', {
-      cause: primaryError,
-    })
-  }
-}
-
-export class ExecutionCleanupError extends Error {
-  override readonly name = 'ExecutionCleanupError'
-
-  constructor(readonly cleanupErrors: readonly unknown[]) {
-    super(`Canopy execution completed with ${cleanupErrors.length} scoped cleanup failure(s).`)
-  }
-}
-
 export class CanopyRuntime {
   #state: RuntimeState = 'booting'
   #shutdownPromise?: Promise<void>
   readonly #storage = new AsyncLocalStorage<ExecutionStore>()
   readonly #activeExecutions = new Map<Promise<unknown>, AbortController>()
   readonly #operationsByConstructor = new Map<Function, OperationManifestEntry>()
-  readonly #modelsByConstructor = new Map<Function, { readonly entityType: string; readonly storage: import('@canopy/core').ModelStorage }>()
+  readonly #modelsByConstructor = new Map<
+    Function,
+    { readonly entityType: string; readonly storage: import('@canopy/core').ModelStorage }
+  >()
   readonly #observersByModel = new Map<string, readonly ObserverManifestEntry[]>()
   readonly #eventsByConstructor = new Map<Function, EventManifestEntry>()
   readonly #listenersByEvent = new Map<string, readonly ListenerManifestEntry[]>()
@@ -305,7 +263,11 @@ export class CanopyRuntime {
     }
     for (const model of manifest.models) {
       const Constructor = artifacts.registry.constructors[model.id]
-      if (Constructor) this.#modelsByConstructor.set(Constructor, { entityType: model.entityType, storage: model.storage })
+      if (Constructor)
+        this.#modelsByConstructor.set(Constructor, {
+          entityType: model.entityType,
+          storage: model.storage,
+        })
       this.#observersByModel.set(
         model.id,
         manifest.observers.filter((observer) => observer.modelId === model.id),
@@ -339,25 +301,30 @@ export class CanopyRuntime {
     for (const schedule of manifest.schedules) this.#schedulesById.set(schedule.id, schedule)
     for (const command of manifest.commands) this.#commandsByName.set(command.command, command)
     queues?.bind((delivery) => this.handleQueueDelivery(delivery))
-    queues?.reconcileSchedules(manifest.schedules.map((schedule): ScheduleDefinition => {
-      const job = manifest.jobs.find((entry) => entry.id === schedule.jobId)
-      if (!job) throw new RuntimeIntegrityError(`Schedule ${schedule.id} targets missing job ${schedule.jobId}.`)
-      return {
-        id: schedule.id,
-        targetId: schedule.jobId,
-        cadence: schedule.cadence,
-        timeZone: schedule.timeZone,
-        overlap: schedule.overlap,
-        misfire: schedule.misfire,
-        input: schedule.input as import('@canopy/core').JsonValue,
-        policy: {
-          retries: job.retries,
-          retryDelay: job.retryDelay,
-          backoff: job.backoff,
-          timeout: job.timeout,
-        },
-      }
-    }))
+    queues?.reconcileSchedules(
+      manifest.schedules.map((schedule): ScheduleDefinition => {
+        const job = manifest.jobs.find((entry) => entry.id === schedule.jobId)
+        if (!job)
+          throw new RuntimeIntegrityError(
+            `Schedule ${schedule.id} targets missing job ${schedule.jobId}.`,
+          )
+        return {
+          id: schedule.id,
+          targetId: schedule.jobId,
+          cadence: schedule.cadence,
+          timeZone: schedule.timeZone,
+          overlap: schedule.overlap,
+          misfire: schedule.misfire,
+          input: schedule.input as import('@canopy/core').JsonValue,
+          policy: {
+            retries: job.retries,
+            retryDelay: job.retryDelay,
+            backoff: job.backoff,
+            timeout: job.timeout,
+          },
+        }
+      }),
+    )
   }
 
   get state(): RuntimeState {
@@ -374,9 +341,8 @@ export class CanopyRuntime {
   ): Promise<CanopyRuntime> {
     const artifactsDirectory = path.resolve(options.artifactsDirectory ?? '.canopy')
     const artifacts = await loadArtifacts(artifactsDirectory)
-    const registeredApplication = artifacts.registry.constructors[
-      `application:${artifacts.manifest.applicationId}`
-    ]
+    const registeredApplication =
+      artifacts.registry.constructors[`application:${artifacts.manifest.applicationId}`]
     if (registeredApplication !== application) {
       throw new RuntimeIntegrityError(
         `Generated artifacts belong to ${artifacts.manifest.applicationId}, not the Application passed to Canopy.boot().`,
@@ -387,46 +353,72 @@ export class CanopyRuntime {
     assertOperationInfrastructure(artifacts.manifest)
     const consoleOptions: ConsoleLogSinkOptions = {
       ...(options.logging && options.logging.format ? { format: options.logging.format } : {}),
-      ...(options.logging && options.logging.color !== undefined ? { color: options.logging.color } : {}),
-      ...(options.logging && options.logging.destination ? { destination: options.logging.destination } : {}),
+      ...(options.logging && options.logging.color !== undefined
+        ? { color: options.logging.color }
+        : {}),
+      ...(options.logging && options.logging.destination
+        ? { destination: options.logging.destination }
+        : {}),
     }
-    const primarySink = options.logging === false || options.logging === undefined
-      ? undefined
-      : options.logging?.sink ?? new ConsoleLogSink(consoleOptions)
+    const primarySink =
+      options.logging === false || options.logging === undefined
+        ? undefined
+        : (options.logging?.sink ?? new ConsoleLogSink(consoleOptions))
     const sink = new ObservationLogSink(primarySink)
     const logger = new Logger({
       sink,
       ...(options.logging && options.logging.level ? { level: options.logging.level } : {}),
     })
-    logger.channel('lifecycle').debug('Booting application', { application: artifacts.manifest.applicationId })
-    const graph = constructSingletonGraph(artifacts, configurations, options.providerOverrides ?? {}, logger)
-    const transactionProvider = artifacts.manifest.providers.find(
-      (provider) => provider.capabilities.includes('transactions'),
+    logger
+      .channel('lifecycle')
+      .debug('Booting application', { application: artifacts.manifest.applicationId })
+    const graph = constructSingletonGraph(
+      artifacts,
+      configurations,
+      options.providerOverrides ?? {},
+      logger,
+    )
+    const transactionProvider = artifacts.manifest.providers.find((provider) =>
+      provider.capabilities.includes('transactions'),
     )
     const transactions = transactionProvider
-      ? graph.singletonInstances.get(transactionProvider.id) as TransactionManager | undefined
+      ? (graph.singletonInstances.get(transactionProvider.id) as TransactionManager | undefined)
       : undefined
-    const queueProvider = artifacts.manifest.providers.find(
-      (provider) => provider.capabilities.includes('queues'),
+    const queueProvider = artifacts.manifest.providers.find((provider) =>
+      provider.capabilities.includes('queues'),
     )
     const queues = queueProvider
-      ? graph.singletonInstances.get(queueProvider.id) as QueueManager | undefined
+      ? (graph.singletonInstances.get(queueProvider.id) as QueueManager | undefined)
       : undefined
-    const authenticationProvider = artifacts.manifest.providers.find(
-      (provider) => provider.capabilities.includes('authentication'),
+    const authenticationProvider = artifacts.manifest.providers.find((provider) =>
+      provider.capabilities.includes('authentication'),
     )
     const authentication = authenticationProvider
-      ? graph.singletonInstances.get(authenticationProvider.id) as Auth | undefined
+      ? (graph.singletonInstances.get(authenticationProvider.id) as Auth | undefined)
       : undefined
-    const mailProvider = artifacts.manifest.providers.find((provider) => provider.capabilities.includes('mail'))
-    const mailTransport = mailProvider ? graph.singletonInstances.get(mailProvider.id) as MailTransport | undefined : undefined
-    const smsProvider = artifacts.manifest.providers.find((provider) => provider.capabilities.includes('sms'))
-    const smsTransport = smsProvider ? graph.singletonInstances.get(smsProvider.id) as SmsTransport | undefined : undefined
-    const telemetryProvider = artifacts.manifest.providers.find((provider) => provider.capabilities.includes('telemetry'))
-    const telemetry = telemetryProvider ? graph.singletonInstances.get(telemetryProvider.id) as Telemetry : new NoopTelemetry()
-    const observationProvider = artifacts.manifest.providers.find((provider) => provider.capabilities.includes('observations'))
+    const mailProvider = artifacts.manifest.providers.find((provider) =>
+      provider.capabilities.includes('mail'),
+    )
+    const mailTransport = mailProvider
+      ? (graph.singletonInstances.get(mailProvider.id) as MailTransport | undefined)
+      : undefined
+    const smsProvider = artifacts.manifest.providers.find((provider) =>
+      provider.capabilities.includes('sms'),
+    )
+    const smsTransport = smsProvider
+      ? (graph.singletonInstances.get(smsProvider.id) as SmsTransport | undefined)
+      : undefined
+    const telemetryProvider = artifacts.manifest.providers.find((provider) =>
+      provider.capabilities.includes('telemetry'),
+    )
+    const telemetry = telemetryProvider
+      ? (graph.singletonInstances.get(telemetryProvider.id) as Telemetry)
+      : new NoopTelemetry()
+    const observationProvider = artifacts.manifest.providers.find((provider) =>
+      provider.capabilities.includes('observations'),
+    )
     const observations = observationProvider
-      ? graph.singletonInstances.get(observationProvider.id) as ObservationRecorder
+      ? (graph.singletonInstances.get(observationProvider.id) as ObservationRecorder)
       : new NoopObservationRecorder()
     sink.attach(observations)
     const runtime = new CanopyRuntime(
@@ -454,7 +446,11 @@ export class CanopyRuntime {
     try {
       for (const participant of graph.participants) {
         if (participant.manifest.lifecycle.start) {
-          await runtime.observeTelemetry('lifecycle.phase', { phase: 'start', participant: participant.manifest.id }, () => invokeLifecycle(participant, 'start', deadlines.start))
+          await runtime.observeTelemetry(
+            'lifecycle.phase',
+            { phase: 'start', participant: participant.manifest.id },
+            () => invokeLifecycle(participant, 'start', deadlines.start),
+          )
         }
         started.push(participant)
       }
@@ -463,7 +459,13 @@ export class CanopyRuntime {
         application: artifacts.manifest.applicationId,
         durationMs: performance.now() - bootStartedAt,
       })
-      await runtime.recordTelemetry({ kind: 'metric', name: 'canopy.lifecycle.boot.duration', value: performance.now() - bootStartedAt, unit: 'milliseconds', attributes: { status: 'ok' } })
+      await runtime.recordTelemetry({
+        kind: 'metric',
+        name: 'canopy.lifecycle.boot.duration',
+        value: performance.now() - bootStartedAt,
+        unit: 'milliseconds',
+        attributes: { status: 'ok' },
+      })
       return runtime
     } catch (primaryError) {
       const cleanupErrors = await unwindStartup(started, deadlines)
@@ -472,7 +474,13 @@ export class CanopyRuntime {
         application: artifacts.manifest.applicationId,
         durationMs: performance.now() - bootStartedAt,
       })
-      await runtime.recordTelemetry({ kind: 'metric', name: 'canopy.lifecycle.boot.duration', value: performance.now() - bootStartedAt, unit: 'milliseconds', attributes: { status: 'error' } })
+      await runtime.recordTelemetry({
+        kind: 'metric',
+        name: 'canopy.lifecycle.boot.duration',
+        value: performance.now() - bootStartedAt,
+        unit: 'milliseconds',
+        attributes: { status: 'error' },
+      })
       throw new RuntimeBootError(primaryError, cleanupErrors)
     }
   }
@@ -482,10 +490,14 @@ export class CanopyRuntime {
     work: (context: ExecutionContext) => Output | Promise<Output>,
   ): Promise<Output> {
     if (this.#state !== 'ready') {
-      throw new ExecutionAdmissionError(`Canopy cannot admit work while runtime state is ${this.#state}.`)
+      throw new ExecutionAdmissionError(
+        `Canopy cannot admit work while runtime state is ${this.#state}.`,
+      )
     }
     if (this.#storage.getStore()) {
-      throw new ExecutionAdmissionError('An admitted execution cannot create a nested execution scope.')
+      throw new ExecutionAdmissionError(
+        'An admitted execution cannot create a nested execution scope.',
+      )
     }
 
     const controller = new AbortController()
@@ -499,30 +511,45 @@ export class CanopyRuntime {
     }
     const context = createExecutionContext(seed, controller.signal)
     const startedAt = performance.now()
-    await this.recordObservation({
-      kind: 'execution',
-      name: context.transport.name ?? context.transport.kind,
-      phase: 'started',
-      attributes: { transport: context.transport.kind },
-    }, context)
-    if (context.transport.kind === 'http') {
-      await this.recordObservation({
-        kind: 'http',
-        name: context.transport.name ?? 'http',
+    await this.recordObservation(
+      {
+        kind: 'execution',
+        name: context.transport.name ?? context.transport.kind,
         phase: 'started',
-        attributes: {},
-      }, context)
+        attributes: { transport: context.transport.kind },
+      },
+      context,
+    )
+    if (context.transport.kind === 'http') {
+      await this.recordObservation(
+        {
+          kind: 'http',
+          name: context.transport.name ?? 'http',
+          phase: 'started',
+          attributes: {},
+        },
+        context,
+      )
     }
     runWithLogContext(logContext(context), () => {
-      this.logger.channel(logChannelForTransport(context.transport.kind)).debug('Execution started', {
-        transport: context.transport.name ?? context.transport.kind,
-      })
+      this.logger
+        .channel(logChannelForTransport(context.transport.kind))
+        .debug('Execution started', {
+          transport: context.transport.name ?? context.transport.kind,
+        })
     })
     await this.recordTelemetry({
-      kind: 'log', level: 'info', event: 'execution.started', attributes: telemetryAttributes(context),
+      kind: 'log',
+      level: 'info',
+      event: 'execution.started',
+      attributes: telemetryAttributes(context),
     })
     await this.recordTelemetry({
-      kind: 'metric', name: 'canopy.execution.admitted', value: 1, unit: 'count', attributes: { transport: context.transport.kind },
+      kind: 'metric',
+      name: 'canopy.execution.admitted',
+      value: 1,
+      unit: 'count',
+      attributes: { transport: context.transport.kind },
     })
     const scope = new ExecutionScope(
       this.artifacts,
@@ -538,28 +565,35 @@ export class CanopyRuntime {
       this.logger,
     )
     const store: ExecutionStore = { context, scope, operationStack: [] }
-    const execution = Promise.resolve(this.#storage.run(store, () => runWithLogContext(logContext(context), () => runWithEventDispatcher(
-      this.#eventDispatcher,
-      () => runWithSignalDispatcher(this.#signalDispatcher, () => runWithJobDispatcher(this.#jobDispatcher, async () => {
-        let result: Output | undefined
-        let primaryError: unknown
-        let failed = false
-        try {
-          result = await work(context)
-        } catch (error) {
-          failed = true
-          primaryError = error
-        }
+    const execution = Promise.resolve(
+      this.#storage.run(store, () =>
+        runWithLogContext(logContext(context), () =>
+          runWithEventDispatcher(this.#eventDispatcher, () =>
+            runWithSignalDispatcher(this.#signalDispatcher, () =>
+              runWithJobDispatcher(this.#jobDispatcher, async () => {
+                let result: Output | undefined
+                let primaryError: unknown
+                let failed = false
+                try {
+                  result = await work(context)
+                } catch (error) {
+                  failed = true
+                  primaryError = error
+                }
 
-        const cleanupErrors = await scope.dispose(this.deadlines.dispose)
-        if (failed && cleanupErrors.length > 0) {
-          throw new ExecutionFailureError(primaryError, cleanupErrors)
-        }
-        if (failed) throw primaryError
-        if (cleanupErrors.length > 0) throw new ExecutionCleanupError(cleanupErrors)
-        return result as Output
-      })),
-    ))))
+                const cleanupErrors = await scope.dispose(this.deadlines.dispose)
+                if (failed && cleanupErrors.length > 0) {
+                  throw new ExecutionFailureError(primaryError, cleanupErrors)
+                }
+                if (failed) throw primaryError
+                if (cleanupErrors.length > 0) throw new ExecutionCleanupError(cleanupErrors)
+                return result as Output
+              }),
+            ),
+          ),
+        ),
+      ),
+    )
     this.#activeExecutions.set(execution, controller)
     try {
       const result = await execution
@@ -574,7 +608,12 @@ export class CanopyRuntime {
     }
   }
 
-  private async completeTelemetry(context: ExecutionContext, startedAt: number, status: 'ok' | 'error', error?: unknown): Promise<void> {
+  private async completeTelemetry(
+    context: ExecutionContext,
+    startedAt: number,
+    status: 'ok' | 'error',
+    error?: unknown,
+  ): Promise<void> {
     const durationMilliseconds = performance.now() - startedAt
     const attributes = telemetryAttributes(context)
     const executionLogger = this.logger.channel(logChannelForTransport(context.transport.kind))
@@ -583,39 +622,69 @@ export class CanopyRuntime {
       durationMs: durationMilliseconds,
     }
     runWithLogContext(logContext(context), () => {
-      if (status === 'ok' && context.transport.kind === 'http') executionLogger.debug('Execution completed', logAttributes)
+      if (status === 'ok' && context.transport.kind === 'http')
+        executionLogger.debug('Execution completed', logAttributes)
       else if (status === 'ok') executionLogger.info('Execution completed', logAttributes)
       else executionLogger.error('Execution failed', error, logAttributes)
     })
-    await this.recordTelemetry({ kind: 'log', level: status === 'ok' ? 'info' : 'error', event: `execution.${status === 'ok' ? 'completed' : 'failed'}`, attributes })
-    await this.recordTelemetry({ kind: 'metric', name: 'canopy.execution.duration', value: durationMilliseconds, unit: 'milliseconds', attributes: { transport: context.transport.kind, status } })
     await this.recordTelemetry({
-      kind: 'span', name: context.transport.name ?? context.transport.kind,
-      traceId: context.trace.traceId!, spanId: context.trace.spanId!, durationMilliseconds, status, attributes,
+      kind: 'log',
+      level: status === 'ok' ? 'info' : 'error',
+      event: `execution.${status === 'ok' ? 'completed' : 'failed'}`,
+      attributes,
+    })
+    await this.recordTelemetry({
+      kind: 'metric',
+      name: 'canopy.execution.duration',
+      value: durationMilliseconds,
+      unit: 'milliseconds',
+      attributes: { transport: context.transport.kind, status },
+    })
+    await this.recordTelemetry({
+      kind: 'span',
+      name: context.transport.name ?? context.transport.kind,
+      traceId: context.trace.traceId!,
+      spanId: context.trace.spanId!,
+      durationMilliseconds,
+      status,
+      attributes,
     })
     const phase = status === 'ok' ? 'completed' : 'failed'
-    await this.recordObservation({
-      kind: 'execution',
-      name: context.transport.name ?? context.transport.kind,
-      phase,
-      durationMilliseconds,
-      attributes: { transport: context.transport.kind },
-      ...(error === undefined ? {} : { error }),
-    }, context)
-    if (context.transport.kind === 'http') {
-      await this.recordObservation({
-        kind: 'http',
-        name: context.transport.name ?? 'http',
+    await this.recordObservation(
+      {
+        kind: 'execution',
+        name: context.transport.name ?? context.transport.kind,
         phase,
         durationMilliseconds,
-        attributes: {},
+        attributes: { transport: context.transport.kind },
         ...(error === undefined ? {} : { error }),
-      }, context)
+      },
+      context,
+    )
+    if (context.transport.kind === 'http') {
+      await this.recordObservation(
+        {
+          kind: 'http',
+          name: context.transport.name ?? 'http',
+          phase,
+          durationMilliseconds,
+          attributes: {},
+          ...(error === undefined ? {} : { error }),
+        },
+        context,
+      )
     }
     if (error !== undefined) {
-      await this.recordObservation({
-        kind: 'exception', name: errorMessage(error), phase: 'occurred', attributes: { boundary: 'execution' }, error,
-      }, context)
+      await this.recordObservation(
+        {
+          kind: 'exception',
+          name: errorMessage(error),
+          phase: 'occurred',
+          attributes: { boundary: 'execution' },
+          error,
+        },
+        context,
+      )
     }
   }
 
@@ -639,12 +708,18 @@ export class CanopyRuntime {
       name: input.name,
       phase: input.phase,
       ...(input.roleId ? { roleId: input.roleId } : {}),
-      ...(input.durationMilliseconds === undefined ? {} : { durationMilliseconds: input.durationMilliseconds }),
+      ...(input.durationMilliseconds === undefined
+        ? {}
+        : { durationMilliseconds: input.durationMilliseconds }),
       context: observationContext(context),
       attributes: sanitizeObservationAttributes(input.attributes ?? {}),
       ...(input.error === undefined ? {} : { error: sanitizeObservationError(input.error) }),
     })
-    try { await this.observations.record(observation) } catch { /* Debugging must never change application behavior. */ }
+    try {
+      await this.observations.record(observation)
+    } catch {
+      /* Debugging must never change application behavior. */
+    }
   }
 
   private async observeObservation<Output>(
@@ -655,23 +730,40 @@ export class CanopyRuntime {
     roleId?: string,
   ): Promise<Output> {
     const startedAt = performance.now()
-    await this.recordObservation({ kind, name, phase: 'started', attributes, ...(roleId ? { roleId } : {}) })
+    await this.recordObservation({
+      kind,
+      name,
+      phase: 'started',
+      attributes,
+      ...(roleId ? { roleId } : {}),
+    })
     try {
       const output = await work()
       await this.recordObservation({
-        kind, name, phase: 'completed', attributes,
+        kind,
+        name,
+        phase: 'completed',
+        attributes,
         durationMilliseconds: performance.now() - startedAt,
         ...(roleId ? { roleId } : {}),
       })
       return output
     } catch (error) {
       await this.recordObservation({
-        kind, name, phase: 'failed', attributes, error,
+        kind,
+        name,
+        phase: 'failed',
+        attributes,
+        error,
         durationMilliseconds: performance.now() - startedAt,
         ...(roleId ? { roleId } : {}),
       })
       await this.recordObservation({
-        kind: 'exception', name: errorMessage(error), phase: 'occurred', attributes: { boundary: kind }, error,
+        kind: 'exception',
+        name: errorMessage(error),
+        phase: 'occurred',
+        attributes: { boundary: kind },
+        error,
         ...(roleId ? { roleId } : {}),
       })
       throw error
@@ -679,7 +771,11 @@ export class CanopyRuntime {
   }
 
   private async recordTelemetry(record: TelemetryRecord): Promise<void> {
-    try { await this.telemetry.record(record) } catch { /* Observability never changes application behavior. */ }
+    try {
+      await this.telemetry.record(record)
+    } catch {
+      /* Observability never changes application behavior. */
+    }
   }
 
   private async observeTelemetry<Output>(
@@ -692,14 +788,44 @@ export class CanopyRuntime {
     logger.debug(`${humanizeSubsystem(subsystem)} started`, attributes)
     try {
       const output = await work()
-      logger.debug(`${humanizeSubsystem(subsystem)} completed`, { ...attributes, durationMs: performance.now() - startedAt })
-      await this.recordTelemetry({ kind: 'metric', name: `canopy.${subsystem}.total`, value: 1, unit: 'count', attributes: { ...attributes, status: 'ok' } })
-      await this.recordTelemetry({ kind: 'metric', name: `canopy.${subsystem}.duration`, value: performance.now() - startedAt, unit: 'milliseconds', attributes: { ...attributes, status: 'ok' } })
+      logger.debug(`${humanizeSubsystem(subsystem)} completed`, {
+        ...attributes,
+        durationMs: performance.now() - startedAt,
+      })
+      await this.recordTelemetry({
+        kind: 'metric',
+        name: `canopy.${subsystem}.total`,
+        value: 1,
+        unit: 'count',
+        attributes: { ...attributes, status: 'ok' },
+      })
+      await this.recordTelemetry({
+        kind: 'metric',
+        name: `canopy.${subsystem}.duration`,
+        value: performance.now() - startedAt,
+        unit: 'milliseconds',
+        attributes: { ...attributes, status: 'ok' },
+      })
       return output
     } catch (error) {
-      logger.error(`${humanizeSubsystem(subsystem)} failed`, error, { ...attributes, durationMs: performance.now() - startedAt })
-      await this.recordTelemetry({ kind: 'metric', name: `canopy.${subsystem}.total`, value: 1, unit: 'count', attributes: { ...attributes, status: 'error' } })
-      await this.recordTelemetry({ kind: 'metric', name: `canopy.${subsystem}.duration`, value: performance.now() - startedAt, unit: 'milliseconds', attributes: { ...attributes, status: 'error' } })
+      logger.error(`${humanizeSubsystem(subsystem)} failed`, error, {
+        ...attributes,
+        durationMs: performance.now() - startedAt,
+      })
+      await this.recordTelemetry({
+        kind: 'metric',
+        name: `canopy.${subsystem}.total`,
+        value: 1,
+        unit: 'count',
+        attributes: { ...attributes, status: 'error' },
+      })
+      await this.recordTelemetry({
+        kind: 'metric',
+        name: `canopy.${subsystem}.duration`,
+        value: performance.now() - startedAt,
+        unit: 'milliseconds',
+        attributes: { ...attributes, status: 'error' },
+      })
       throw error
     }
   }
@@ -711,7 +837,9 @@ export class CanopyRuntime {
         authentication: { state: 'anonymous' },
       }
     }
-    return await this.observeTelemetry('auth.resolve', { transport: 'http' }, () => this.authentication!.resolveHttp(request))
+    return await this.observeTelemetry('auth.resolve', { transport: 'http' }, () =>
+      this.authentication!.resolveHttp(request),
+    )
   }
 
   authenticationStorage(): import('@canopy/core').AuthStorageDescription {
@@ -733,24 +861,46 @@ export class CanopyRuntime {
     if (operation.access !== 'public') await this.authorization.authorize(operation.access)
     store.operationStack.push('action')
     try {
-      return await this.observeObservation('action', operation.id, {}, () => this.observeLog('action', 'Action', { id: operation.id }, () => this.observeObservation('transaction', 'action transaction', { operation: 'action' }, () => this.observeTelemetry('persistence.transaction', { operation: 'action', id: operation.id }, () => this.transactions!.transaction(
-        store.context,
-        async (unitOfWork) => {
-          const models = new ModelSession(
-            unitOfWork,
-            this.#modelsByConstructor,
-            this.modelObserverDispatcher(store),
-          )
-          return store.scope.withUnitOfWork(unitOfWork, async () => runWithModelSession(models, async () => {
-            try {
-              const handler = store.scope.resolve(operation.id) as Action<Input, Output>
-              return await handler.handle(input) as Awaited<Output>
-            } finally {
-              models.close()
-            }
-          }))
-        },
-      )))), operation.id)
+      return await this.observeObservation(
+        'action',
+        operation.id,
+        {},
+        () =>
+          this.observeLog('action', 'Action', { id: operation.id }, () =>
+            this.observeObservation(
+              'transaction',
+              'action transaction',
+              { operation: 'action' },
+              () =>
+                this.observeTelemetry(
+                  'persistence.transaction',
+                  { operation: 'action', id: operation.id },
+                  () =>
+                    this.transactions!.transaction(store.context, async (unitOfWork) => {
+                      const models = new ModelSession(
+                        unitOfWork,
+                        this.#modelsByConstructor,
+                        this.modelObserverDispatcher(store),
+                      )
+                      return store.scope.withUnitOfWork(unitOfWork, async () =>
+                        runWithModelSession(models, async () => {
+                          try {
+                            const handler = store.scope.resolve(operation.id) as Action<
+                              Input,
+                              Output
+                            >
+                            return (await handler.handle(input)) as Awaited<Output>
+                          } finally {
+                            models.close()
+                          }
+                        }),
+                      )
+                    }),
+                ),
+            ),
+          ),
+        operation.id,
+      )
     } finally {
       store.operationStack.pop()
     }
@@ -766,11 +916,13 @@ export class CanopyRuntime {
     const handler = store.scope.resolve(operation.id) as Query<Input, Output>
     store.operationStack.push('query')
     try {
-      return await this.observeObservation(
-        'query', operation.id, {},
+      return (await this.observeObservation(
+        'query',
+        operation.id,
+        {},
         () => this.observeLog('query', 'Query', { id: operation.id }, () => handler.handle(input)),
         operation.id,
-      ) as Awaited<Output>
+      )) as Awaited<Output>
     } finally {
       store.operationStack.pop()
     }
@@ -787,7 +939,9 @@ export class CanopyRuntime {
     if (route.access !== 'public') await this.authorization.authorize(route.access)
     const handler = store.scope.resolve(route.id) as Route
     return this.observeObservation(
-      'http', `${route.method} ${route.path}`, { method: route.method, path: route.path },
+      'http',
+      `${route.method} ${route.path}`,
+      { method: route.method, path: route.path },
       () => handler.handle(new HttpRequest(request, Object.freeze({ ...params }))),
       route.id,
     )
@@ -796,10 +950,17 @@ export class CanopyRuntime {
   async dispatchCommand(name: string, arguments_: readonly string[]): Promise<void> {
     const store = this.requireExecution('command')
     const manifest = this.#commandsByName.get(name)
-    if (!manifest) throw new OperationDispatchError(`${name} is not a declared application command.`)
+    if (!manifest)
+      throw new OperationDispatchError(`${name} is not a declared application command.`)
     if (manifest.access !== 'public') await this.authorization.authorize(manifest.access)
     const command = store.scope.resolve(manifest.id) as Command
-    await this.observeObservation('execution', manifest.command, { arguments: arguments_ }, () => command.handle(arguments_), manifest.id)
+    await this.observeObservation(
+      'execution',
+      manifest.command,
+      { arguments: arguments_ },
+      () => command.handle(arguments_),
+      manifest.id,
+    )
   }
 
   private async dispatchEvent(event: Event<unknown>): Promise<void> {
@@ -817,16 +978,28 @@ export class CanopyRuntime {
           await this.enqueueListener(listener, manifest, event, store)
         }
       }
-      unitOfWork.afterCommit(() => this.observeObservation(
-        'event', manifest.id, { payload: event.payload },
-        () => this.observeTelemetry('event.dispatch', { id: manifest.id }, () => this.dispatchEventNow(event, manifest, store, true)),
-        manifest.id,
-      ))
+      unitOfWork.afterCommit(() =>
+        this.observeObservation(
+          'event',
+          manifest.id,
+          { payload: event.payload },
+          () =>
+            this.observeTelemetry('event.dispatch', { id: manifest.id }, () =>
+              this.dispatchEventNow(event, manifest, store, true),
+            ),
+          manifest.id,
+        ),
+      )
       return
     }
     await this.observeObservation(
-      'event', manifest.id, { payload: event.payload },
-      () => this.observeTelemetry('event.dispatch', { id: manifest.id }, () => this.dispatchEventNow(event, manifest, store)),
+      'event',
+      manifest.id,
+      { payload: event.payload },
+      () =>
+        this.observeTelemetry('event.dispatch', { id: manifest.id }, () =>
+          this.dispatchEventNow(event, manifest, store),
+        ),
       manifest.id,
     )
   }
@@ -839,15 +1012,22 @@ export class CanopyRuntime {
         `${signal.constructor.name || 'Anonymous signal'} is not declared by a selected Feature.`,
       )
     }
-    await this.observeObservation('signal', manifest.id, { payload: signal.payload }, () => this.observeTelemetry('signal.dispatch', { id: manifest.id }, async () => {
-      for (const handlerManifest of this.#signalHandlersBySignal.get(manifest.id) ?? []) {
-        if (handlerManifest.access !== 'public') {
-          await this.authorization.authorize(handlerManifest.access)
-        }
-        const handler = store.scope.resolve(handlerManifest.id) as SignalHandler
-        await handler.handle(signal)
-      }
-    }), manifest.id)
+    await this.observeObservation(
+      'signal',
+      manifest.id,
+      { payload: signal.payload },
+      () =>
+        this.observeTelemetry('signal.dispatch', { id: manifest.id }, async () => {
+          for (const handlerManifest of this.#signalHandlersBySignal.get(manifest.id) ?? []) {
+            if (handlerManifest.access !== 'public') {
+              await this.authorization.authorize(handlerManifest.access)
+            }
+            const handler = store.scope.resolve(handlerManifest.id) as SignalHandler
+            await handler.handle(signal)
+          }
+        }),
+      manifest.id,
+    )
   }
 
   private modelObserverDispatcher(store: ExecutionStore): ModelObserverDispatcher {
@@ -858,7 +1038,10 @@ export class CanopyRuntime {
           throw new RuntimeIntegrityError(`${model.constructor.name} is not a declared Model.`)
         }
         await this.recordObservation({
-          kind: 'model', name: phase, phase: 'occurred', roleId: definition.entityType,
+          kind: 'model',
+          name: phase,
+          phase: 'occurred',
+          roleId: definition.entityType,
           attributes: { model: definition.entityType, id: model.id, phase },
         })
         for (const manifest of this.#observersByModel.get(definition.entityType) ?? []) {
@@ -896,18 +1079,21 @@ export class CanopyRuntime {
     event: Event<unknown>,
     store: ExecutionStore,
   ): Promise<void> {
-    const envelope = this.createQueueEnvelope({
-      kind: 'listener',
-      targetId: listener.id,
-      eventId: eventManifest.id,
-      payload: serializeQueuePayload(event),
-      policy: {
-        retries: 3,
-        retryDelay: 1,
-        backoff: true,
-        timeout: 30,
+    const envelope = this.createQueueEnvelope(
+      {
+        kind: 'listener',
+        targetId: listener.id,
+        eventId: eventManifest.id,
+        payload: serializeQueuePayload(event),
+        policy: {
+          retries: 3,
+          retryDelay: 1,
+          backoff: true,
+          timeout: 30,
+        },
       },
-    }, store)
+      store,
+    )
     await this.enqueueEnvelope(envelope, store)
   }
 
@@ -923,30 +1109,42 @@ export class CanopyRuntime {
         `${Constructor.name || 'Anonymous job'} is not declared by a selected Feature.`,
       )
     }
-    const availableAt = options?.delaySeconds === undefined
-      ? undefined
-      : new Date(Date.now() + options.delaySeconds * 1_000)
-    if (options?.delaySeconds !== undefined
-      && (!Number.isFinite(options.delaySeconds) || options.delaySeconds < 0)) {
+    const availableAt =
+      options?.delaySeconds === undefined
+        ? undefined
+        : new Date(Date.now() + options.delaySeconds * 1_000)
+    if (
+      options?.delaySeconds !== undefined &&
+      (!Number.isFinite(options.delaySeconds) || options.delaySeconds < 0)
+    ) {
       throw new OperationDispatchError('Job delaySeconds must be a non-negative finite number.')
     }
-    const envelope = this.createQueueEnvelope({
-      kind: 'job',
-      targetId: manifest.id,
-      payload: serializeQueuePayload(input),
-      policy: {
-        retries: manifest.retries,
-        retryDelay: manifest.retryDelay,
-        backoff: manifest.backoff,
-        timeout: manifest.timeout,
+    const envelope = this.createQueueEnvelope(
+      {
+        kind: 'job',
+        targetId: manifest.id,
+        payload: serializeQueuePayload(input),
+        policy: {
+          retries: manifest.retries,
+          retryDelay: manifest.retryDelay,
+          backoff: manifest.backoff,
+          timeout: manifest.timeout,
+        },
+        ...(availableAt ? { availableAt: availableAt.toISOString() } : {}),
+        ...(options?.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
       },
-      ...(availableAt ? { availableAt: availableAt.toISOString() } : {}),
-      ...(options?.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
-    }, store)
+      store,
+    )
     await this.enqueueEnvelope(envelope, store, availableAt)
     await this.recordObservation({
-      kind: 'job', name: 'queued', phase: 'occurred', roleId: manifest.id,
-      attributes: { jobId: envelope.id, ...(availableAt ? { availableAt: availableAt.toISOString() } : {}) },
+      kind: 'job',
+      name: 'queued',
+      phase: 'occurred',
+      roleId: manifest.id,
+      attributes: {
+        jobId: envelope.id,
+        ...(availableAt ? { availableAt: availableAt.toISOString() } : {}),
+      },
     })
     this.logger.channel('queue').info('Job queued', {
       id: envelope.id,
@@ -967,14 +1165,21 @@ export class CanopyRuntime {
   async recordDelivery(transition: DeliveryTransition): Promise<void> {
     const store = this.requireExecution('delivery ledger')
     const unitOfWork = store.scope.currentUnitOfWork
-    if (!unitOfWork) throw new OperationDispatchError('Delivery reconciliation requires a mutating action or job.')
+    if (!unitOfWork)
+      throw new OperationDispatchError('Delivery reconciliation requires a mutating action or job.')
     await unitOfWork.transitionDelivery(transition)
   }
 
-  private async dispatchCommunication(channel: 'mail' | 'sms', message: MailMessage | SmsMessage): Promise<string> {
+  private async dispatchCommunication(
+    channel: 'mail' | 'sms',
+    message: MailMessage | SmsMessage,
+  ): Promise<string> {
     const store = this.requireExecution(channel)
     const unitOfWork = store.scope.currentUnitOfWork
-    if (!unitOfWork) throw new OperationDispatchError(`${channel} delivery must be queued inside a mutating action or job.`)
+    if (!unitOfWork)
+      throw new OperationDispatchError(
+        `${channel} delivery must be queued inside a mutating action or job.`,
+      )
     const transport = channel === 'mail' ? this.mailTransport : this.smsTransport
     if (!transport) throw new OperationDispatchError(`No ${channel} transport is configured.`)
     await unitOfWork.stageDelivery({
@@ -983,18 +1188,29 @@ export class CanopyRuntime {
       recipients: channel === 'mail' ? (message as MailMessage).to : [(message as SmsMessage).to],
       payload: serializeQueuePayload(message),
     })
-    const envelope = this.createQueueEnvelope({
-      kind: channel,
-      targetId: `canopy:${channel}`,
-      payload: serializeQueuePayload(message),
-      policy: { retries: 3, retryDelay: 1, backoff: true, timeout: 30 },
-    }, store)
+    const envelope = this.createQueueEnvelope(
+      {
+        kind: channel,
+        targetId: `canopy:${channel}`,
+        payload: serializeQueuePayload(message),
+        policy: { retries: 3, retryDelay: 1, backoff: true, timeout: 30 },
+      },
+      store,
+    )
     await this.enqueueEnvelope(envelope, store)
     await this.recordObservation({
-      kind: channel, name: 'queued', phase: 'occurred',
+      kind: channel,
+      name: 'queued',
+      phase: 'occurred',
       attributes: { messageId: message.id },
     })
-    await this.recordTelemetry({ kind: 'metric', name: `canopy.${channel}.queued`, value: 1, unit: 'count', attributes: { channel } })
+    await this.recordTelemetry({
+      kind: 'metric',
+      name: `canopy.${channel}.queued`,
+      value: 1,
+      unit: 'count',
+      attributes: { channel },
+    })
     return message.id
   }
 
@@ -1040,87 +1256,132 @@ export class CanopyRuntime {
     logger.debug(`${operation} started`, attributes)
     try {
       const output = await work()
-      logger.debug(`${operation} completed`, { ...attributes, durationMs: performance.now() - startedAt })
+      logger.debug(`${operation} completed`, {
+        ...attributes,
+        durationMs: performance.now() - startedAt,
+      })
       return output
     } catch (error) {
-      logger.error(`${operation} failed`, error, { ...attributes, durationMs: performance.now() - startedAt })
+      logger.error(`${operation} failed`, error, {
+        ...attributes,
+        durationMs: performance.now() - startedAt,
+      })
       throw error
     }
   }
 
   private async handleQueueDelivery(delivery: QueueDelivery): Promise<void> {
     const { envelope, attempt } = delivery
-    await this.observeTelemetry('queue.delivery', {
-      kind: envelope.kind,
-      target: envelope.targetId,
-      scheduled: Boolean(envelope.scheduleId),
-      attempt,
-    }, () => this.admit({
-      ...queueSeed(envelope),
-      cancellation: delivery.cancellation,
-    }, async () => {
-      const store = this.requireExecution('job')
-      store.job = Object.freeze({
-        id: envelope.id,
+    await this.observeTelemetry(
+      'queue.delivery',
+      {
+        kind: envelope.kind,
+        target: envelope.targetId,
+        scheduled: Boolean(envelope.scheduleId),
         attempt,
-        maxAttempts: envelope.policy.retries + 1,
-        ...(envelope.idempotencyKey ? { idempotencyKey: envelope.idempotencyKey } : {}),
-      })
-      if (envelope.kind === 'job') {
-        const manifest = this.#jobsById.get(envelope.targetId)
-        if (!manifest) throw new OperationDispatchError(`Queued job ${envelope.targetId} is not declared.`)
-        if (envelope.scheduleId) {
-          const schedule = this.#schedulesById.get(envelope.scheduleId)
-          if (!schedule) throw new OperationDispatchError(`Schedule ${envelope.scheduleId} is not declared.`)
-          if (schedule.access !== 'public') await this.authorization.authorize(schedule.access)
-          await this.recordObservation({
-            kind: 'schedule', name: schedule.id, phase: 'occurred', roleId: schedule.id,
-            attributes: { jobId: envelope.id, targetId: envelope.targetId },
-          })
-        }
-        await this.invokeJob(manifest, envelope.payload, store)
-        return
-      }
-      if (envelope.kind === 'mail' || envelope.kind === 'sms') {
-        await this.invokeCommunication(envelope, store)
-        return
-      }
-      const listener = this.manifest.listeners.find((entry) => entry.id === envelope.targetId)
-      const eventManifest = envelope.eventId
-        ? this.manifest.events.find((entry) => entry.id === envelope.eventId)
-        : undefined
-      if (!listener || !eventManifest) {
-        throw new OperationDispatchError(`Queued listener ${envelope.targetId} is not declared correctly.`)
-      }
-      const EventConstructor = this.artifacts.registry.constructors[eventManifest.id]
-      if (!EventConstructor || typeof envelope.payload !== 'object' || envelope.payload === null
-        || Array.isArray(envelope.payload)) {
-        throw new OperationDispatchError(`Queued event ${eventManifest.id} cannot be rehydrated.`)
-      }
-      const event = Object.assign(Object.create(EventConstructor.prototype), envelope.payload) as Event<unknown>
-      await this.invokeListener(listener, event, store)
-    }))
+      },
+      () =>
+        this.admit(
+          {
+            ...queueSeed(envelope),
+            cancellation: delivery.cancellation,
+          },
+          async () => {
+            const store = this.requireExecution('job')
+            store.job = Object.freeze({
+              id: envelope.id,
+              attempt,
+              maxAttempts: envelope.policy.retries + 1,
+              ...(envelope.idempotencyKey ? { idempotencyKey: envelope.idempotencyKey } : {}),
+            })
+            if (envelope.kind === 'job') {
+              const manifest = this.#jobsById.get(envelope.targetId)
+              if (!manifest)
+                throw new OperationDispatchError(`Queued job ${envelope.targetId} is not declared.`)
+              if (envelope.scheduleId) {
+                const schedule = this.#schedulesById.get(envelope.scheduleId)
+                if (!schedule)
+                  throw new OperationDispatchError(
+                    `Schedule ${envelope.scheduleId} is not declared.`,
+                  )
+                if (schedule.access !== 'public')
+                  await this.authorization.authorize(schedule.access)
+                await this.recordObservation({
+                  kind: 'schedule',
+                  name: schedule.id,
+                  phase: 'occurred',
+                  roleId: schedule.id,
+                  attributes: { jobId: envelope.id, targetId: envelope.targetId },
+                })
+              }
+              await this.invokeJob(manifest, envelope.payload, store)
+              return
+            }
+            if (envelope.kind === 'mail' || envelope.kind === 'sms') {
+              await this.invokeCommunication(envelope, store)
+              return
+            }
+            const listener = this.manifest.listeners.find((entry) => entry.id === envelope.targetId)
+            const eventManifest = envelope.eventId
+              ? this.manifest.events.find((entry) => entry.id === envelope.eventId)
+              : undefined
+            if (!listener || !eventManifest) {
+              throw new OperationDispatchError(
+                `Queued listener ${envelope.targetId} is not declared correctly.`,
+              )
+            }
+            const EventConstructor = this.artifacts.registry.constructors[eventManifest.id]
+            if (
+              !EventConstructor ||
+              typeof envelope.payload !== 'object' ||
+              envelope.payload === null ||
+              Array.isArray(envelope.payload)
+            ) {
+              throw new OperationDispatchError(
+                `Queued event ${eventManifest.id} cannot be rehydrated.`,
+              )
+            }
+            const event = Object.assign(
+              Object.create(EventConstructor.prototype),
+              envelope.payload,
+            ) as Event<unknown>
+            await this.invokeListener(listener, event, store)
+          },
+        ),
+    )
   }
 
   private async invokeCommunication(envelope: QueueEnvelope, store: ExecutionStore): Promise<void> {
-    if (!this.transactions) throw new OperationDispatchError('No transaction manager is available for delivery reconciliation.')
+    if (!this.transactions)
+      throw new OperationDispatchError(
+        'No transaction manager is available for delivery reconciliation.',
+      )
     const transport = envelope.kind === 'mail' ? this.mailTransport : this.smsTransport
     if (!transport) throw new OperationDispatchError(`No ${envelope.kind} transport is configured.`)
     try {
-      const acceptance = envelope.kind === 'mail'
-        ? await (transport as MailTransport).send(envelope.payload as unknown as MailMessage)
-        : await (transport as SmsTransport).send(envelope.payload as unknown as SmsMessage)
-      await this.transactions.transaction(store.context, (unitOfWork) => unitOfWork.transitionDelivery(acceptance))
+      const acceptance =
+        envelope.kind === 'mail'
+          ? await (transport as MailTransport).send(envelope.payload as unknown as MailMessage)
+          : await (transport as SmsTransport).send(envelope.payload as unknown as SmsMessage)
+      await this.transactions.transaction(store.context, (unitOfWork) =>
+        unitOfWork.transitionDelivery(acceptance),
+      )
     } catch (error) {
       if (!(error instanceof DeliveryError)) throw error
-      const state = error.kind === 'suppressed' || error.kind === 'opt-out' ? 'suppressed'
-        : error.kind === 'transient' ? 'undelivered' : 'failed'
-      await this.transactions.transaction(store.context, (unitOfWork) => unitOfWork.transitionDelivery({
-        messageId: String((envelope.payload as { id?: unknown }).id),
-        state,
-        failureKind: error.kind,
-        code: error.code,
-      }))
+      const state =
+        error.kind === 'suppressed' || error.kind === 'opt-out'
+          ? 'suppressed'
+          : error.kind === 'transient'
+            ? 'undelivered'
+            : 'failed'
+      await this.transactions.transaction(store.context, (unitOfWork) =>
+        unitOfWork.transitionDelivery({
+          messageId: String((envelope.payload as { id?: unknown }).id),
+          state,
+          failureKind: error.kind,
+          code: error.code,
+        }),
+      )
       if (error.kind === 'transient') throw error
     }
   }
@@ -1136,23 +1397,35 @@ export class CanopyRuntime {
     if (manifest.access !== 'public') await this.authorization.authorize(manifest.access)
     store.operationStack.push('job')
     try {
-      await this.observeObservation('job', manifest.id, {
-        jobId: store.job?.id ?? 'unknown', attempt: store.job?.attempt ?? 0,
-      }, () => this.observeObservation('transaction', 'job transaction', { operation: 'job' }, () => this.transactions!.transaction(store.context, async (unitOfWork) => {
-        const models = new ModelSession(
-          unitOfWork,
-          this.#modelsByConstructor,
-          this.modelObserverDispatcher(store),
-        )
-        return store.scope.withUnitOfWork(unitOfWork, async () => runWithModelSession(models, async () => {
-          try {
-            const handler = store.scope.resolve(manifest.id) as Job
-            await handler.handle(payload)
-          } finally {
-            models.close()
-          }
-        }))
-      })), manifest.id)
+      await this.observeObservation(
+        'job',
+        manifest.id,
+        {
+          jobId: store.job?.id ?? 'unknown',
+          attempt: store.job?.attempt ?? 0,
+        },
+        () =>
+          this.observeObservation('transaction', 'job transaction', { operation: 'job' }, () =>
+            this.transactions!.transaction(store.context, async (unitOfWork) => {
+              const models = new ModelSession(
+                unitOfWork,
+                this.#modelsByConstructor,
+                this.modelObserverDispatcher(store),
+              )
+              return store.scope.withUnitOfWork(unitOfWork, async () =>
+                runWithModelSession(models, async () => {
+                  try {
+                    const handler = store.scope.resolve(manifest.id) as Job
+                    await handler.handle(payload)
+                  } finally {
+                    models.close()
+                  }
+                }),
+              )
+            }),
+          ),
+        manifest.id,
+      )
     } finally {
       store.operationStack.pop()
     }
@@ -1166,12 +1439,28 @@ export class CanopyRuntime {
     if (manifest.access !== 'public') await this.authorization.authorize(manifest.access)
     const listener = store.scope.resolve(manifest.id) as Listener
     await this.observeObservation(
-      'listener', manifest.id, { event: event.constructor.name },
-      () => listener.handle(event), manifest.id,
+      'listener',
+      manifest.id,
+      { event: event.constructor.name },
+      () => listener.handle(event),
+      manifest.id,
     )
   }
 
-  private requireExecution(role: 'action' | 'query' | 'event' | 'signal' | 'job' | 'mail' | 'sms' | 'delivery ledger' | 'command' | 'HTTP route' | 'authorization'): ExecutionStore {
+  private requireExecution(
+    role:
+      | 'action'
+      | 'query'
+      | 'event'
+      | 'signal'
+      | 'job'
+      | 'mail'
+      | 'sms'
+      | 'delivery ledger'
+      | 'command'
+      | 'HTTP route'
+      | 'authorization',
+  ): ExecutionStore {
     const store = this.#storage.getStore()
     if (!store) {
       throw new OperationDispatchError(`${role} dispatch requires an active admitted execution.`)
@@ -1197,23 +1486,38 @@ export class CanopyRuntime {
     return job
   }
 
-  async decideAuthorization<Resource>(ability: string, resource?: Resource): Promise<PolicyDecision> {
+  async decideAuthorization<Resource>(
+    ability: string,
+    resource?: Resource,
+  ): Promise<PolicyDecision> {
     const store = this.requireExecution('authorization')
     const constraints = store.context.authentication.constraints
-    if (constraints && constraints.length > 0 && !constraints.some((value) => constraintAllows(value, ability))) {
-      return await this.recordAuthorizationDecision(ability, Object.freeze({
-        effect: 'deny',
-        policy: 'canopy:credential-constraints',
-        code: 'credential_constraint_denied',
-      }), store.context)
+    if (
+      constraints &&
+      constraints.length > 0 &&
+      !constraints.some((value) => constraintAllows(value, ability))
+    ) {
+      return await this.recordAuthorizationDecision(
+        ability,
+        Object.freeze({
+          effect: 'deny',
+          policy: 'canopy:credential-constraints',
+          code: 'credential_constraint_denied',
+        }),
+        store.context,
+      )
     }
     const manifest = this.#policiesByAbility.get(ability)
     if (!manifest) {
-      return await this.recordAuthorizationDecision(ability, Object.freeze({
-        effect: 'deny',
-        policy: 'canopy:default-deny',
-        code: 'policy_missing',
-      }), store.context)
+      return await this.recordAuthorizationDecision(
+        ability,
+        Object.freeze({
+          effect: 'deny',
+          policy: 'canopy:default-deny',
+          code: 'policy_missing',
+        }),
+        store.context,
+      )
     }
     const policy = store.scope.resolve(manifest.id) as Policy<Resource>
     const decision = await policy.decide({
@@ -1226,11 +1530,15 @@ export class CanopyRuntime {
     if ((decision.effect !== 'allow' && decision.effect !== 'deny') || !decision.code) {
       throw new RuntimeIntegrityError(`Policy ${manifest.id} returned an invalid decision.`)
     }
-    return await this.recordAuthorizationDecision(ability, Object.freeze({
-      effect: decision.effect,
-      policy: manifest.id,
-      code: decision.code,
-    }), store.context)
+    return await this.recordAuthorizationDecision(
+      ability,
+      Object.freeze({
+        effect: decision.effect,
+        policy: manifest.id,
+        code: decision.code,
+      }),
+      store.context,
+    )
   }
 
   private async recordAuthorizationDecision(
@@ -1242,13 +1550,32 @@ export class CanopyRuntime {
       await this.authentication.recordAuthorization(ability, decision, context)
     }
     await this.recordTelemetry({
-      kind: 'metric', name: 'canopy.authorization.decisions', value: 1, unit: 'count',
-      attributes: { ability, effect: decision.effect, policy: decision.policy, code: decision.code },
+      kind: 'metric',
+      name: 'canopy.authorization.decisions',
+      value: 1,
+      unit: 'count',
+      attributes: {
+        ability,
+        effect: decision.effect,
+        policy: decision.policy,
+        code: decision.code,
+      },
     })
-    await this.recordObservation({
-      kind: 'authorization', name: ability, phase: 'occurred', roleId: decision.policy,
-      attributes: { ability, effect: decision.effect, policy: decision.policy, code: decision.code },
-    }, context)
+    await this.recordObservation(
+      {
+        kind: 'authorization',
+        name: ability,
+        phase: 'occurred',
+        roleId: decision.policy,
+        attributes: {
+          ability,
+          effect: decision.effect,
+          policy: decision.policy,
+          code: decision.code,
+        },
+      },
+      context,
+    )
     this.logger.channel('auth').debug('Authorization decided', {
       ability,
       effect: decision.effect,
@@ -1259,13 +1586,12 @@ export class CanopyRuntime {
     return decision
   }
 
-  private operationFor(
-    Constructor: Function,
-    role: 'action' | 'query',
-  ): OperationManifestEntry {
+  private operationFor(Constructor: Function, role: 'action' | 'query'): OperationManifestEntry {
     const operation = this.#operationsByConstructor.get(Constructor)
     if (!operation || operation.role !== role) {
-      throw new OperationDispatchError(`${Constructor.name || 'Anonymous class'} is not a declared ${role}.`)
+      throw new OperationDispatchError(
+        `${Constructor.name || 'Anonymous class'} is not a declared ${role}.`,
+      )
     }
     return operation
   }
@@ -1284,12 +1610,20 @@ export class CanopyRuntime {
     const reverse = [...this.participants].reverse()
     const errors: unknown[] = []
     this.#state = 'draining'
-    await this.observeTelemetry('lifecycle.phase', { phase: 'drain', participant: 'runtime' }, () => invokePhase(reverse, 'drain', this.deadlines.drain, errors))
+    await this.observeTelemetry('lifecycle.phase', { phase: 'drain', participant: 'runtime' }, () =>
+      invokePhase(reverse, 'drain', this.deadlines.drain, errors),
+    )
     await this.#drainExecutions(errors)
     this.#state = 'stopping'
-    await this.observeTelemetry('lifecycle.phase', { phase: 'stop', participant: 'runtime' }, () => invokePhase(reverse, 'stop', this.deadlines.stop, errors))
+    await this.observeTelemetry('lifecycle.phase', { phase: 'stop', participant: 'runtime' }, () =>
+      invokePhase(reverse, 'stop', this.deadlines.stop, errors),
+    )
     this.#state = 'disposing'
-    await this.observeTelemetry('lifecycle.phase', { phase: 'dispose', participant: 'runtime' }, () => invokePhase(reverse, 'dispose', this.deadlines.dispose, errors))
+    await this.observeTelemetry(
+      'lifecycle.phase',
+      { phase: 'dispose', participant: 'runtime' },
+      () => invokePhase(reverse, 'dispose', this.deadlines.dispose, errors),
+    )
     this.#state = 'stopped'
     if (errors.length > 0) {
       const error = new RuntimeShutdownError(errors)
@@ -1300,7 +1634,9 @@ export class CanopyRuntime {
       await this.logger.flush()
       throw error
     }
-    this.logger.channel('lifecycle').info('Application stopped', { durationMs: performance.now() - startedAt })
+    this.logger
+      .channel('lifecycle')
+      .info('Application stopped', { durationMs: performance.now() - startedAt })
     await this.logger.flush()
   }
 
@@ -1345,31 +1681,42 @@ class RuntimeQueryBus extends QueryBus {
     super()
   }
 
-  execute<Input, Output>(
-    query: QueryClass<Input, Output>,
-    input: Input,
-  ): Promise<Awaited<Output>> {
+  execute<Input, Output>(query: QueryClass<Input, Output>, input: Input): Promise<Awaited<Output>> {
     return this.runtime.dispatchQuery(query, input)
   }
 }
 
 class RuntimeMailer extends Mailer {
-  constructor(private readonly runtime: CanopyRuntime) { super() }
-  send(message: MailMessage): Promise<string> { return this.runtime.dispatchMail(message) }
+  constructor(private readonly runtime: CanopyRuntime) {
+    super()
+  }
+  send(message: MailMessage): Promise<string> {
+    return this.runtime.dispatchMail(message)
+  }
 }
 
 class RuntimeSms extends Sms {
-  constructor(private readonly runtime: CanopyRuntime) { super() }
-  send(message: SmsMessage): Promise<string> { return this.runtime.dispatchSms(message) }
+  constructor(private readonly runtime: CanopyRuntime) {
+    super()
+  }
+  send(message: SmsMessage): Promise<string> {
+    return this.runtime.dispatchSms(message)
+  }
 }
 
 class RuntimeDeliveryLedger extends DeliveryLedger {
-  constructor(private readonly runtime: CanopyRuntime) { super() }
-  record(transition: DeliveryTransition): Promise<void> { return this.runtime.recordDelivery(transition) }
+  constructor(private readonly runtime: CanopyRuntime) {
+    super()
+  }
+  record(transition: DeliveryTransition): Promise<void> {
+    return this.runtime.recordDelivery(transition)
+  }
 }
 
 class RuntimeAuthorization extends Authorization {
-  constructor(private readonly runtime: CanopyRuntime) { super() }
+  constructor(private readonly runtime: CanopyRuntime) {
+    super()
+  }
 
   decide<Resource>(ability: string, resource?: Resource): Promise<PolicyDecision> {
     return this.runtime.decideAuthorization(ability, resource)
@@ -1440,7 +1787,9 @@ async function loadArtifacts(artifactsDirectory: string): Promise<RuntimeArtifac
     .update(canonicalJson(semanticManifest))
     .digest('hex')
   if (computedBuildHash !== declaredBuildHash) {
-    throw new RuntimeIntegrityError('Canopy manifest content does not match its build hash. Run canopy build.')
+    throw new RuntimeIntegrityError(
+      'Canopy manifest content does not match its build hash. Run canopy build.',
+    )
   }
 
   let imported: unknown
@@ -1456,7 +1805,9 @@ async function loadArtifacts(artifactsDirectory: string): Promise<RuntimeArtifac
     throw new RuntimeIntegrityError(`Registry format ${registry.formatVersion} is not supported.`)
   }
   if (registry.buildHash !== manifest.buildHash) {
-    throw new RuntimeIntegrityError('Manifest and registry build hashes do not match. Run canopy build.')
+    throw new RuntimeIntegrityError(
+      'Manifest and registry build hashes do not match. Run canopy build.',
+    )
   }
 
   const expectedIds = [
@@ -1476,11 +1827,12 @@ async function loadArtifacts(artifactsDirectory: string): Promise<RuntimeArtifac
     ...manifest.signals.map((entry) => entry.id),
     ...manifest.signalHandlers.map((entry) => entry.id),
     ...manifest.commands.map((entry) => entry.id),
-  ]
-    .sort()
+  ].sort()
   const registryIds = Object.keys(registry.constructors ?? {}).sort()
   if (JSON.stringify(expectedIds) !== JSON.stringify(registryIds)) {
-    throw new RuntimeIntegrityError('Manifest and registry constructor IDs do not match. Run canopy build.')
+    throw new RuntimeIntegrityError(
+      'Manifest and registry constructor IDs do not match. Run canopy build.',
+    )
   }
   return { manifest, registry }
 }
@@ -1489,9 +1841,8 @@ async function materializeConfigurations(
   artifacts: RuntimeArtifacts,
   options: BootOptions,
 ): Promise<Map<string, object>> {
-  const dotenv = options.dotenvPath === false
-    ? {}
-    : await loadDotenv(path.resolve(options.dotenvPath ?? '.env'))
+  const dotenv =
+    options.dotenvPath === false ? {} : await loadDotenv(path.resolve(options.dotenvPath ?? '.env'))
   const environment = options.environment ?? process.env
   const instances = new Map<string, object>()
   const issues: string[] = []
@@ -1577,14 +1928,18 @@ function constructSingletonGraph(
   overrides: Readonly<Record<string, object>>,
   logger: Logger,
 ): RuntimeGraph {
-  const providerById = new Map(artifacts.manifest.providers.map((provider) => [provider.id, provider]))
+  const providerById = new Map(
+    artifacts.manifest.providers.map((provider) => [provider.id, provider]),
+  )
   const singletonInstances = new Map<string, object>()
   const constructionStack = new Set<string>()
   const participantOrder: LifecycleParticipant[] = []
   for (const id of Object.keys(overrides)) {
     const provider = providerById.get(id)
     if (!provider || provider.scope !== 'singleton') {
-      throw new RuntimeIntegrityError(`Test provider override ${id} is not a declared singleton provider.`)
+      throw new RuntimeIntegrityError(
+        `Test provider override ${id} is not a declared singleton provider.`,
+      )
     }
   }
 
@@ -1627,12 +1982,14 @@ function constructSingletonGraph(
       const dependencies = provider.dependencies
         .filter((dependency) => dependency.kind === 'constructor')
         .map((dependency) => {
-        if (!dependency.targetId) return undefined
-        const resolved = resolve(dependency.targetId)
-        if (resolved === undefined && !dependency.optional) {
-          throw new RuntimeIntegrityError(`Required dependency ${dependency.targetId} for ${id} is unavailable.`)
-        }
-        return resolved
+          if (!dependency.targetId) return undefined
+          const resolved = resolve(dependency.targetId)
+          if (resolved === undefined && !dependency.optional) {
+            throw new RuntimeIntegrityError(
+              `Required dependency ${dependency.targetId} for ${id} is unavailable.`,
+            )
+          }
+          return resolved
         })
       const instance = new Constructor(...dependencies)
       if (provider.scope === 'singleton') {
@@ -1645,7 +2002,9 @@ function constructSingletonGraph(
     }
   }
 
-  for (const provider of [...artifacts.manifest.providers].sort((left, right) => left.id.localeCompare(right.id))) {
+  for (const provider of [...artifacts.manifest.providers].sort((left, right) =>
+    left.id.localeCompare(right.id),
+  )) {
     if (provider.scope === 'singleton') resolve(provider.id)
   }
   return {
@@ -1659,8 +2018,14 @@ class ExecutionScope {
   readonly #providerById: ReadonlyMap<string, ProviderManifestEntry>
   readonly #executableById: ReadonlyMap<
     string,
-    OperationManifestEntry | RouteManifestEntry | ListenerManifestEntry | JobManifestEntry | PolicyManifestEntry
-      | SignalHandlerManifestEntry | ObserverManifestEntry | CommandManifestEntry
+    | OperationManifestEntry
+    | RouteManifestEntry
+    | ListenerManifestEntry
+    | JobManifestEntry
+    | PolicyManifestEntry
+    | SignalHandlerManifestEntry
+    | ObserverManifestEntry
+    | CommandManifestEntry
   >
   readonly #instances = new Map<string, object>()
   readonly #constructionStack = new Set<string>()
@@ -1739,32 +2104,35 @@ class ExecutionScope {
       const dependencies = manifest.dependencies
         .filter((dependency) => dependency.kind === 'constructor')
         .map((dependency) => {
-        if (!dependency.targetId) return undefined
-        const resolved = this.resolve(dependency.targetId)
-        if (resolved === undefined && !dependency.optional) {
-          throw new RuntimeIntegrityError(
-            `Required dependency ${dependency.targetId} for ${id} is unavailable.`,
-          )
-        }
-        return resolved
-        })
-      const instance = runWithRoleConstruction({
-        logger: this.logger.channel(roleLogChannel(manifest.name)),
-        resolve: <Value extends object>(
-          token: RoleInjectionToken<Value>,
-          optional: boolean,
-        ): Value | undefined => {
-          const targetId = this.#injectionTarget(manifest, token, optional)
-          if (!targetId) return undefined
-          const resolved = this.resolve(targetId)
-          if (resolved === undefined) {
+          if (!dependency.targetId) return undefined
+          const resolved = this.resolve(dependency.targetId)
+          if (resolved === undefined && !dependency.optional) {
             throw new RuntimeIntegrityError(
-              `Required role dependency ${targetId} for ${id} is unavailable.`,
+              `Required dependency ${dependency.targetId} for ${id} is unavailable.`,
             )
           }
-          return resolved as Value
+          return resolved
+        })
+      const instance = runWithRoleConstruction(
+        {
+          logger: this.logger.channel(roleLogChannel(manifest.name)),
+          resolve: <Value extends object>(
+            token: RoleInjectionToken<Value>,
+            optional: boolean,
+          ): Value | undefined => {
+            const targetId = this.#injectionTarget(manifest, token, optional)
+            if (!targetId) return undefined
+            const resolved = this.resolve(targetId)
+            if (resolved === undefined) {
+              throw new RuntimeIntegrityError(
+                `Required role dependency ${targetId} for ${id} is unavailable.`,
+              )
+            }
+            return resolved as Value
+          },
         },
-      }, () => new Constructor(...dependencies))
+        () => new Constructor(...dependencies),
+      )
       if (manifest.scope === 'execution') this.#instances.set(id, instance)
       if (manifest.lifecycle.dispose) this.#disposables.push({ manifest, instance })
       return instance
@@ -1774,8 +2142,15 @@ class ExecutionScope {
   }
 
   #injectionTarget(
-    manifest: OperationManifestEntry | RouteManifestEntry | ListenerManifestEntry | JobManifestEntry
-      | PolicyManifestEntry | SignalHandlerManifestEntry | ObserverManifestEntry | CommandManifestEntry
+    manifest:
+      | OperationManifestEntry
+      | RouteManifestEntry
+      | ListenerManifestEntry
+      | JobManifestEntry
+      | PolicyManifestEntry
+      | SignalHandlerManifestEntry
+      | ObserverManifestEntry
+      | CommandManifestEntry
       | ProviderManifestEntry,
     token: RoleInjectionToken,
     optional: boolean,
@@ -1784,14 +2159,17 @@ class ExecutionScope {
     const builtinId = builtinInjectionId(token)
     const capability = injectionCapability(token)
     const capabilityId = capability
-      ? [...this.#providerById.values()].find((provider) => provider.capabilities.includes(capability))?.id
+      ? [...this.#providerById.values()].find((provider) =>
+          provider.capabilities.includes(capability),
+        )?.id
       : undefined
     const inferredTargetId = builtinId ?? directId ?? capabilityId
-    const dependency = manifest.dependencies.find((entry) => (
-      entry.kind === 'role'
-      && (entry.targetId === inferredTargetId
-        || (!inferredTargetId && optional && entry.optional && entry.token === token.name))
-    ))
+    const dependency = manifest.dependencies.find(
+      (entry) =>
+        entry.kind === 'role' &&
+        (entry.targetId === inferredTargetId ||
+          (!inferredTargetId && optional && entry.optional && entry.token === token.name)),
+    )
     if (!dependency || dependency.optional !== optional) {
       throw new RuntimeIntegrityError(
         `${manifest.id} attempted an undeclared this.inject(${token.name || 'anonymous'}). Run canopy build.`,
@@ -1877,16 +2255,16 @@ class ReadOnlyUnitOfWork extends UnitOfWork {
 }
 
 function assertOperationInfrastructure(manifest: CanopyManifest): void {
-  const transactionProviders = manifest.providers.filter(
-    (provider) => provider.capabilities.includes('transactions'),
+  const transactionProviders = manifest.providers.filter((provider) =>
+    provider.capabilities.includes('transactions'),
   )
   if (manifest.actions.length > 0 && transactionProviders.length !== 1) {
     throw new RuntimeIntegrityError(
       `Applications with actions require exactly one transaction provider; found ${transactionProviders.length}.`,
     )
   }
-  const queueProviders = manifest.providers.filter(
-    (provider) => provider.capabilities.includes('queues'),
+  const queueProviders = manifest.providers.filter((provider) =>
+    provider.capabilities.includes('queues'),
   )
   const hasQueuedListeners = manifest.listeners.some(
     (listener) => listener.delivery === 'queued' || listener.delivery === 'queued-after-commit',
@@ -1894,7 +2272,10 @@ function assertOperationInfrastructure(manifest: CanopyManifest): void {
   const hasCommunications = manifest.providers.some(
     (provider) => provider.capabilities.includes('mail') || provider.capabilities.includes('sms'),
   )
-  if ((manifest.jobs.length > 0 || hasQueuedListeners || hasCommunications) && queueProviders.length !== 1) {
+  if (
+    (manifest.jobs.length > 0 || hasQueuedListeners || hasCommunications) &&
+    queueProviders.length !== 1
+  ) {
     throw new RuntimeIntegrityError(
       `Applications with jobs or queued listeners require exactly one queue provider; found ${queueProviders.length}.`,
     )
@@ -1920,22 +2301,28 @@ function createExecutionContext(
     ...(seed.causationId ? { causationId: seed.causationId } : {}),
     actor: freezeActor(seed.actor),
     initiator: freezeActor(initiator),
-    delegation: Object.freeze((seed.delegation ?? []).map((hop) => Object.freeze({
-      ...hop,
-      from: freezeActor(hop.from),
-      to: freezeActor(hop.to),
-    }))),
+    delegation: Object.freeze(
+      (seed.delegation ?? []).map((hop) =>
+        Object.freeze({
+          ...hop,
+          from: freezeActor(hop.from),
+          to: freezeActor(hop.to),
+        }),
+      ),
+    ),
     ...(seed.tenant ? { tenant: Object.freeze({ ...seed.tenant }) } : {}),
-    authentication: Object.freeze(seed.authentication
-      ? {
-          ...seed.authentication,
-          ...(seed.authentication.constraints
-            ? { constraints: Object.freeze([...seed.authentication.constraints]) }
-            : {}),
-        }
-      : seed.actor.kind === 'anonymous'
-        ? { state: 'anonymous' as const }
-        : { state: 'authenticated' as const }),
+    authentication: Object.freeze(
+      seed.authentication
+        ? {
+            ...seed.authentication,
+            ...(seed.authentication.constraints
+              ? { constraints: Object.freeze([...seed.authentication.constraints]) }
+              : {}),
+          }
+        : seed.actor.kind === 'anonymous'
+          ? { state: 'anonymous' as const }
+          : { state: 'authenticated' as const },
+    ),
     transport: Object.freeze({ ...seed.transport }),
     trace: Object.freeze({
       traceId: trace.traceId ?? randomBytes(16).toString('hex'),
@@ -1950,7 +2337,9 @@ function createExecutionContext(
   return Object.freeze(context)
 }
 
-function telemetryAttributes(context: ExecutionContext): Readonly<Record<string, import('@canopy/core').JsonValue>> {
+function telemetryAttributes(
+  context: ExecutionContext,
+): Readonly<Record<string, import('@canopy/core').JsonValue>> {
   return Object.freeze({
     executionId: context.executionId,
     ...(context.sourceExecutionId ? { sourceExecutionId: context.sourceExecutionId } : {}),
@@ -1998,7 +2387,8 @@ function logContext(context: ExecutionContext): import('@canopy/core').LogContex
 }
 
 function logChannelForTransport(transport: ExecutionContext['transport']['kind']): string {
-  if (transport === 'job' || transport === 'schedule') return transport === 'job' ? 'queue' : 'schedule'
+  if (transport === 'job' || transport === 'schedule')
+    return transport === 'job' ? 'queue' : 'schedule'
   return transport
 }
 
@@ -2013,7 +2403,10 @@ function logChannelForSubsystem(subsystem: string): string {
 }
 
 function humanizeSubsystem(subsystem: string): string {
-  return subsystem.split('.').map((part) => part[0]?.toUpperCase() + part.slice(1)).join(' ')
+  return subsystem
+    .split('.')
+    .map((part) => part[0]?.toUpperCase() + part.slice(1))
+    .join(' ')
 }
 
 function queueContext(context: ExecutionContext): QueueExecutionEnvelope {
@@ -2037,9 +2430,7 @@ function queueContext(context: ExecutionContext): QueueExecutionEnvelope {
         ? { identityId: context.authentication.identityId }
         : {}),
       ...(context.authentication.method ? { method: context.authentication.method } : {}),
-      ...(context.authentication.assurance
-        ? { assurance: context.authentication.assurance }
-        : {}),
+      ...(context.authentication.assurance ? { assurance: context.authentication.assurance } : {}),
       ...(context.authentication.authenticatedAt
         ? { authenticatedAt: context.authentication.authenticatedAt.toISOString() }
         : {}),
@@ -2078,9 +2469,7 @@ function queueSeed(envelope: QueueEnvelope): ExecutionContextSeed {
         ? { identityId: context.authentication.identityId }
         : {}),
       ...(context.authentication.method ? { method: context.authentication.method } : {}),
-      ...(context.authentication.assurance
-        ? { assurance: context.authentication.assurance }
-        : {}),
+      ...(context.authentication.assurance ? { assurance: context.authentication.assurance } : {}),
       ...(context.authentication.authenticatedAt
         ? { authenticatedAt: new Date(context.authentication.authenticatedAt) }
         : {}),
@@ -2135,63 +2524,6 @@ function validateActor(actor: ActorRef, label: string): void {
   }
 }
 
-async function unwindStartup(
-  started: readonly LifecycleParticipant[],
-  deadlines: LifecycleDeadlines,
-): Promise<readonly unknown[]> {
-  const reverse = [...started].reverse()
-  const errors: unknown[] = []
-  await invokePhase(reverse, 'stop', deadlines.stop, errors)
-  await invokePhase(reverse, 'dispose', deadlines.dispose, errors)
-  return errors
-}
-
-async function invokePhase(
-  participants: readonly LifecycleParticipant[],
-  phase: 'drain' | 'stop' | 'dispose',
-  timeout: number,
-  errors: unknown[],
-): Promise<void> {
-  for (const participant of participants) {
-    if (!participant.manifest.lifecycle[phase]) continue
-    try {
-      await invokeLifecycle(participant, phase, timeout)
-    } catch (error) {
-      errors.push(error)
-    }
-  }
-}
-
-async function invokeLifecycle(
-  participant: LifecycleParticipant,
-  phase: 'start' | 'drain' | 'stop' | 'dispose',
-  timeout: number,
-): Promise<void> {
-  const method = (participant.instance as Record<string, unknown>)[phase]
-  if (typeof method !== 'function') {
-    throw new RuntimeIntegrityError(`${participant.manifest.id} declares ${phase} but has no callable method.`)
-  }
-  const controller = new AbortController()
-  const deadline = new Date(Date.now() + timeout)
-  const context: LifecycleContext = { signal: controller.signal, deadline }
-  let timer: NodeJS.Timeout | undefined
-  const timeoutPromise = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => {
-      controller.abort()
-      reject(new Error(`${participant.manifest.id} exceeded its ${phase} deadline of ${timeout}ms.`))
-    }, timeout)
-    timer.unref()
-  })
-  try {
-    await Promise.race([
-      Promise.resolve(method.call(participant.instance, context)),
-      timeoutPromise,
-    ])
-  } finally {
-    if (timer) clearTimeout(timer)
-  }
-}
-
 async function loadDotenv(dotenvPath: string): Promise<Readonly<Record<string, string>>> {
   let contents: string
   try {
@@ -2208,8 +2540,10 @@ async function loadDotenv(dotenvPath: string): Promise<Readonly<Record<string, s
     if (separator < 1) continue
     const key = line.slice(0, separator).trim()
     let value = line.slice(separator + 1).trim()
-    if ((value.startsWith('"') && value.endsWith('"'))
-      || (value.startsWith("'") && value.endsWith("'"))) {
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
       value = value.slice(1, -1)
     }
     values[key] = value
@@ -2218,8 +2552,12 @@ async function loadDotenv(dotenvPath: string): Promise<Readonly<Record<string, s
 }
 
 function isMissingFile(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error
-    && (error as { code?: unknown }).code === 'ENOENT'
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'ENOENT'
+  )
 }
 
 const BUILTIN_INJECTION_IDS = new Map<object, string>([
@@ -2264,44 +2602,6 @@ function roleLogChannel(name: string): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
-}
-
-class ObservationLogSink {
-  #observations: ObservationRecorder | undefined
-
-  constructor(private readonly primary?: LogSink) {}
-
-  attach(observations: ObservationRecorder): void { this.#observations = observations }
-
-  write(record: LogRecord): void {
-    try { this.primary?.write(record) } catch { /* Logging never changes application behavior. */ }
-    const observations = this.#observations
-    if (!observations || !record.context.executionId) return
-    const observation: Observation = Object.freeze({
-      id: randomUUID(), occurredAt: record.timestamp, kind: 'log', name: record.message, phase: 'occurred',
-      context: Object.freeze({
-        executionId: record.context.executionId,
-        ...(record.context.correlationId ? { correlationId: record.context.correlationId } : {}),
-        ...(record.context.causationId ? { causationId: record.context.causationId } : {}),
-        ...(record.context.traceId ? { traceId: record.context.traceId } : {}),
-        ...(record.context.spanId ? { spanId: record.context.spanId } : {}),
-        ...(record.context.actorKind ? { actorKind: record.context.actorKind as NonNullable<ObservationContext['actorKind']> } : {}),
-        ...(record.context.actorId ? { actorId: record.context.actorId } : {}),
-        ...(record.context.tenantId ? { tenantId: record.context.tenantId } : {}),
-        ...(record.context.transport ? { transport: record.context.transport } : {}),
-      }),
-      attributes: sanitizeObservationAttributes({ channel: record.channel, level: record.level, ...record.attributes }),
-      ...(record.error ? { error: record.error } : {}),
-    })
-    try {
-      const result = observations.record(observation)
-      if (result instanceof Promise) void result.catch(() => undefined)
-    } catch { /* Debugging never changes application behavior. */ }
-  }
-
-  async flush(): Promise<void> {
-    try { await this.primary?.flush?.() } catch { /* Logging never changes application behavior. */ }
-  }
 }
 
 function constraintAllows(constraint: string, ability: string): boolean {

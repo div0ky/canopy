@@ -1,13 +1,7 @@
 import { isDeepStrictEqual } from 'node:util'
 
-import {
-  currentModelSession,
-} from './model-session-context.js'
-import type {
-  JsonValue,
-  ModelStorage,
-  UnitOfWork,
-} from './index.js'
+import { currentModelSession } from './model-session-context.js'
+import type { JsonValue, ModelStorage, UnitOfWork } from './index.js'
 import type { ModelObserverDispatcher } from './observer.js'
 
 export interface ModelAttributes {
@@ -45,7 +39,10 @@ export interface ModelOutboxMessage<Payload extends JsonValue = JsonValue> {
 export class ModelNotFoundError extends Error {
   override readonly name = 'ModelNotFoundError'
 
-  constructor(readonly model: string, readonly id: string) {
+  constructor(
+    readonly model: string,
+    readonly id: string,
+  ) {
     super(`${model} ${id} was not found.`)
   }
 }
@@ -115,40 +112,28 @@ export abstract class Model<Attributes extends ModelAttributes = ModelAttributes
     this.attributes = clone(attributes)
   }
 
-  static find<
-    Attributes extends ModelAttributes,
-    Instance extends Model<Attributes>,
-  >(
+  static find<Attributes extends ModelAttributes, Instance extends Model<Attributes>>(
     this: ModelConstructor<Instance, Attributes>,
     id: string,
   ): Promise<Instance | undefined> {
     return requireCurrentSession().find(this, id)
   }
 
-  static findOrFail<
-    Attributes extends ModelAttributes,
-    Instance extends Model<Attributes>,
-  >(
+  static findOrFail<Attributes extends ModelAttributes, Instance extends Model<Attributes>>(
     this: ModelConstructor<Instance, Attributes>,
     id: string,
   ): Promise<Instance> {
     return requireCurrentSession().findOrFail(this, id)
   }
 
-  static make<
-    Attributes extends ModelAttributes,
-    Instance extends Model<Attributes>,
-  >(
+  static make<Attributes extends ModelAttributes, Instance extends Model<Attributes>>(
     this: ModelConstructor<Instance, Attributes>,
     attributes: Attributes,
   ): Instance {
     return requireCurrentSession().make(this, attributes)
   }
 
-  static async create<
-    Attributes extends ModelAttributes,
-    Instance extends Model<Attributes>,
-  >(
+  static async create<Attributes extends ModelAttributes, Instance extends Model<Attributes>>(
     this: ModelConstructor<Instance, Attributes>,
     attributes: Attributes,
   ): Promise<Instance> {
@@ -192,7 +177,9 @@ export abstract class Model<Attributes extends ModelAttributes = ModelAttributes
 
   getOriginal(): Partial<Attributes>
   getOriginal<Key extends keyof Attributes>(key: Key): Attributes[Key] | undefined
-  getOriginal<Key extends keyof Attributes>(key?: Key): Partial<Attributes> | Attributes[Key] | undefined {
+  getOriginal<Key extends keyof Attributes>(
+    key?: Key,
+  ): Partial<Attributes> | Attributes[Key] | undefined {
     return key ? clone(this.#original[key]) : clone(this.#original)
   }
 
@@ -272,10 +259,9 @@ export abstract class Model<Attributes extends ModelAttributes = ModelAttributes
 
   private currentChanges(): ModelChanges<Attributes> {
     const changes: ModelChanges<Attributes> = {}
-    const keys = new Set([
-      ...Object.keys(this.#original),
-      ...Object.keys(this.attributes),
-    ]) as Set<keyof Attributes>
+    const keys = new Set([...Object.keys(this.#original), ...Object.keys(this.attributes)]) as Set<
+      keyof Attributes
+    >
     for (const key of keys) {
       if (!isDeepStrictEqual(this.attributes[key], this.#original[key])) {
         changes[key] = clone(this.attributes[key])
@@ -286,7 +272,8 @@ export abstract class Model<Attributes extends ModelAttributes = ModelAttributes
 
   private attachedSession(): ModelSession {
     const current = currentModelSession<ModelSession>()
-    if (!this.#session) throw new DetachedModelError('Model is not attached to a Canopy ModelSession.')
+    if (!this.#session)
+      throw new DetachedModelError('Model is not attached to a Canopy ModelSession.')
     if (!current || current !== this.#session || !current.active) {
       throw new StaleModelError('Model belongs to an execution that is no longer active.')
     }
@@ -300,7 +287,10 @@ export class ModelSession {
 
   constructor(
     private readonly unitOfWork: UnitOfWork,
-    private readonly models: ReadonlyMap<Function, { readonly entityType: string; readonly storage: ModelStorage }>,
+    private readonly models: ReadonlyMap<
+      Function,
+      { readonly entityType: string; readonly storage: ModelStorage }
+    >,
     private readonly observers?: ModelObserverDispatcher,
   ) {}
 
@@ -308,10 +298,7 @@ export class ModelSession {
     return this.#active
   }
 
-  async find<
-    Attributes extends ModelAttributes,
-    Instance extends Model<Attributes>,
-  >(
+  async find<Attributes extends ModelAttributes, Instance extends Model<Attributes>>(
     Constructor: ModelConstructor<Instance, Attributes>,
     id: string,
   ): Promise<Instance | undefined> {
@@ -331,10 +318,7 @@ export class ModelSession {
     return model
   }
 
-  async findOrFail<
-    Attributes extends ModelAttributes,
-    Instance extends Model<Attributes>,
-  >(
+  async findOrFail<Attributes extends ModelAttributes, Instance extends Model<Attributes>>(
     Constructor: ModelConstructor<Instance, Attributes>,
     id: string,
   ): Promise<Instance> {
@@ -343,10 +327,7 @@ export class ModelSession {
     return model
   }
 
-  make<
-    Attributes extends ModelAttributes,
-    Instance extends Model<Attributes>,
-  >(
+  make<Attributes extends ModelAttributes, Instance extends Model<Attributes>>(
     Constructor: ModelConstructor<Instance, Attributes>,
     attributes: Attributes,
   ): Instance {
@@ -454,9 +435,15 @@ export class ModelSession {
     this.#identityMap.clear()
   }
 
-  private definitionFor(Constructor: Function): { readonly entityType: string; readonly storage: ModelStorage } {
+  private definitionFor(Constructor: Function): {
+    readonly entityType: string
+    readonly storage: ModelStorage
+  } {
     const definition = this.models.get(Constructor)
-    if (!definition) throw new ModelNotRegisteredError(`${Constructor.name} is not declared by a selected Feature.`)
+    if (!definition)
+      throw new ModelNotRegisteredError(
+        `${Constructor.name} is not declared by a selected Feature.`,
+      )
     return definition
   }
 

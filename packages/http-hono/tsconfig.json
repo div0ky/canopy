@@ -3,11 +3,8 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "tsBuildInfoFile": "dist/.tsbuildinfo"
+    "tsBuildInfoFile": "../../.cache/tsbuildinfo/http-hono.tsbuildinfo"
   },
-  "references": [
-    { "path": "../core" },
-    { "path": "../runtime" }
-  ],
+  "references": [{ "path": "../core" }, { "path": "../runtime" }],
   "include": ["src/**/*.ts"]
 }

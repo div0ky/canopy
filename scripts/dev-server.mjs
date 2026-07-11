@@ -7,8 +7,8 @@ import { Application } from '../examples/persistence-app/dist/application.js'
 
 const workspace = process.cwd()
 const artifactsDirectory = path.join(workspace, '.canopy/dev')
-const connectionString = process.env.DATABASE_CONNECTION_STRING
-  ?? 'postgresql://canopy:canopy@127.0.0.1:54329/canopy'
+const connectionString =
+  process.env.DATABASE_CONNECTION_STRING ?? 'postgresql://canopy:canopy@127.0.0.1:54329/canopy'
 const port = numberFromEnvironment('PORT', 3000)
 const hostname = process.env.HOST ?? '127.0.0.1'
 

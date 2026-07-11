@@ -21,8 +21,8 @@ infrastructure engines and vendor SDKs
 ```
 
 Feature code may depend on domain code and Canopy contracts. Adapters may depend on both Canopy
-contracts and their engine. Infrastructure engines must not appear in feature signatures,
-metadata, exceptions, test assertions, or generated application contracts.
+contracts and their engine. Infrastructure engines must not appear in feature signatures, metadata,
+exceptions, test assertions, or generated application contracts.
 
 The rule is semantic as well as syntactic. Renaming an engine type behind a Canopy export does not
 create a boundary if the engine still dictates application behavior.
@@ -45,14 +45,13 @@ application graph, and that graph should have deterministic ordering and diagnos
 ## The application manifest
 
 Every supported declaration style should compile to one framework-owned manifest. Decorators,
-builder functions, generated metadata, and future syntax are front ends; the manifest is the
-runtime contract.
+builder functions, generated metadata, and future syntax are front ends; the manifest is the runtime
+contract.
 
-For the MVP, the application root explicitly selects class-first Features, and each Feature
-declares its framework-facing classes through role arrays. Canopy automatically follows and wires
-the concrete constructor dependencies beneath those declarations. This keeps composition visible
-without requiring handwritten provider registration for every service. The accepted direction is
-defined in
+For the MVP, the application root explicitly selects class-first Features, and each Feature declares
+its framework-facing classes through role arrays. Canopy automatically follows and wires the
+concrete constructor dependencies beneath those declarations. This keeps composition visible without
+requiring handwritten provider registration for every service. The accepted direction is defined in
 [Explicit features and one generated manifest](decisions/0014-explicit-features-generated-manifest.md).
 
 File and folder paths are source provenance, not application semantics. A class's owning Feature,
@@ -77,37 +76,37 @@ The manifest should make it possible to answer, before serving traffic:
 - Which infrastructure capabilities does the application require?
 - Which startup and shutdown dependencies determine ordering?
 
-This shared representation is the basis for boot validation, diagnostics, generators, API
-contracts, test applications, and static analysis.
+This shared representation is the basis for boot validation, diagnostics, generators, API contracts,
+test applications, and static analysis.
 
 The compiler materializes that representation as canonical `.canopy/manifest.json` plus a
-constructor-only `.canopy/registry.mjs`. Tools may read the JSON without executing application
-code. The runtime uses the registry only to link manifest IDs to constructors, and it rejects
-artifacts whose required build hashes do not match.
+constructor-only `.canopy/registry.mjs`. Tools may read the JSON without executing application code.
+The runtime uses the registry only to link manifest IDs to constructors, and it rejects artifacts
+whose required build hashes do not match.
 
 The compiled application graph is immutable. Runtime code cannot register or replace capabilities,
 and development reload boots a newly compiled replacement runtime. Dynamic configuration and
 business data influence declared behavior without redefining the manifest.
 
-`.canopy/` is deterministic, gitignored build output. Development, tests, packaging, CLI
-inspection, and Cultivate regenerate or require it; production bundles include it. Source control
-retains the declarations and schemas from which the graph is derived, not the generated graph.
+`.canopy/` is deterministic, gitignored build output. Development, tests, packaging, CLI inspection,
+and Cultivate regenerate or require it; production bundles include it. Source control retains the
+declarations and schemas from which the graph is derived, not the generated graph.
 
-Compilation belongs to tooling. `Canopy.boot()` validates and consumes existing artifacts but
-never analyzes TypeScript or generates the graph. Production runtime therefore has no compiler
-dependency and fails actionably when required artifacts are unavailable or incompatible.
+Compilation belongs to tooling. `Canopy.boot()` validates and consumes existing artifacts but never
+analyzes TypeScript or generates the graph. Production runtime therefore has no compiler dependency
+and fails actionably when required artifacts are unavailable or incompatible.
 
-Every framework-facing declaration has an explicit stable ID. The compiler combines role,
-owning Feature, and local ID into canonical identity. Paths, source locations, and class names are
+Every framework-facing declaration has an explicit stable ID. The compiler combines role, owning
+Feature, and local ID into canonical identity. Paths, source locations, and class names are
 provenance rather than identity, so moving or renaming code cannot silently break durable links.
 
 The manifest format carries an independent version. Runtime and tooling consume only explicitly
 supported versions and fail before interpretation when compatibility is unknown. Package versions
 remain provenance and do not replace the manifest-format contract.
 
-Manifest compilation fails closed. Only statically provable declarations and recognized helpers
-may shape the application graph. Environment values remain runtime configuration; they cannot
-silently add, remove, or reinterpret application capabilities after compilation.
+Manifest compilation fails closed. Only statically provable declarations and recognized helpers may
+shape the application graph. Environment values remain runtime configuration; they cannot silently
+add, remove, or reinterpret application capabilities after compilation.
 
 Canonical artifact emission requires a semantically valid strict TypeScript application. The
 compiler resolves actual program symbols and types; regexes, textual names, and syntax-only scans
@@ -122,16 +121,16 @@ not independent application dependency choices.
 
 The runtime owns one lifecycle: `start → ready → drain → stop → dispose`. Providers may implement
 the optional `start()`, `drain()`, `stop()`, and `dispose()` phases. Readiness is a runtime state
-reached only after manifest and configuration validation, pure construction, successful startup,
-and required readiness checks.
+reached only after manifest and configuration validation, pure construction, successful startup, and
+required readiness checks.
 
 Application code boots through `Canopy.boot(Application)`, which resolves only with a ready runtime,
-and shuts down through idempotent `runtime.shutdown()`. Individual lifecycle transitions are not
-an ordinary application control surface.
+and shuts down through idempotent `runtime.shutdown()`. Individual lifecycle transitions are not an
+ordinary application control surface.
 
-Drain ends admission before stop ends active behavior, and dispose then releases resources.
-Partial startup never reaches readiness and unwinds every successfully started participant. The
-accepted lifecycle direction is defined in
+Drain ends admission before stop ends active behavior, and dispose then releases resources. Partial
+startup never reaches readiness and unwinds every successfully started participant. The accepted
+lifecycle direction is defined in
 [Runtime-owned deterministic lifecycle](decisions/0017-deterministic-runtime-lifecycle.md).
 
 Lifecycle ordering follows dependency edges only: dependencies start before their dependents and
@@ -156,9 +155,9 @@ A request, scheduled invocation, console command, or dequeued job begins an exec
 context gives framework services a common view of identity and causality without turning it into a
 global bag of arbitrary state.
 
-Zero-registration concrete services and handler roots are transient. Execution-scoped and
-singleton lifetimes require explicit manifest declarations. This prevents incidental mutable state
-from becoming shared merely because a class was autowired.
+Zero-registration concrete services and handler roots are transient. Execution-scoped and singleton
+lifetimes require explicit manifest declarations. This prevents incidental mutable state from
+becoming shared merely because a class was autowired.
 
 Each admitted entry point owns one execution scope. Inline actions, queries, Units of Work,
 observers, listeners, and services share it. Durable asynchronous work receives a fresh scope when
@@ -175,10 +174,10 @@ syntax receives its valid binding when present or `undefined` when absent, and t
 recorded in the manifest. Optionality never hides ambiguity, visibility, scope, cycle, or
 construction failures.
 
-Container-managed constructors are synchronous and side-effect-free. They may initialize local
-state but cannot perform I/O, start active behavior, acquire asynchronous resources, register
-global listeners, or mutate the graph. Those effects belong to explicit lifecycle phases so
-startup failure can be unwound deterministically.
+Container-managed constructors are synchronous and side-effect-free. They may initialize local state
+but cannot perform I/O, start active behavior, acquire asynchronous resources, register global
+listeners, or mutate the graph. Those effects belong to explicit lifecycle phases so startup failure
+can be unwound deterministically.
 
 The initial context contract should account for:
 
@@ -190,8 +189,8 @@ The initial context contract should account for:
 - Deadline, cancellation, and shutdown signals.
 - The active dependency and unit-of-work scope.
 
-Context propagation across process boundaries must be versioned and explicit. Sensitive fields
-must not be serialized merely because they exist locally.
+Context propagation across process boundaries must be versioned and explicit. Sensitive fields must
+not be serialized merely because they exist locally.
 
 The proposed actor, authorization, and propagation contract is developed in
 [Actor, Execution Context, and Authorization](specifications/actor-execution-context-authorization.md).
@@ -211,15 +210,15 @@ for a documented reason, action execution should:
 8. Release after-commit listeners and queued delivery.
 9. Serialize the result at the transport boundary.
 
-Observers need named phases. Code that runs before persistence, after persistence but before
-commit, and after commit has materially different guarantees and must not share an ambiguous hook.
+Observers need named phases. Code that runs before persistence, after persistence but before commit,
+and after commit has materially different guarantees and must not share an ambiguous hook.
 
 ## Persistent model runtime
 
-Canopy owns an Eloquent-like persistent model experience above its private database engine.
-Hydrated models are attached to the active execution-scoped model session and unit of work. They
-may expose `save()`, `delete()`, `refresh()`, dirty tracking, original values, changed values, and
-lifecycle state without importing Drizzle or database records into domain code.
+Canopy owns an Eloquent-like persistent model experience above its private database engine. Hydrated
+models are attached to the active execution-scoped model session and unit of work. They may expose
+`save()`, `delete()`, `refresh()`, dirty tracking, original values, changed values, and lifecycle
+state without importing Drizzle or database records into domain code.
 
 Model methods persist through registered mappers. An attached model's `save()` writes through the
 active transaction, enforces optimistic concurrency, coordinates lifecycle observers, and stages
@@ -236,8 +235,8 @@ The accepted model-runtime decision is defined in
 ## Reads
 
 Queries express reads and do not silently acquire mutation semantics. They may use repositories,
-read models, or optimized query engines behind Canopy-owned contracts. Their authorization,
-context, tracing, serialization, and error behavior should still align with actions.
+read models, or optimized query engines behind Canopy-owned contracts. Their authorization, context,
+tracing, serialization, and error behavior should still align with actions.
 
 Canopy need not force every read through hydrated domain models. It must make the distinction
 between domain state and purpose-built projections clear.
@@ -246,12 +245,12 @@ between domain state and purpose-built projections clear.
 
 Large application behavior may be decomposed into focused services, helpers, and internal modules
 without creating new framework concepts. A concrete class reached from a declared Feature role's
-`this.inject()` call, or through another service's constructor graph, is autowired automatically.
-It requires no base class, decorator, provider entry, or Feature role-array registration.
+`this.inject()` call, or through another service's constructor graph, is autowired automatically. It
+requires no base class, decorator, provider entry, or Feature role-array registration.
 
-Model methods retain entity invariants. Actions retain use-case and transaction coordination.
-Domain and application services hold reusable rules and orchestration that would otherwise make
-those classes unwieldy. Pure calculations may remain functions or value objects rather than
+Model methods retain entity invariants. Actions retain use-case and transaction coordination. Domain
+and application services hold reusable rules and orchestration that would otherwise make those
+classes unwieldy. Pure calculations may remain functions or value objects rather than
 container-managed classes.
 
 The dependency closure beneath a Feature is private by default. Cross-feature concrete service
@@ -261,8 +260,8 @@ tokens are introduced only when polymorphism, replacement, isolation, or infrast
 justify them. Consumers never import the providing Feature or trace module import/export chains.
 
 Folder nesting is organizational only. An internal business area becomes a Feature when it needs
-independent framework-facing behavior, lifecycle, configuration, or cross-feature capabilities;
-it does not become one merely because it has many files.
+independent framework-facing behavior, lifecycle, configuration, or cross-feature capabilities; it
+does not become one merely because it has many files.
 
 ## Configuration
 
@@ -279,27 +278,26 @@ enter the manifest or diagnostics.
 
 ## Durable side effects
 
-Remote side effects do not occur inside a database transaction. Mutating work records durable
-intent in the outbox, and a delivery runtime claims and dispatches that intent after commit.
+Remote side effects do not occur inside a database transaction. Mutating work records durable intent
+in the outbox, and a delivery runtime claims and dispatches that intent after commit.
 
 Canopy's application-facing event experience is class-first and Laravel-like: a named event may be
-dispatched from any framework-managed execution, and typed listener classes declare how they
-react. `Event` represents general application dispatch. `DomainEvent` represents an accepted
-domain fact that participates in the Unit of Work and journal. `Signal` remains immediate,
-non-durable framework coordination. The accepted direction is defined in
-[Laravel-like class events](decisions/0015-laravel-like-class-events.md).
-The initial executable boundary is recorded in the
+dispatched from any framework-managed execution, and typed listener classes declare how they react.
+`Event` represents general application dispatch. `DomainEvent` represents an accepted domain fact
+that participates in the Unit of Work and journal. `Signal` remains immediate, non-durable framework
+coordination. The accepted direction is defined in
+[Laravel-like class events](decisions/0015-laravel-like-class-events.md). The initial executable
+boundary is recorded in the
 [class events vertical slice](implementation/class-events-vertical-slice.md).
 
-The journal explains accepted domain changes. The outbox drives work that must leave the
-transaction boundary. They may share metadata and atomic persistence, but they are not the same
-thing.
+The journal explains accepted domain changes. The outbox drives work that must leave the transaction
+boundary. They may share metadata and atomic persistence, but they are not the same thing.
 
 The initial executable job and worker boundary is recorded in the
 [pg-boss queue and worker vertical slice](implementation/pg-boss-queue-worker-vertical-slice.md).
 
-Listeners should declare whether they are local, after-commit, or queued. Delivery semantics,
-retry behavior, idempotency expectations, and terminal failure must be observable.
+Listeners should declare whether they are local, after-commit, or queued. Delivery semantics, retry
+behavior, idempotency expectations, and terminal failure must be observable.
 
 ## Transport adapters
 
@@ -307,8 +305,8 @@ HTTP is the first transport, with Hono as the initial private engine. Canopy rou
 authentication, error documents, and resources compile into the Hono adapter. Application code may
 use Web Standards `Request` and `Response` only through explicit escape hatches.
 
-Other transports should reuse the application model rather than invent parallel models for
-actions, authorization, validation, context, and errors.
+Other transports should reuse the application model rather than invent parallel models for actions,
+authorization, validation, context, and errors.
 
 The initial executable adapter boundary is recorded in the
 [Hono HTTP vertical slice](implementation/hono-http-vertical-slice.md).
@@ -331,9 +329,9 @@ the application model, not to promise a marketplace of interchangeable engines.
 ## Package boundaries
 
 Application code uses one primary programming-model package, `@canopy/core`. Testing and
-infrastructure adapters use separate public surfaces such as `@canopy/testing`,
-`@canopy/http-hono`, and `@canopy/postgres-drizzle`. Compiler, registry, container, lifecycle, and
-runtime implementation packages do not become application dependencies.
+infrastructure adapters use separate public surfaces such as `@canopy/testing`, `@canopy/http-hono`,
+and `@canopy/postgres-drizzle`. Compiler, registry, container, lifecycle, and runtime implementation
+packages do not become application dependencies.
 
 The MVP physically separates `@canopy/core`, `@canopy/manifest`, `@canopy/compiler`,
 `@canopy/runtime`, `@canopy/testing`, and `@canopy/cli`. The package graph must preserve four
@@ -344,8 +342,8 @@ conceptual zones:
 3. First-party adapters that bind contracts to selected engines.
 4. Tooling and testing packages that consume the same manifest and lifecycle model.
 
-Cycles between these zones are architectural defects. An adapter may extend Canopy; Canopy's
-kernel must not require a concrete adapter in order to be understood or tested.
+Cycles between these zones are architectural defects. An adapter may extend Canopy; Canopy's kernel
+must not require a concrete adapter in order to be understood or tested.
 
 Runtime cannot depend on the compiler or TypeScript source analysis. Manifest remains a data-only
 contract package. CI rejects cycles and forbidden dependency directions.

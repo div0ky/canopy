@@ -49,10 +49,10 @@ export class IncrementCounterRoute extends Route {
 ```
 
 The Feature declares `routes = [IncrementCounterRoute]`. Folder names remain irrelevant. Routes
-receive scoped dependencies through `this.inject()` and normally return only their payload. Canopy wraps every
-JSON-compatible value in the canonical `{ ok: true, data }` envelope. `undefined` produces a 204;
-an explicit `Response` is the visible escape hatch for streams, files, redirects, webhooks, or
-unusual protocol behavior.
+receive scoped dependencies through `this.inject()` and normally return only their payload. Canopy
+wraps every JSON-compatible value in the canonical `{ ok: true, data }` envelope. `undefined`
+produces a 204; an explicit `Response` is the visible escape hatch for streams, files, redirects,
+webhooks, or unusual protocol behavior.
 
 `HttpRequest` provides the raw Web Standards `Request` plus path parameters, URL queries, headers,
 JSON/text body parsing, and Standard Schema validation. Zod is the pinned documented default, but
@@ -60,9 +60,9 @@ the public validation contract does not depend on Zod types.
 
 ## Compilation and adaptation
 
-The semantic compiler verifies each declared route's concrete role, stable ID, HTTP method,
-absolute path, single `handle(request)` method, dependency graph, and lifecycle restrictions. It
-rejects duplicate method/path pairs before boot.
+The semantic compiler verifies each declared route's concrete role, stable ID, HTTP method, absolute
+path, single `handle(request)` method, dependency graph, and lifecycle restrictions. It rejects
+duplicate method/path pairs before boot.
 
 The generated manifest is the only route table consumed by `@canopy/http-hono`. The adapter
 registers those facts with Hono and calls back into the runtime by stable route ID. It never scans
@@ -86,9 +86,9 @@ process-global signal handlers.
 Each matched request creates one Canopy execution scope. In this original proof the HTTP adapter
 established an anonymous actor and never trusted identity headers. The later
 [email and password authentication vertical slice](email-password-auth-vertical-slice.md) now asks
-the runtime to resolve a first-party session before admission. The
-request signal participates in execution cancellation. A valid `X-Correlation-ID` is preserved;
-otherwise the runtime creates one and returns it as a response header.
+the runtime to resolve a first-party session before admission. The request signal participates in
+execution cancellation. A valid `X-Correlation-ID` is preserved; otherwise the runtime creates one
+and returns it as a response header.
 
 The adapter returns the stable `{ ok: false, code, message, data: null, details? }` envelope for:
 

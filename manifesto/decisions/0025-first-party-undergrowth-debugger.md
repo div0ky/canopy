@@ -9,8 +9,8 @@
 
 Canopy will provide **Undergrowth**, a first-party, optional development debugger inspired by
 Laravel Telescope. Undergrowth records typed framework observations and presents requests,
-operations, persistence, models, events, signals, queues, authorization, communications, logs,
-and failures as one causal timeline.
+operations, persistence, models, events, signals, queues, authorization, communications, logs, and
+failures as one causal timeline.
 
 > Undergrowth reveals everything happening beneath your Canopy.
 
@@ -39,8 +39,8 @@ no-op. Application roles never call Undergrowth directly.
 ## Causal timeline
 
 Every observation carries the applicable execution, correlation, causation, trace, actor, tenant,
-transport, and stable manifest-role identity. The primary UI is an execution timeline rather than
-an unrelated list of database rows:
+transport, and stable manifest-role identity. The primary UI is an execution timeline rather than an
+unrelated list of database rows:
 
 ```text
 POST /orders
@@ -64,8 +64,8 @@ The first-party recorder stores observations in PostgreSQL so HTTP, worker, sche
 processes contribute to the same view and evidence survives hot reload. Undergrowth owns only its
 namespaced tables and migrations.
 
-Retention is bounded by default. Age and maximum-entry limits are explicit configuration, pruning
-is available through Arbor, and automatic pruning may run probabilistically without delaying the
+Retention is bounded by default. Age and maximum-entry limits are explicit configuration, pruning is
+available through Arbor, and automatic pruning may run probabilistically without delaying the
 observed execution. Undergrowth is not an indefinite audit archive.
 
 ## Safety boundaries
@@ -88,15 +88,15 @@ Canopy core owns a stable `Observation` contract and an `ObservationRecorder` po
 first-party adapters emit semantic observations at owned boundaries. Undergrowth implements the
 port; telemetry providers remain independently selectable.
 
-The recorder receives already-sanitized immutable values. Dynamic arbitrary objects and raw
-errors do not cross the contract. Cultivate consumes the observation vocabulary and stable role
-IDs so it can explain timeline entries and link them to source declarations.
+The recorder receives already-sanitized immutable values. Dynamic arbitrary objects and raw errors
+do not cross the contract. Cultivate consumes the observation vocabulary and stable role IDs so it
+can explain timeline entries and link them to source declarations.
 
 ## Consequences
 
 - Debugging follows one execution across framework subsystems and asynchronous boundaries.
-- Runtime and adapters must expose semantic observation points instead of relying on incidental
-  log parsing.
+- Runtime and adapters must expose semantic observation points instead of relying on incidental log
+  parsing.
 - The observation contract becomes a versioned application-facing guarantee.
 - PostgreSQL writes add development overhead, bounded by optional installation and retention.
 - Undergrowth must remain useful without becoming a production APM or audit substitute.

@@ -10,16 +10,16 @@ Canopy will not yet ship a first-party roles, memberships, grants, or permission
 model. The framework's actor, stable ability, default-deny policy, resource authorization, bearer
 constraint, audit, manifest, diagnostic, and testing contracts remain core and implemented.
 
-Applications may supply permission facts to policies from their own database or services. Roles
-are application facts, not actor kinds. A bearer-token constraint may only narrow authority and
-must never become a permission grant.
+Applications may supply permission facts to policies from their own database or services. Roles are
+application facts, not actor kinds. A bearer-token constraint may only narrow authority and must
+never become a permission grant.
 
 ## Why defer it
 
 Role-based access control is only one authorization strategy. Shipping tables prematurely would
-force assumptions about tenants, organizations, role inheritance, explicit denial, temporal
-grants, resource scope, and existing enterprise identity data. Those choices are difficult to
-reverse and are not required for Canopy policies to authorize real applications today.
+force assumptions about tenants, organizations, role inheritance, explicit denial, temporal grants,
+resource scope, and existing enterprise identity data. Those choices are difficult to reverse and
+are not required for Canopy policies to authorize real applications today.
 
 Existing-database mapping should stabilize first. A later first-party permissions package must be
 able to use either Canopy-owned tables or an existing application's role and membership schema
@@ -36,7 +36,7 @@ export class OrderPolicy extends Policy<Order> {
   private readonly access = this.inject(ApplicationAccess)
 
   async decide(request: PolicyRequest<Order>) {
-    if (!await this.access.has(request.actor, request.ability, request.tenant)) {
+    if (!(await this.access.has(request.actor, request.ability, request.tenant))) {
       return deny('order', 'permission_required')
     }
     return request.resource && request.resource.ownerId !== request.actor.id
@@ -46,9 +46,9 @@ export class OrderPolicy extends Policy<Order> {
 }
 ```
 
-`ApplicationAccess` is ordinary application code and may query legacy tables, call another
-service, or implement a bespoke capability model. Canopy continues to compile the ability owner,
-enforce default denial, and audit the final policy decision.
+`ApplicationAccess` is ordinary application code and may query legacy tables, call another service,
+or implement a bespoke capability model. Canopy continues to compile the ability owner, enforce
+default denial, and audit the final policy decision.
 
 ## Revisit when
 

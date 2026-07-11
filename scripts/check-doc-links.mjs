@@ -1,9 +1,23 @@
 import { access, readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 
-const roots = ['README.md', 'manifesto']
+const roots = [
+  '.changeset/README.md',
+  'CHANGELOG.md',
+  'CODE_OF_CONDUCT.md',
+  'CONTRIBUTING.md',
+  'GOVERNANCE.md',
+  'MAINTAINERS.md',
+  'README.md',
+  'SECURITY.md',
+  'SUPPORT.md',
+  'docs',
+  'examples',
+  'manifesto',
+  'packages',
+]
 const files = []
-for (const root of roots) files.push(...await markdownFiles(root))
+for (const root of roots) files.push(...(await markdownFiles(root)))
 const missing = []
 for (const file of files) {
   const source = await readFile(file, 'utf8')
@@ -11,8 +25,11 @@ for (const file of files) {
     const raw = match[1].trim().replace(/^<|>$/g, '')
     if (!raw || raw.startsWith('#') || /^[a-z]+:/i.test(raw)) continue
     const target = decodeURIComponent(raw.split('#', 1)[0])
-    try { await access(path.resolve(path.dirname(file), target)) }
-    catch { missing.push(`${file}: missing ${raw}`) }
+    try {
+      await access(path.resolve(path.dirname(file), target))
+    } catch {
+      missing.push(`${file}: missing ${raw}`)
+    }
   }
 }
 if (missing.length > 0) {
@@ -27,7 +44,7 @@ async function markdownFiles(target) {
   const files = []
   for (const entry of await readdir(target, { withFileTypes: true })) {
     const child = path.join(target, entry.name)
-    if (entry.isDirectory()) files.push(...await markdownFiles(child))
+    if (entry.isDirectory()) files.push(...(await markdownFiles(child)))
     else if (entry.isFile() && child.endsWith('.md')) files.push(child)
   }
   return files

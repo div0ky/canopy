@@ -8,8 +8,8 @@
 - **Decision:** [0013: Cultivate](../decisions/0013-first-party-ai-engineering-mcp.md)
 
 Cultivate will provide Canopy's Laravel Boost-like developer experience: a local MCP server,
-version-aware documentation, framework guidelines, focused agent skills, application inspection,
-and carefully controlled engineering workflows.
+version-aware documentation, framework guidelines, focused agent skills, application inspection, and
+carefully controlled engineering workflows.
 
 ## Product shape
 
@@ -86,8 +86,8 @@ These requirements improve Canopy's ordinary human tooling and keep the later MC
 - Migration planning without automatic production application.
 - Explicitly privileged operational tools where justified.
 
-Remote application MCP endpoints and arbitrary evaluation are separate product decisions and are
-not implied by this developer-tool direction.
+Remote application MCP endpoints and arbitrary evaluation are separate product decisions and are not
+implied by this developer-tool direction.
 
 ## Success criteria
 

@@ -121,7 +121,7 @@ export class Logger {
     this.write(
       'error',
       message,
-      hasError ? attributes : errorOrAttributes as Readonly<Record<string, unknown>> | undefined,
+      hasError ? attributes : (errorOrAttributes as Readonly<Record<string, unknown>> | undefined),
       hasError ? errorOrAttributes : undefined,
     )
   }
@@ -137,7 +137,7 @@ export class Logger {
     this.write(
       'fatal',
       message,
-      hasError ? attributes : errorOrAttributes as Readonly<Record<string, unknown>> | undefined,
+      hasError ? attributes : (errorOrAttributes as Readonly<Record<string, unknown>> | undefined),
       hasError ? errorOrAttributes : undefined,
     )
   }
@@ -200,14 +200,13 @@ export class ConsoleLogSink extends LogSink {
   }
 
   write(record: LogRecord): void {
-    this.#destination.write(`${this.#format === 'json' ? JSON.stringify(record) : formatPrettyLog(record, this.#color)}\n`)
+    this.#destination.write(
+      `${this.#format === 'json' ? JSON.stringify(record) : formatPrettyLog(record, this.#color)}\n`,
+    )
   }
 }
 
-export function runWithLogContext<Output>(
-  context: LogContext,
-  work: () => Output,
-): Output {
+export function runWithLogContext<Output>(context: LogContext, work: () => Output): Output {
   return contextStorage.run(Object.freeze({ ...context }), work)
 }
 
@@ -218,7 +217,9 @@ export function formatPrettyLog(record: LogRecord, color = false): string {
   const message = paint(record.message, levelColor(record.level), color)
   const fields = {
     ...record.attributes,
-    ...(record.error && record.context.correlationId ? { correlation: record.context.correlationId } : {}),
+    ...(record.error && record.context.correlationId
+      ? { correlation: record.context.correlationId }
+      : {}),
     ...(record.error ? { error: `${record.error.name}: ${record.error.message}` } : {}),
   }
   const rendered = Object.entries(fields)
@@ -231,14 +232,20 @@ export function formatPrettyLog(record: LogRecord, color = false): string {
   return `${prefix} ${message}${rendered ? ` ${rendered}` : ''}`
 }
 
-function sanitizeAttributes(attributes: Readonly<Record<string, unknown>>): Readonly<Record<string, JsonValue>> {
-  return Object.fromEntries(Object.entries(attributes).map(([key, value]) => [
-    key,
-    isSensitiveKey(key) ? '[REDACTED]' : sanitizeValue(value, new WeakSet(), 0),
-  ]))
+function sanitizeAttributes(
+  attributes: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, JsonValue>> {
+  return Object.fromEntries(
+    Object.entries(attributes).map(([key, value]) => [
+      key,
+      isSensitiveKey(key) ? '[REDACTED]' : sanitizeValue(value, new WeakSet(), 0),
+    ]),
+  )
 }
 
-function safeSanitizeAttributes(attributes: Readonly<Record<string, unknown>>): Readonly<Record<string, JsonValue>> {
+function safeSanitizeAttributes(
+  attributes: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, JsonValue>> {
   try {
     return sanitizeAttributes(attributes)
   } catch {
@@ -262,7 +269,8 @@ function sanitizeValue(value: unknown, seen: WeakSet<object>, depth: number): Js
   if (value === undefined) return '[undefined]'
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
   if (typeof value === 'number') return Number.isFinite(value) ? value : String(value)
-  if (typeof value === 'bigint' || typeof value === 'symbol' || typeof value === 'function') return String(value)
+  if (typeof value === 'bigint' || typeof value === 'symbol' || typeof value === 'function')
+    return String(value)
   if (value instanceof Date) return value.toISOString()
   if (value instanceof Error) return `${value.name}: ${value.message}`
   if (depth >= 8) return '[MAX_DEPTH]'
@@ -271,10 +279,12 @@ function sanitizeValue(value: unknown, seen: WeakSet<object>, depth: number): Js
   seen.add(value)
   try {
     if (Array.isArray(value)) return value.map((item) => sanitizeValue(item, seen, depth + 1))
-    return Object.fromEntries(Object.entries(value).map(([key, child]) => [
-      key,
-      isSensitiveKey(key) ? '[REDACTED]' : sanitizeValue(child, seen, depth + 1),
-    ]))
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [
+        key,
+        isSensitiveKey(key) ? '[REDACTED]' : sanitizeValue(child, seen, depth + 1),
+      ]),
+    )
   } finally {
     seen.delete(value)
   }
@@ -294,24 +304,35 @@ function sanitizeError(error: unknown, seen = new Set<unknown>()): LogError {
 
 function isSensitiveKey(key: string): boolean {
   const segmented = key.replace(/([a-z0-9])([A-Z])/g, '$1_$2')
-  return /(^|[-_.])(password|passphrase|secret|token|authorization|cookie|set-cookie|api[-_]?key|private[-_]?key)([-_.]|$)/i.test(segmented)
+  return /(^|[-_.])(password|passphrase|secret|token|authorization|cookie|set-cookie|api[-_]?key|private[-_]?key)([-_.]|$)/i.test(
+    segmented,
+  )
 }
 
 function redactText(value: string): string {
   return value
     .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [REDACTED]')
-    .replace(/\b(postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis):\/\/([^:\s/@]+):([^@\s/]+)@/gi, '$1://$2:[REDACTED]@')
+    .replace(
+      /\b(postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis):\/\/([^:\s/@]+):([^@\s/]+)@/gi,
+      '$1://$2:[REDACTED]@',
+    )
     .replace(/\b(password|passphrase|secret|token|api[-_]?key)=([^\s,;]+)/gi, '$1=[REDACTED]')
 }
 
 function isSecretValue(value: unknown): boolean {
-  return typeof value === 'object' && value !== null
-    && value.constructor?.name === 'SecretString'
-    && String(value) === '[REDACTED]'
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    value.constructor?.name === 'SecretString' &&
+    String(value) === '[REDACTED]'
+  )
 }
 
 function normalizeChannel(channel: string): string {
-  const normalized = channel.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-')
+  const normalized = channel
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
   return normalized || 'app'
 }
 
@@ -334,7 +355,14 @@ function renderPrettyField(key: string, value: JsonValue | undefined, color: boo
 
 type AnsiColor = 'dim' | 'red' | 'yellow' | 'green' | 'blue' | 'magenta' | 'cyan' | 'gray'
 const ANSI: Readonly<Record<AnsiColor, number>> = {
-  dim: 2, red: 31, yellow: 33, green: 32, blue: 34, magenta: 35, cyan: 36, gray: 90,
+  dim: 2,
+  red: 31,
+  yellow: 33,
+  green: 32,
+  blue: 34,
+  magenta: 35,
+  cyan: 36,
+  gray: 90,
 }
 
 function paint(value: string, color: AnsiColor, enabled: boolean): string {

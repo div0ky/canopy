@@ -40,54 +40,66 @@ export interface DurableExecutionEnvelope {
   }
 }
 
-export const entityStates = pgTable('canopy_entity_states', {
-  entityType: text('entity_type').notNull(),
-  entityId: text('entity_id').notNull(),
-  version: integer('version').notNull(),
-  state: jsonb('state').$type<JsonValue>().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
-}, (table) => [
-  primaryKey({ columns: [table.entityType, table.entityId] }),
-])
+export const entityStates = pgTable(
+  'canopy_entity_states',
+  {
+    entityType: text('entity_type').notNull(),
+    entityId: text('entity_id').notNull(),
+    version: integer('version').notNull(),
+    state: jsonb('state').$type<JsonValue>().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.entityType, table.entityId] })],
+)
 
-export const journalEntries = pgTable('canopy_journal_entries', {
-  id: uuid('id').primaryKey(),
-  factType: text('fact_type').notNull(),
-  entityType: text('entity_type').notNull(),
-  entityId: text('entity_id').notNull(),
-  payload: jsonb('payload').$type<JsonValue>().notNull(),
-  context: jsonb('context').$type<DurableExecutionEnvelope>().notNull(),
-  occurredAt: timestamp('occurred_at', { withTimezone: true, mode: 'date' }).notNull(),
-}, (table) => [
-  index('canopy_journal_entity_idx').on(table.entityType, table.entityId),
-  index('canopy_journal_context_idx').using('gin', table.context),
-])
+export const journalEntries = pgTable(
+  'canopy_journal_entries',
+  {
+    id: uuid('id').primaryKey(),
+    factType: text('fact_type').notNull(),
+    entityType: text('entity_type').notNull(),
+    entityId: text('entity_id').notNull(),
+    payload: jsonb('payload').$type<JsonValue>().notNull(),
+    context: jsonb('context').$type<DurableExecutionEnvelope>().notNull(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (table) => [
+    index('canopy_journal_entity_idx').on(table.entityType, table.entityId),
+    index('canopy_journal_context_idx').using('gin', table.context),
+  ],
+)
 
-export const outboxMessages = pgTable('canopy_outbox_messages', {
-  id: uuid('id').primaryKey(),
-  messageType: text('message_type').notNull(),
-  payload: jsonb('payload').$type<JsonValue>().notNull(),
-  context: jsonb('context').$type<DurableExecutionEnvelope>().notNull(),
-  status: text('status').notNull(),
-  availableAt: timestamp('available_at', { withTimezone: true, mode: 'date' }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
-}, (table) => [
-  index('canopy_outbox_available_idx').on(table.status, table.availableAt),
-])
+export const outboxMessages = pgTable(
+  'canopy_outbox_messages',
+  {
+    id: uuid('id').primaryKey(),
+    messageType: text('message_type').notNull(),
+    payload: jsonb('payload').$type<JsonValue>().notNull(),
+    context: jsonb('context').$type<DurableExecutionEnvelope>().notNull(),
+    status: text('status').notNull(),
+    availableAt: timestamp('available_at', { withTimezone: true, mode: 'date' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (table) => [index('canopy_outbox_available_idx').on(table.status, table.availableAt)],
+)
 
-export const deliveryMessages = pgTable('canopy_delivery_messages', {
-  id: uuid('id').primaryKey(),
-  channel: text('channel').notNull(),
-  recipients: jsonb('recipients').$type<readonly string[]>().notNull(),
-  payload: jsonb('payload').$type<JsonValue>().notNull(),
-  state: text('state').notNull(),
-  providerMessageId: text('provider_message_id'),
-  failureKind: text('failure_kind'),
-  failureCode: text('failure_code'),
-  context: jsonb('context').$type<DurableExecutionEnvelope>().notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
-}, (table) => [index('canopy_delivery_state_idx').on(table.channel, table.state)])
+export const deliveryMessages = pgTable(
+  'canopy_delivery_messages',
+  {
+    id: uuid('id').primaryKey(),
+    channel: text('channel').notNull(),
+    recipients: jsonb('recipients').$type<readonly string[]>().notNull(),
+    payload: jsonb('payload').$type<JsonValue>().notNull(),
+    state: text('state').notNull(),
+    providerMessageId: text('provider_message_id'),
+    failureKind: text('failure_kind'),
+    failureCode: text('failure_code'),
+    context: jsonb('context').$type<DurableExecutionEnvelope>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
+  },
+  (table) => [index('canopy_delivery_state_idx').on(table.channel, table.state)],
+)
 
 export const deliveryEvents = pgTable('canopy_delivery_events', {
   eventId: text('event_id').primaryKey(),

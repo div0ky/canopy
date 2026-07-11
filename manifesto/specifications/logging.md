@@ -1,9 +1,9 @@
 # First-class logging
 
-Canopy owns logging as a framework primitive. Logging is not an application-selected provider and
-it is not a synonym for metrics or tracing. Every framework role automatically inherits a
-class-bound `this.logger`. `Logger` remains constructor-injectable in ordinary concrete services
-reached through the dependency graph.
+Canopy owns logging as a framework primitive. Logging is not an application-selected provider and it
+is not a synonym for metrics or tracing. Every framework role automatically inherits a class-bound
+`this.logger`. `Logger` remains constructor-injectable in ordinary concrete services reached through
+the dependency graph.
 
 ```ts
 import { Logger } from '@canopy/core'
@@ -38,9 +38,9 @@ sink.
 
 ## Context belongs to the framework
 
-Logs written during admitted work automatically inherit the execution ID, correlation ID,
-causation ID, actor, tenant, trace and span IDs, and transport. This applies equally to HTTP requests,
-jobs, schedules, commands, events, signals, actions, and queries. Crossing an asynchronous boundary
+Logs written during admitted work automatically inherit the execution ID, correlation ID, causation
+ID, actor, tenant, trace and span IDs, and transport. This applies equally to HTTP requests, jobs,
+schedules, commands, events, signals, actions, and queries. Crossing an asynchronous boundary
 creates a new execution while preserving causal context under the normal execution-context rules.
 
 Framework subsystems log their own meaningful lifecycle. At minimum this includes application boot

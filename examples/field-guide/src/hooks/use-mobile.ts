@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react"
+import { useSyncExternalStore } from 'react'
 
 const MOBILE_BREAKPOINT = 768
 
@@ -12,8 +12,8 @@ function mediaQuery() {
 
 function subscribe(onStoreChange: () => void) {
   const query = mediaQuery()
-  query.addEventListener("change", onStoreChange)
-  return () => query.removeEventListener("change", onStoreChange)
+  query.addEventListener('change', onStoreChange)
+  return () => query.removeEventListener('change', onStoreChange)
 }
 
 function getSnapshot() {

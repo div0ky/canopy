@@ -1,11 +1,19 @@
 packages:
   - packages/*
   - examples/*
+autoInstallPeers: true
+preferWorkspacePackages: true
+strictPeerDependencies: true
 allowBuilds:
   cpu-features: false
   esbuild: true
   protobufjs: false
+  sharp: true
   ssh2: false
+  unrs-resolver: true
 minimumReleaseAgeExclude:
   - hono@4.12.29
   - pg-boss@12.26.0
+overrides:
+  '@esbuild-kit/core-utils>esbuild': 0.25.12
+  postcss: 8.5.16

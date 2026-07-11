@@ -11,19 +11,19 @@ focused manifest inspection, database browsing through `db:studio`, queue recove
 communications recovery.
 
 Application commands are explicit Feature roles. They compile into the manifest, use scoped
-`this.inject()` dependencies and default-deny authorization, receive one normal admitted execution scope, and run as a
-system actor through `arbor namespace:command`. Arbor installs process signal handlers as the host;
-`Canopy.boot()` remains free of process-global side effects.
+`this.inject()` dependencies and default-deny authorization, receive one normal admitted execution
+scope, and run as a system actor through `arbor namespace:command`. Arbor installs process signal
+handlers as the host; `Canopy.boot()` remains free of process-global side effects.
 
 Cultivate receives `.canopy/cultivate.json`, a derived non-runtime view of the canonical manifest.
 It records every role and source plus Canopy's DX, safety, folder, authorization, migration, and
 generator conventions. The manifest and constructor registry remain the two canonical runtime
 artifacts.
 
-Canopy also owns a vendor-independent `Telemetry` port for metrics and spans. First-class application
-and framework logging is specified separately in [First-class logging](../specifications/logging.md).
-Runtime admission emits structured telemetry events,
-metrics, and spans with actor, correlation, causation, tenant, transport, and trace fields. HTTP
-validates and propagates W3C trace context; queues and durable records preserve it. The runtime
+Canopy also owns a vendor-independent `Telemetry` port for metrics and spans. First-class
+application and framework logging is specified separately in
+[First-class logging](../specifications/logging.md). Runtime admission emits structured telemetry
+events, metrics, and spans with actor, correlation, causation, tenant, transport, and trace fields.
+HTTP validates and propagates W3C trace context; queues and durable records preserve it. The runtime
 generates trace/span IDs when no parent exists. Telemetry adapters are isolated from application
 behavior, and an in-memory reference adapter proves deterministic capture without secret values.

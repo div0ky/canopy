@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a reproducible problem in Canopy
+title: '[Bug]: '
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: Security vulnerabilities must be reported privately according to SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Canopy version or commit
+      placeholder: 0.1.0-alpha.1 or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Node, pnpm, operating system, and PostgreSQL versions
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description:
+        Link a repository or provide the smallest complete code and commands that reproduce the
+        issue.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and diagnostics
+      description:
+        Include sanitized logs, errors, manifest diagnostics, and correlation IDs. Never include
+        credentials.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and discussions.
+          required: true
+        - label: I removed credentials and private data from this report.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true

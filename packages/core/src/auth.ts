@@ -93,7 +93,13 @@ export class AuthenticationError extends Error {
   override readonly name = 'AuthenticationError'
 
   constructor(
-    readonly code: 'ambiguous_credentials' | 'invalid_credentials' | 'email_taken' | 'invalid_registration' | 'invalid_token' | 'compromised_password',
+    readonly code:
+      | 'ambiguous_credentials'
+      | 'invalid_credentials'
+      | 'email_taken'
+      | 'invalid_registration'
+      | 'invalid_token'
+      | 'compromised_password',
     message: string,
     options?: ErrorOptions,
   ) {
@@ -103,24 +109,38 @@ export class AuthenticationError extends Error {
 
 export class AuthenticationRateLimitError extends Error {
   override readonly name = 'AuthenticationRateLimitError'
-  constructor(readonly retryAfterSeconds: number) { super('Too many authentication attempts. Try again later.') }
+  constructor(readonly retryAfterSeconds: number) {
+    super('Too many authentication attempts. Try again later.')
+  }
 }
 
 /** Canopy-owned identity and browser-session boundary. */
 export abstract class Auth {
-  storage(): AuthStorageDescription { return { kind: 'custom' } }
+  storage(): AuthStorageDescription {
+    return { kind: 'custom' }
+  }
   abstract register(input: RegistrationInput): Promise<AuthIdentity>
   abstract findIdentity(identityId: string): Promise<AuthIdentity | undefined>
   abstract login(input: LoginInput, metadata?: AuthRequestMetadata): Promise<AuthSessionGrant>
   abstract issueEmailVerification(identityId: string): Promise<AuthChallengeGrant>
   abstract verifyEmail(token: string): Promise<AuthIdentity>
-  abstract issuePasswordReset(email: string, metadata?: AuthRequestMetadata): Promise<AuthChallengeGrant | undefined>
+  abstract issuePasswordReset(
+    email: string,
+    metadata?: AuthRequestMetadata,
+  ): Promise<AuthChallengeGrant | undefined>
   abstract resetPassword(token: string, newPassword: string): Promise<void>
-  abstract changePassword(identityId: string, currentPassword: string, newPassword: string): Promise<void>
+  abstract changePassword(
+    identityId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void>
   abstract revokeSession(sessionId: string): Promise<void>
   abstract listSessions(identityId: string): Promise<readonly AuthSession[]>
   abstract revokeAllSessions(identityId: string): Promise<number>
-  abstract issueAccessToken(identityId: string, input: IssueAccessTokenInput): Promise<AuthAccessTokenGrant>
+  abstract issueAccessToken(
+    identityId: string,
+    input: IssueAccessTokenInput,
+  ): Promise<AuthAccessTokenGrant>
   abstract listAccessTokens(identityId: string): Promise<readonly AuthAccessToken[]>
   abstract rotateAccessToken(identityId: string, tokenId: string): Promise<AuthAccessTokenGrant>
   abstract revokeAccessToken(identityId: string, tokenId: string): Promise<void>

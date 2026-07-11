@@ -27,7 +27,9 @@ export abstract class Signal<Payload = never> extends CanopyRole {
   }
 }
 
-export abstract class SignalHandler<Instance extends Signal<unknown> = Signal<unknown>> extends CanopyRole {
+export abstract class SignalHandler<
+  Instance extends Signal<unknown> = Signal<unknown>,
+> extends CanopyRole {
   static readonly access: string = ''
   abstract handle(signal: Instance): void | Promise<void>
 }

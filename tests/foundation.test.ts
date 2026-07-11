@@ -3,7 +3,13 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import { compileApplication } from '@canopy/compiler'
-import { MemoryCache, RoleInjectionError, SecretString, sanitizeObservationAttributes, sanitizeObservationError } from '@canopy/core'
+import {
+  MemoryCache,
+  RoleInjectionError,
+  SecretString,
+  sanitizeObservationAttributes,
+  sanitizeObservationError,
+} from '@canopy/core'
 import {
   Canopy,
   ConfigurationValidationError,
@@ -19,16 +25,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Application } from '../examples/reference-app/dist/application.js'
 import { FailCounter } from '../examples/reference-app/dist/fail-counter.js'
 import { IncrementCounter } from '../examples/reference-app/dist/increment-counter.js'
-import {
-  lifecycleLog,
-  resetLifecycleLog,
-} from '../examples/reference-app/dist/lifecycle-log.js'
+import { lifecycleLog, resetLifecycleLog } from '../examples/reference-app/dist/lifecycle-log.js'
 import { NestedCounter } from '../examples/reference-app/dist/nested-counter.js'
 import { MutateCounterQuery } from '../examples/reference-app/dist/mutate-counter-query.js'
-import {
-  operationLog,
-  resetOperationLog,
-} from '../examples/reference-app/dist/operation-log.js'
+import { operationLog, resetOperationLog } from '../examples/reference-app/dist/operation-log.js'
 import { ReadCounter } from '../examples/reference-app/dist/read-counter.js'
 
 const workspace = path.resolve(import.meta.dirname, '..')
@@ -42,10 +42,14 @@ describe('foundational compile-to-boot slice', () => {
   })
 
   afterEach(async () => {
-    await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, {
-      recursive: true,
-      force: true,
-    })))
+    await Promise.all(
+      temporaryDirectories.splice(0).map((directory) =>
+        rm(directory, {
+          recursive: true,
+          force: true,
+        }),
+      ),
+    )
   })
 
   it('requires explicit reveal for secret configuration values', () => {
@@ -61,15 +65,24 @@ describe('foundational compile-to-boot slice', () => {
       password: 'correct horse battery staple',
       headers: { authorization: 'Bearer dangerously-visible', accept: 'application/json' },
       database: 'postgresql://canopy:private@localhost/canopy',
-      circular: (() => { const value: Record<string, unknown> = {}; value.self = value; return value })(),
+      circular: (() => {
+        const value: Record<string, unknown> = {}
+        value.self = value
+        return value
+      })(),
     })
-    expect(attributes).toEqual(expect.objectContaining({
-      email: 'ada@example.com', password: '[REDACTED]',
-      headers: { authorization: '[REDACTED]', accept: 'application/json' },
-      database: 'postgresql://canopy:[REDACTED]@localhost/canopy',
-      circular: { self: '[CIRCULAR]' },
-    }))
-    expect(sanitizeObservationError(new Error('token=visible-secret')).message).toBe('token=[REDACTED]')
+    expect(attributes).toEqual(
+      expect.objectContaining({
+        email: 'ada@example.com',
+        password: '[REDACTED]',
+        headers: { authorization: '[REDACTED]', accept: 'application/json' },
+        database: 'postgresql://canopy:[REDACTED]@localhost/canopy',
+        circular: { self: '[CIRCULAR]' },
+      }),
+    )
+    expect(sanitizeObservationError(new Error('token=visible-secret')).message).toBe(
+      'token=[REDACTED]',
+    )
   })
 
   it('requires an explicit production override before Undergrowth can start', async () => {
@@ -77,10 +90,12 @@ describe('foundational compile-to-boot slice', () => {
       connectionString: 'postgresql://unused:unused@127.0.0.1:1/unused',
       environment: 'production',
     })
-    await expect(recorder.start({
-      signal: new AbortController().signal,
-      deadline: new Date(Date.now() + 1_000),
-    })).rejects.toThrow('disabled in production')
+    await expect(
+      recorder.start({
+        signal: new AbortController().signal,
+        deadline: new Date(Date.now() + 1_000),
+      }),
+    ).rejects.toThrow('disabled in production')
   })
 
   it('fails clearly when a role with required scoped dependencies is constructed directly', () => {
@@ -113,13 +128,11 @@ describe('foundational compile-to-boot slice', () => {
     expect(firstRegistry).toBe(secondRegistry)
     expect(first.manifest.applicationId).toBe('reference-app')
     expect(first.manifest.features.map((feature) => feature.id)).toEqual(['operations'])
-    expect(first.manifest.configurations.flatMap((configuration) => configuration.properties)
-      .map((property) => property.environmentKey)).toEqual([
-      'APP_ENVIRONMENT',
-      'APP_PORT',
-      'WORKER_CONCURRENCY',
-      'WORKER_FAIL_STARTUP',
-    ])
+    expect(
+      first.manifest.configurations
+        .flatMap((configuration) => configuration.properties)
+        .map((property) => property.environmentKey),
+    ).toEqual(['APP_ENVIRONMENT', 'APP_PORT', 'WORKER_CONCURRENCY', 'WORKER_FAIL_STARTUP'])
     expect(first.manifest.providers.map((provider) => [provider.id, provider.scope])).toEqual([
       ['provider:operations/database-connection', 'singleton'],
       ['provider:operations/transactions', 'singleton'],
@@ -136,26 +149,32 @@ describe('foundational compile-to-boot slice', () => {
       ['query:operations/mutate-counter', false],
       ['query:operations/read-counter', false],
     ])
-    expect(first.manifest.actions.find((action) => action.id.endsWith('/increment-counter'))?.dependencies)
-      .toEqual([
-        expect.objectContaining({
-          kind: 'role',
-          parameter: 'counter',
-          targetId: 'service:operations/execution-counter',
-        }),
-        expect.objectContaining({
-          kind: 'role',
-          parameter: 'audit',
-          token: 'OptionalCounterAudit',
-          optional: true,
-        }),
-      ])
-    expect(first.manifest.providers.find((provider) => provider.id.endsWith('/execution-counter'))?.dependencies)
-      .toEqual([expect.objectContaining({
+    expect(
+      first.manifest.actions.find((action) => action.id.endsWith('/increment-counter'))
+        ?.dependencies,
+    ).toEqual([
+      expect.objectContaining({
+        kind: 'role',
+        parameter: 'counter',
+        targetId: 'service:operations/execution-counter',
+      }),
+      expect.objectContaining({
+        kind: 'role',
+        parameter: 'audit',
+        token: 'OptionalCounterAudit',
+        optional: true,
+      }),
+    ])
+    expect(
+      first.manifest.providers.find((provider) => provider.id.endsWith('/execution-counter'))
+        ?.dependencies,
+    ).toEqual([
+      expect.objectContaining({
         kind: 'constructor',
         parameter: 'execution',
         targetId: 'canopy:current-execution',
-      })])
+      }),
+    ])
     expect(firstRegistry).not.toContain('dependencies')
     expect(firstRegistry).not.toContain('lifecycle')
   })
@@ -176,10 +195,7 @@ describe('foundational compile-to-boot slice', () => {
 
     expect(runtime.ready).toBe(true)
     expect(runtime.state).toBe('ready')
-    expect(lifecycleLog).toEqual([
-      'start:database:production:4100:frozen=true',
-      'start:worker:4',
-    ])
+    expect(lifecycleLog).toEqual(['start:database:production:4100:frozen=true', 'start:worker:4'])
 
     const firstShutdown = runtime.shutdown()
     const secondShutdown = runtime.shutdown()
@@ -207,11 +223,13 @@ describe('foundational compile-to-boot slice', () => {
       sigterm: process.listenerCount('SIGTERM'),
     }
 
-    await expect(Canopy.boot(Application, {
-      artifactsDirectory,
-      dotenvPath: false,
-      environment: { WORKER_FAIL_STARTUP: 'true' },
-    })).rejects.toMatchObject({
+    await expect(
+      Canopy.boot(Application, {
+        artifactsDirectory,
+        dotenvPath: false,
+        environment: { WORKER_FAIL_STARTUP: 'true' },
+      }),
+    ).rejects.toMatchObject({
       name: RuntimeBootError.name,
       primaryError: expect.objectContaining({
         message: 'Reference worker startup failed.',
@@ -233,14 +251,16 @@ describe('foundational compile-to-boot slice', () => {
     const artifactsDirectory = await temporaryDirectory()
     await compile(artifactsDirectory)
 
-    await expect(Canopy.boot(Application, {
-      artifactsDirectory,
-      dotenvPath: false,
-      environment: {
-        APP_ENVIRONMENT: 'staging',
-        APP_PORT: 'not-a-number',
-      },
-    })).rejects.toMatchObject({
+    await expect(
+      Canopy.boot(Application, {
+        artifactsDirectory,
+        dotenvPath: false,
+        environment: {
+          APP_ENVIRONMENT: 'staging',
+          APP_PORT: 'not-a-number',
+        },
+      }),
+    ).rejects.toMatchObject({
       name: ConfigurationValidationError.name,
       issues: expect.arrayContaining([
         expect.stringContaining('AppConfig.environment'),
@@ -253,15 +273,20 @@ describe('foundational compile-to-boot slice', () => {
   it('fails closed when manifest and registry integrity diverge', async () => {
     const artifactsDirectory = await temporaryDirectory()
     const result = await compile(artifactsDirectory)
-    const manifest = JSON.parse(await readFile(result.manifestPath, 'utf8')) as Record<string, unknown>
+    const manifest = JSON.parse(await readFile(result.manifestPath, 'utf8')) as Record<
+      string,
+      unknown
+    >
     manifest.buildHash = 'stale-build-hash'
     await writeFile(result.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
 
-    await expect(Canopy.boot(Application, {
-      artifactsDirectory,
-      dotenvPath: false,
-      environment: {},
-    })).rejects.toBeInstanceOf(RuntimeIntegrityError)
+    await expect(
+      Canopy.boot(Application, {
+        artifactsDirectory,
+        dotenvPath: false,
+        environment: {},
+      }),
+    ).rejects.toBeInstanceOf(RuntimeIntegrityError)
   })
 
   it('fails closed when semantic manifest content is modified', async () => {
@@ -273,11 +298,13 @@ describe('foundational compile-to-boot slice', () => {
     manifest.actions[0]!.transactional = false
     await writeFile(result.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
 
-    await expect(Canopy.boot(Application, {
-      artifactsDirectory,
-      dotenvPath: false,
-      environment: {},
-    })).rejects.toThrow('manifest content does not match its build hash')
+    await expect(
+      Canopy.boot(Application, {
+        artifactsDirectory,
+        dotenvPath: false,
+        environment: {},
+      }),
+    ).rejects.toThrow('manifest content does not match its build hash')
   })
 
   it('rejects stale manifest formats before interpreting new graph sections', async () => {
@@ -289,11 +316,13 @@ describe('foundational compile-to-boot slice', () => {
     manifest.formatVersion = 2
     await writeFile(result.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
 
-    await expect(Canopy.boot(Application, {
-      artifactsDirectory,
-      dotenvPath: false,
-      environment: {},
-    })).rejects.toThrow('Unsupported Canopy manifest format 2; expected 11')
+    await expect(
+      Canopy.boot(Application, {
+        artifactsDirectory,
+        dotenvPath: false,
+        environment: {},
+      }),
+    ).rejects.toThrow('Unsupported Canopy manifest format 2; expected 11')
   })
 
   it('rejects an Application constructor that does not match the generated registry', async () => {
@@ -301,29 +330,34 @@ describe('foundational compile-to-boot slice', () => {
     await compile(artifactsDirectory)
     class DifferentApplication extends Application {}
 
-    await expect(Canopy.boot(DifferentApplication, {
-      artifactsDirectory,
-      dotenvPath: false,
-      environment: {},
-    })).rejects.toThrow('not the Application passed to Canopy.boot()')
+    await expect(
+      Canopy.boot(DifferentApplication, {
+        artifactsDirectory,
+        dotenvPath: false,
+        environment: {},
+      }),
+    ).rejects.toThrow('not the Application passed to Canopy.boot()')
   })
 
   it('shares one execution-scoped service across actions and queries', async () => {
     const runtime = await bootRuntime()
-    const result = await runtime.admit({
-      actor: { kind: 'user', id: 'user-1' },
-      transport: { kind: 'test' },
-    }, async (context) => {
-      expect(Object.isFrozen(context)).toBe(true)
-      expect(Object.isFrozen(context.actor)).toBe(true)
-      expect(context.initiator).toEqual(context.actor)
-      expect(context.correlationId).toBe(context.executionId)
+    const result = await runtime.admit(
+      {
+        actor: { kind: 'user', id: 'user-1' },
+        transport: { kind: 'test' },
+      },
+      async (context) => {
+        expect(Object.isFrozen(context)).toBe(true)
+        expect(Object.isFrozen(context.actor)).toBe(true)
+        expect(context.initiator).toEqual(context.actor)
+        expect(context.correlationId).toBe(context.executionId)
 
-      const first = await runtime.actions.execute(IncrementCounter, { amount: 2 })
-      const read = await runtime.queries.execute(ReadCounter, undefined)
-      const second = await runtime.actions.execute(IncrementCounter, { amount: 3 })
-      return { context, values: [first, read, second] }
-    })
+        const first = await runtime.actions.execute(IncrementCounter, { amount: 2 })
+        const read = await runtime.queries.execute(ReadCounter, undefined)
+        const second = await runtime.actions.execute(IncrementCounter, { amount: 3 })
+        return { context, values: [first, read, second] }
+      },
+    )
 
     expect(result.values).toEqual([2, 2, 5])
     expect(operationLog).toEqual([
@@ -339,28 +373,33 @@ describe('foundational compile-to-boot slice', () => {
   it('isolates concurrent executions and gives each a new execution ID', async () => {
     const runtime = await bootRuntime()
     const executions = await Promise.all([
-      runtime.admit({
-        actor: { kind: 'service', id: 'first' },
-        transport: { kind: 'test' },
-      }, async (context) => ({
-        id: context.executionId,
-        value: await runtime.actions.execute(IncrementCounter, { amount: 1, delay: 15 }),
-      })),
-      runtime.admit({
-        actor: { kind: 'service', id: 'second' },
-        transport: { kind: 'test' },
-      }, async (context) => ({
-        id: context.executionId,
-        value: await runtime.actions.execute(IncrementCounter, { amount: 10 }),
-      })),
+      runtime.admit(
+        {
+          actor: { kind: 'service', id: 'first' },
+          transport: { kind: 'test' },
+        },
+        async (context) => ({
+          id: context.executionId,
+          value: await runtime.actions.execute(IncrementCounter, { amount: 1, delay: 15 }),
+        }),
+      ),
+      runtime.admit(
+        {
+          actor: { kind: 'service', id: 'second' },
+          transport: { kind: 'test' },
+        },
+        async (context) => ({
+          id: context.executionId,
+          value: await runtime.actions.execute(IncrementCounter, { amount: 10 }),
+        }),
+      ),
     ])
 
     expect(executions.map((execution) => execution.value)).toEqual([1, 10])
     expect(new Set(executions.map((execution) => execution.id)).size).toBe(2)
-    expect(operationLog).toEqual(expect.arrayContaining([
-      'execution-counter:dispose:1',
-      'execution-counter:dispose:10',
-    ]))
+    expect(operationLog).toEqual(
+      expect.arrayContaining(['execution-counter:dispose:1', 'execution-counter:dispose:10']),
+    )
     await runtime.shutdown()
   })
 
@@ -368,13 +407,18 @@ describe('foundational compile-to-boot slice', () => {
     const runtime = await bootRuntime()
     let executionId = ''
 
-    await expect(runtime.admit({
-      actor: { kind: 'system', id: 'failure-test' },
-      transport: { kind: 'test' },
-    }, async (context) => {
-      executionId = context.executionId
-      return runtime.actions.execute(FailCounter, 7)
-    })).rejects.toThrow('Counter action failed.')
+    await expect(
+      runtime.admit(
+        {
+          actor: { kind: 'system', id: 'failure-test' },
+          transport: { kind: 'test' },
+        },
+        async (context) => {
+          executionId = context.executionId
+          return runtime.actions.execute(FailCounter, 7)
+        },
+      ),
+    ).rejects.toThrow('Counter action failed.')
 
     expect(operationLog).toEqual([
       `transaction:begin:${executionId}`,
@@ -387,11 +431,15 @@ describe('foundational compile-to-boot slice', () => {
   it('marks query execution read-only for framework-managed mutation paths', async () => {
     const runtime = await bootRuntime()
 
-    await expect(runtime.admit({
-      actor: { kind: 'system', id: 'read-only-test' },
-      transport: { kind: 'test' },
-    }, () => runtime.queries.execute(MutateCounterQuery, 3)))
-      .rejects.toBeInstanceOf(ReadOnlyExecutionError)
+    await expect(
+      runtime.admit(
+        {
+          actor: { kind: 'system', id: 'read-only-test' },
+          transport: { kind: 'test' },
+        },
+        () => runtime.queries.execute(MutateCounterQuery, 3),
+      ),
+    ).rejects.toBeInstanceOf(ReadOnlyExecutionError)
 
     expect(operationLog).toEqual(['execution-counter:dispose:0'])
     await runtime.shutdown()
@@ -399,32 +447,51 @@ describe('foundational compile-to-boot slice', () => {
 
   it('prohibits nested action dispatch and dispatch outside an execution', async () => {
     const runtime = await bootRuntime()
-    await expect(runtime.actions.execute(IncrementCounter, { amount: 1 }))
-      .rejects.toBeInstanceOf(OperationDispatchError)
+    await expect(runtime.actions.execute(IncrementCounter, { amount: 1 })).rejects.toBeInstanceOf(
+      OperationDispatchError,
+    )
 
-    await expect(runtime.admit({
-      actor: { kind: 'system', id: 'nested-test' },
-      transport: { kind: 'test' },
-    }, () => runtime.actions.execute(NestedCounter, 1)))
-      .rejects.toThrow('Nested action dispatch is prohibited')
+    await expect(
+      runtime.admit(
+        {
+          actor: { kind: 'system', id: 'nested-test' },
+          transport: { kind: 'test' },
+        },
+        () => runtime.actions.execute(NestedCounter, 1),
+      ),
+    ).rejects.toThrow('Nested action dispatch is prohibited')
     expect(operationLog.some((entry) => entry.startsWith('transaction:rollback:'))).toBe(true)
     await runtime.shutdown()
   })
 
   it('rejects invalid actors and nested admitted execution scopes', async () => {
     const runtime = await bootRuntime()
-    await expect(runtime.admit({
-      actor: { kind: 'anonymous', id: 'not-allowed' },
-      transport: { kind: 'test' },
-    }, () => undefined)).rejects.toBeInstanceOf(ExecutionAdmissionError)
+    await expect(
+      runtime.admit(
+        {
+          actor: { kind: 'anonymous', id: 'not-allowed' },
+          transport: { kind: 'test' },
+        },
+        () => undefined,
+      ),
+    ).rejects.toBeInstanceOf(ExecutionAdmissionError)
 
-    await expect(runtime.admit({
-      actor: { kind: 'system', id: 'outer' },
-      transport: { kind: 'test' },
-    }, () => runtime.admit({
-      actor: { kind: 'system', id: 'inner' },
-      transport: { kind: 'internal' },
-    }, () => undefined))).rejects.toThrow('cannot create a nested execution scope')
+    await expect(
+      runtime.admit(
+        {
+          actor: { kind: 'system', id: 'outer' },
+          transport: { kind: 'test' },
+        },
+        () =>
+          runtime.admit(
+            {
+              actor: { kind: 'system', id: 'inner' },
+              transport: { kind: 'internal' },
+            },
+            () => undefined,
+          ),
+      ),
+    ).rejects.toThrow('cannot create a nested execution scope')
     await runtime.shutdown()
   })
 
@@ -432,24 +499,36 @@ describe('foundational compile-to-boot slice', () => {
     const runtime = await bootRuntime()
     let release!: () => void
     let markStarted!: () => void
-    const gate = new Promise<void>((resolve) => { release = resolve })
-    const started = new Promise<void>((resolve) => { markStarted = resolve })
-    const execution = runtime.admit({
-      actor: { kind: 'system', id: 'drain-test' },
-      transport: { kind: 'test' },
-    }, async () => {
-      markStarted()
-      await gate
-      return 'complete'
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
     })
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    const execution = runtime.admit(
+      {
+        actor: { kind: 'system', id: 'drain-test' },
+        transport: { kind: 'test' },
+      },
+      async () => {
+        markStarted()
+        await gate
+        return 'complete'
+      },
+    )
     await started
 
     const shutdown = runtime.shutdown()
     expect(runtime.state).toBe('draining')
-    await expect(runtime.admit({
-      actor: { kind: 'system', id: 'too-late' },
-      transport: { kind: 'test' },
-    }, () => undefined)).rejects.toBeInstanceOf(ExecutionAdmissionError)
+    await expect(
+      runtime.admit(
+        {
+          actor: { kind: 'system', id: 'too-late' },
+          transport: { kind: 'test' },
+        },
+        () => undefined,
+      ),
+    ).rejects.toBeInstanceOf(ExecutionAdmissionError)
     release()
 
     await expect(execution).resolves.toBe('complete')
@@ -459,18 +538,21 @@ describe('foundational compile-to-boot slice', () => {
 
   it('propagates execution deadlines through the cancellation signal', async () => {
     const runtime = await bootRuntime()
-    const aborted = await runtime.admit({
-      actor: { kind: 'system', id: 'deadline-test' },
-      transport: { kind: 'test' },
-      deadline: new Date(Date.now() + 10),
-    }, async (context) => {
-      if (!context.cancellation.aborted) {
-        await new Promise<void>((resolve) => {
-          context.cancellation.addEventListener('abort', () => resolve(), { once: true })
-        })
-      }
-      return context.cancellation.aborted
-    })
+    const aborted = await runtime.admit(
+      {
+        actor: { kind: 'system', id: 'deadline-test' },
+        transport: { kind: 'test' },
+        deadline: new Date(Date.now() + 10),
+      },
+      async (context) => {
+        if (!context.cancellation.aborted) {
+          await new Promise<void>((resolve) => {
+            context.cancellation.addEventListener('abort', () => resolve(), { once: true })
+          })
+        }
+        return context.cancellation.aborted
+      },
+    )
 
     expect(aborted).toBe(true)
     await runtime.shutdown()

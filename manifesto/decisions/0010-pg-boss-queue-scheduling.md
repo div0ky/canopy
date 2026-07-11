@@ -53,8 +53,8 @@ durability depend on pg-boss internals.
 
 ## Execution guarantee
 
-Canopy does not promise exactly-once effects. A process can perform an external side effect and
-fail before acknowledging completion, causing the job to be delivered again.
+Canopy does not promise exactly-once effects. A process can perform an external side effect and fail
+before acknowledging completion, causing the job to be delivered again.
 
 The framework contract therefore requires:
 
@@ -98,9 +98,9 @@ canopy work
 canopy schedule
 ```
 
-Development and tests may run all roles in one process. Production may run them independently.
-Every role uses the same lifecycle, execution-scope, actor, context, configuration, observability,
-and graceful-shutdown contracts.
+Development and tests may run all roles in one process. Production may run them independently. Every
+role uses the same lifecycle, execution-scope, actor, context, configuration, observability, and
+graceful-shutdown contracts.
 
 ## Testing
 
@@ -119,8 +119,7 @@ locking, crashes, retries, redrive, reconciliation, drain, and shutdown.
 ## Consequences
 
 - The MVP needs PostgreSQL but not Redis for queueing and scheduling.
-- Queue and schedule records remain operational infrastructure rather than application domain
-  state.
+- Queue and schedule records remain operational infrastructure rather than application domain state.
 - Canopy must maintain a strict adapter boundary around pg-boss schema and APIs.
 - Heavy queue workloads share the PostgreSQL operational envelope and require documented capacity
   guidance.
@@ -150,14 +149,16 @@ Before the adapter is production-ready, it must prove:
 
 ## Implementation evidence
 
-The [pg-boss queue and worker vertical slice](../implementation/pg-boss-queue-worker-vertical-slice.md)
+The
+[pg-boss queue and worker vertical slice](../implementation/pg-boss-queue-worker-vertical-slice.md)
 proves declared jobs, atomic outbox handoff, at-least-once attempts, retries, terminal retention,
 stable idempotent identity, queued listeners, context propagation, writable job transactions, and
-graceful draining. The later [scheduling vertical slice](../implementation/scheduling-vertical-slice.md)
-proves cron and interval declarations, deterministic reconciliation, time zones, overlap defaults,
-skipped misfires, schedule causation, and graceful scheduler draining. Crash-process tests,
-operator redrive, first-party fakes, catch-up misfires, and advanced concurrency remain required
-before the complete decision is production-ready.
+graceful draining. The later
+[scheduling vertical slice](../implementation/scheduling-vertical-slice.md) proves cron and interval
+declarations, deterministic reconciliation, time zones, overlap defaults, skipped misfires, schedule
+causation, and graceful scheduler draining. Crash-process tests, operator redrive, first-party
+fakes, catch-up misfires, and advanced concurrency remain required before the complete decision is
+production-ready.
 
 ## References
 

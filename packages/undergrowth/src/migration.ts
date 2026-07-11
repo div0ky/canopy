@@ -17,6 +17,7 @@ export async function installUndergrowthSchema(connectionString: string): Promis
   try {
     await pool.query(await readFile(CANOPY_UNDERGROWTH_MIGRATION_URL, 'utf8'))
     await pool.query(await readFile(CANOPY_UNDERGROWTH_SEQUENCE_MIGRATION_URL, 'utf8'))
+  } finally {
+    await pool.end()
   }
-  finally { await pool.end() }
 }

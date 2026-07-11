@@ -28,6 +28,15 @@ import {
   type SourceProvenance,
 } from '@canopy/manifest'
 
+import { CanopyCompilationError } from './errors.js'
+import {
+  assertAcyclicProviderGraph,
+  assertScopeSafety,
+  assertUnique,
+} from './manifest-validation.js'
+
+export { CanopyCompilationError } from './errors.js'
+
 const FRAMEWORK_VERSION = '0.1.0'
 const COMPILER_VERSION = '0.1.0'
 const DECLARATION_FIELDS = new Set([
@@ -65,10 +74,6 @@ export interface CompileApplicationResult {
   readonly registryPath: string
 }
 
-export class CanopyCompilationError extends Error {
-  override readonly name = 'CanopyCompilationError'
-}
-
 interface RegisteredClass {
   readonly id: string
   readonly declaration: ts.ClassDeclaration
@@ -89,10 +94,7 @@ export async function compileApplication(
     )
   }
 
-  const applicationDeclaration = findExportedClass(
-    applicationSource,
-    normalized.applicationExport,
-  )
+  const applicationDeclaration = findExportedClass(applicationSource, normalized.applicationExport)
   assertDeclarationOnly(applicationDeclaration, 'Application')
   const applicationId = readRequiredInstanceString(applicationDeclaration, 'id')
   const applicationName = requiredClassName(applicationDeclaration)
@@ -175,7 +177,10 @@ export async function compileApplication(
     for (const providerDeclaration of readClassArray(featureDeclaration, 'providers', checker)) {
       const existing = providerRoots.get(providerDeclaration)
       if (existing && existing.ownerId !== feature.id) {
-        fail(providerDeclaration, `${requiredClassName(providerDeclaration)} is declared as a provider by multiple Features.`)
+        fail(
+          providerDeclaration,
+          `${requiredClassName(providerDeclaration)} is declared as a provider by multiple Features.`,
+        )
       }
       providerRoots.set(providerDeclaration, { ownerId: feature.id })
     }
@@ -194,7 +199,10 @@ export async function compileApplication(
     for (const model of readClassArray(featureDeclaration, 'models', checker)) {
       const existing = modelRoots.get(model)
       if (existing) {
-        fail(model, `${requiredClassName(model)} is already declared as a model by ${existing.ownerId}.`)
+        fail(
+          model,
+          `${requiredClassName(model)} is already declared as a model by ${existing.ownerId}.`,
+        )
       }
       modelRoots.set(model, { ownerId: feature.id })
     }
@@ -206,7 +214,13 @@ export async function compileApplication(
     registerOwnedRoots(featureDeclaration, 'schedules', feature.id, scheduleRoots, 'schedule')
     registerOwnedRoots(featureDeclaration, 'policies', feature.id, policyRoots, 'policy')
     registerOwnedRoots(featureDeclaration, 'signals', feature.id, signalRoots, 'signal')
-    registerOwnedRoots(featureDeclaration, 'signalHandlers', feature.id, signalHandlerRoots, 'signal handler')
+    registerOwnedRoots(
+      featureDeclaration,
+      'signalHandlers',
+      feature.id,
+      signalHandlerRoots,
+      'signal handler',
+    )
     registerOwnedRoots(featureDeclaration, 'commands', feature.id, commandRoots, 'command')
   }
 
@@ -265,7 +279,16 @@ export async function compileApplication(
     'policy ability',
   )
   const policyAbilities = new Set(policies.flatMap((policy) => policy.abilities))
-  for (const entry of [...routes, ...actions, ...queries, ...listeners, ...jobs, ...schedules, ...signalHandlers, ...commands]) {
+  for (const entry of [
+    ...routes,
+    ...actions,
+    ...queries,
+    ...listeners,
+    ...jobs,
+    ...schedules,
+    ...signalHandlers,
+    ...commands,
+  ]) {
     if (entry.access !== 'public' && !policyAbilities.has(entry.access)) {
       throw new CanopyCompilationError(
         `${entry.id} requires ability ${entry.access}, but no selected Policy declares it.`,
@@ -274,8 +297,8 @@ export async function compileApplication(
   }
   assertAcyclicProviderGraph(providers)
   assertScopeSafety(providers)
-  const transactionProviders = providers.filter(
-    (provider) => provider.capabilities.includes('transactions'),
+  const transactionProviders = providers.filter((provider) =>
+    provider.capabilities.includes('transactions'),
   )
   if (actions.length > 0 && transactionProviders.length !== 1) {
     throw new CanopyCompilationError(
@@ -283,8 +306,8 @@ export async function compileApplication(
     )
   }
   const queueProviders = providers.filter((provider) => provider.capabilities.includes('queues'))
-  const authenticationProviders = providers.filter(
-    (provider) => provider.capabilities.includes('authentication'),
+  const authenticationProviders = providers.filter((provider) =>
+    provider.capabilities.includes('authentication'),
   )
   if (authenticationProviders.length > 1) {
     throw new CanopyCompilationError(
@@ -299,13 +322,24 @@ export async function compileApplication(
   }
   for (const capability of ['mail', 'sms', 'telemetry'] as const) {
     const selected = providers.filter((provider) => provider.capabilities.includes(capability))
-    if (selected.length > 1) throw new CanopyCompilationError(`Applications may declare at most one ${capability} provider; found ${selected.length}.`)
+    if (selected.length > 1)
+      throw new CanopyCompilationError(
+        `Applications may declare at most one ${capability} provider; found ${selected.length}.`,
+      )
   }
   const queuedListeners = listeners.filter(
     (listener) => listener.delivery === 'queued' || listener.delivery === 'queued-after-commit',
   )
-  const communicationProviders = providers.filter((provider) => provider.capabilities.includes('mail') || provider.capabilities.includes('sms'))
-  if ((jobs.length > 0 || queuedListeners.length > 0 || schedules.length > 0 || communicationProviders.length > 0) && queueProviders.length !== 1) {
+  const communicationProviders = providers.filter(
+    (provider) => provider.capabilities.includes('mail') || provider.capabilities.includes('sms'),
+  )
+  if (
+    (jobs.length > 0 ||
+      queuedListeners.length > 0 ||
+      schedules.length > 0 ||
+      communicationProviders.length > 0) &&
+    queueProviders.length !== 1
+  ) {
     throw new CanopyCompilationError(
       `Applications with jobs, schedules, or queued listeners require exactly one queue provider; found ${queueProviders.length}.`,
     )
@@ -398,9 +432,18 @@ export async function compileApplication(
         id: entry.id,
         declaration,
       })),
-      [...signalByDeclaration.entries()].map(([declaration, entry]) => ({ id: entry.id, declaration })),
-      [...signalHandlerByDeclaration.entries()].map(([declaration, entry]) => ({ id: entry.id, declaration })),
-      [...commandByDeclaration.entries()].map(([declaration, entry]) => ({ id: entry.id, declaration })),
+      [...signalByDeclaration.entries()].map(([declaration, entry]) => ({
+        id: entry.id,
+        declaration,
+      })),
+      [...signalHandlerByDeclaration.entries()].map(([declaration, entry]) => ({
+        id: entry.id,
+        declaration,
+      })),
+      [...commandByDeclaration.entries()].map(([declaration, entry]) => ({
+        id: entry.id,
+        declaration,
+      })),
       buildHash,
       normalized,
     ),
@@ -429,7 +472,9 @@ export async function compileApplication(
       const properties = declaration.members
         .filter(ts.isPropertyDeclaration)
         .filter((property) => !hasModifier(property, ts.SyntaxKind.StaticKeyword))
-        .map((property) => compileConfigurationProperty(name, property, checker, normalized.projectRoot))
+        .map((property) =>
+          compileConfigurationProperty(name, property, checker, normalized.projectRoot),
+        )
 
       const entry: ConfigurationManifestEntry = {
         id,
@@ -453,15 +498,17 @@ export async function compileApplication(
     const existing = providerByDeclaration.get(declaration)
     if (existing) {
       if (existing.ownerId !== ownerId) {
-        fail(declaration, `Concrete service ${existing.name} is reachable across Feature boundaries without being provided explicitly.`)
+        fail(
+          declaration,
+          `Concrete service ${existing.name} is reachable across Feature boundaries without being provided explicitly.`,
+        )
       }
       return existing
     }
 
     const name = requiredClassName(declaration)
-    const localId = role === 'provider'
-      ? readRequiredStaticString(declaration, 'id')
-      : toKebabCase(name)
+    const localId =
+      role === 'provider' ? readRequiredStaticString(declaration, 'id') : toKebabCase(name)
     const id = `${role}:${ownerId}/${localId}`
     const placeholder: ProviderManifestEntry = {
       id,
@@ -469,34 +516,23 @@ export async function compileApplication(
       name,
       exportName: name,
       role,
-      scope: role === 'provider'
-        ? 'singleton'
-        : implementsNamedInterface(declaration, 'ExecutionScoped', checker)
-          ? 'execution'
-          : 'transient',
+      scope:
+        role === 'provider'
+          ? 'singleton'
+          : implementsNamedInterface(declaration, 'ExecutionScoped', checker)
+            ? 'execution'
+            : 'transient',
       durableIdentity: role === 'provider',
       capabilities: [
-        ...(extendsNamedClass(declaration, 'Auth', checker)
-          ? ['authentication' as const]
-          : []),
+        ...(extendsNamedClass(declaration, 'Auth', checker) ? ['authentication' as const] : []),
         ...(extendsNamedClass(declaration, 'TransactionManager', checker)
           ? ['transactions' as const]
           : []),
-        ...(extendsNamedClass(declaration, 'QueueManager', checker)
-          ? ['queues' as const]
-          : []),
-        ...(extendsNamedClass(declaration, 'Cache', checker)
-          ? ['cache' as const]
-          : []),
-        ...(extendsNamedClass(declaration, 'MailTransport', checker)
-          ? ['mail' as const]
-          : []),
-        ...(extendsNamedClass(declaration, 'SmsTransport', checker)
-          ? ['sms' as const]
-          : []),
-        ...(extendsNamedClass(declaration, 'Telemetry', checker)
-          ? ['telemetry' as const]
-          : []),
+        ...(extendsNamedClass(declaration, 'QueueManager', checker) ? ['queues' as const] : []),
+        ...(extendsNamedClass(declaration, 'Cache', checker) ? ['cache' as const] : []),
+        ...(extendsNamedClass(declaration, 'MailTransport', checker) ? ['mail' as const] : []),
+        ...(extendsNamedClass(declaration, 'SmsTransport', checker) ? ['sms' as const] : []),
+        ...(extendsNamedClass(declaration, 'Telemetry', checker) ? ['telemetry' as const] : []),
         ...(extendsNamedClass(declaration, 'ObservationRecorder', checker)
           ? ['observations' as const]
           : []),
@@ -520,7 +556,15 @@ export async function compileApplication(
   ): readonly DependencyManifestEntry[] {
     const constructor = declaration.members.find(ts.isConstructorDeclaration)
     const frameworkRole = [
-      'Action', 'Query', 'Route', 'Listener', 'Job', 'Policy', 'SignalHandler', 'Observer', 'Command',
+      'Action',
+      'Query',
+      'Route',
+      'Listener',
+      'Job',
+      'Policy',
+      'SignalHandler',
+      'Observer',
+      'Command',
     ].some((role) => extendsNamedClass(declaration, role, checker))
     if (frameworkRole && constructor && constructor.parameters.length > 0) {
       fail(
@@ -528,14 +572,17 @@ export async function compileApplication(
         `${requiredClassName(declaration)} is a framework role; declare scoped dependencies with this.inject() instead of constructor parameters.`,
       )
     }
-    const constructorDependencies = constructor?.parameters.map((parameter) => dependencyFor(
-      parameter,
-      parameter.name.getText(),
-      Boolean(parameter.questionToken || parameter.initializer)
-        || includesUndefined(checker.getTypeAtLocation(parameter)),
-      'constructor',
-      classDeclarationForType(parameter, checker),
-    )) ?? []
+    const constructorDependencies =
+      constructor?.parameters.map((parameter) =>
+        dependencyFor(
+          parameter,
+          parameter.name.getText(),
+          Boolean(parameter.questionToken || parameter.initializer) ||
+            includesUndefined(checker.getTypeAtLocation(parameter)),
+          'constructor',
+          classDeclarationForType(parameter, checker),
+        ),
+      ) ?? []
     const injectionCalls: ts.CallExpression[] = []
     const visit = (node: ts.Node): void => {
       if (ts.isCallExpression(node) && roleInjectionKind(node)) {
@@ -546,7 +593,11 @@ export async function compileApplication(
     declaration.members.forEach(visit)
     const roleDependencies = injectionCalls.map((call) => {
       const member = call.parent
-      if (!ts.isPropertyDeclaration(member) || member.initializer !== call || member.parent !== declaration) {
+      if (
+        !ts.isPropertyDeclaration(member) ||
+        member.initializer !== call ||
+        member.parent !== declaration
+      ) {
         fail(call, 'this.inject() must be the direct initializer of a role class property.')
       }
       const injectionKind = roleInjectionKind(call)
@@ -554,7 +605,8 @@ export async function compileApplication(
         fail(call, 'this.inject() requires exactly one statically identifiable dependency token.')
       }
       const name = propertyName(member.name)
-      if (!name) fail(member, 'Injected role properties must use an identifier or string literal name.')
+      if (!name)
+        fail(member, 'Injected role properties must use an identifier or string literal name.')
       const dependencyDeclaration = resolveClassReference(call.arguments[0]!, checker)
       return dependencyFor(call, name, injectionKind === 'optional', 'role', dependencyDeclaration)
     })
@@ -602,31 +654,53 @@ export async function compileApplication(
           )
         }
         if (modelRoot) {
-          fail(source, `${requiredClassName(dependencyDeclaration)} is a model class and is not a dependency; use its static retrieval API.`)
+          fail(
+            source,
+            `${requiredClassName(dependencyDeclaration)} is a model class and is not a dependency; use its static retrieval API.`,
+          )
         }
-        if (routeRoot || eventRoot || listenerRoot || jobRoot || scheduleRoot || policyRoot || observerRoot
-          || signalRoot || signalHandlerRoot || commandRoot) {
+        if (
+          routeRoot ||
+          eventRoot ||
+          listenerRoot ||
+          jobRoot ||
+          scheduleRoot ||
+          policyRoot ||
+          observerRoot ||
+          signalRoot ||
+          signalHandlerRoot ||
+          commandRoot
+        ) {
           fail(
             source,
             `${requiredClassName(dependencyDeclaration)} is a framework role class and cannot be injected directly.`,
           )
         }
         if (providerRoot && providerRoot.ownerId !== ownerId) {
-          fail(source, `${requiredClassName(dependencyDeclaration)} is private to Feature ${providerRoot.ownerId}.`)
+          fail(
+            source,
+            `${requiredClassName(dependencyDeclaration)} is private to Feature ${providerRoot.ownerId}.`,
+          )
         }
         const abstractDependency = hasModifier(dependencyDeclaration, ts.SyntaxKind.AbstractKeyword)
-        targetId = builtinId ?? capabilityProvider?.id ?? configuration?.id
-          ?? (optional && abstractDependency
+        targetId =
+          builtinId ??
+          capabilityProvider?.id ??
+          configuration?.id ??
+          (optional && abstractDependency
             ? undefined
             : registerProvider(
-              dependencyDeclaration,
-              providerRoot?.ownerId ?? ownerId,
-              providerRoot ? 'provider' : 'service',
-            ).id)
+                dependencyDeclaration,
+                providerRoot?.ownerId ?? ownerId,
+                providerRoot ? 'provider' : 'service',
+              ).id)
       }
 
       if (!targetId && !optional) {
-        fail(source, `Required ${kind === 'role' ? 'role' : 'constructor'} dependency ${parameter} cannot be resolved to a declared configuration or concrete class.`)
+        fail(
+          source,
+          `Required ${kind === 'role' ? 'role' : 'constructor'} dependency ${parameter} cannot be resolved to a declared configuration or concrete class.`,
+        )
       }
 
       return {
@@ -651,7 +725,10 @@ export async function compileApplication(
       fail(declaration, `${existing.name} is declared more than once as an application operation.`)
     }
     if (!extendsNamedClass(declaration, role === 'action' ? 'Action' : 'Query', checker)) {
-      fail(declaration, `${requiredClassName(declaration)} must extend ${role === 'action' ? 'Action' : 'Query'}.`)
+      fail(
+        declaration,
+        `${requiredClassName(declaration)} must extend ${role === 'action' ? 'Action' : 'Query'}.`,
+      )
     }
     if (!checker.getTypeAtLocation(declaration).getProperty('handle')) {
       fail(declaration, `${requiredClassName(declaration)} must define handle(input).`)
@@ -660,7 +737,10 @@ export async function compileApplication(
     const name = requiredClassName(declaration)
     const lifecycle = lifecycleOf(declaration, checker)
     if (lifecycle.start || lifecycle.drain || lifecycle.stop) {
-      fail(declaration, `${name} may define dispose(), but operation handlers cannot own application lifecycle phases.`)
+      fail(
+        declaration,
+        `${name} may define dispose(), but operation handlers cannot own application lifecycle phases.`,
+      )
     }
     const entry: OperationManifestEntry = {
       id: `${role}:${ownerId}/${readRequiredStaticString(declaration, 'id')}`,
@@ -700,7 +780,17 @@ export async function compileApplication(
 
   function registerOwnedRoots(
     feature: ts.ClassDeclaration,
-    field: 'routes' | 'events' | 'listeners' | 'jobs' | 'schedules' | 'policies' | 'signals' | 'signalHandlers' | 'observers' | 'commands',
+    field:
+      | 'routes'
+      | 'events'
+      | 'listeners'
+      | 'jobs'
+      | 'schedules'
+      | 'policies'
+      | 'signals'
+      | 'signalHandlers'
+      | 'observers'
+      | 'commands',
     ownerId: string,
     roots: Map<ts.ClassDeclaration, { readonly ownerId: string }>,
     role: string,
@@ -717,10 +807,7 @@ export async function compileApplication(
     }
   }
 
-  function registerModel(
-    declaration: ts.ClassDeclaration,
-    ownerId: string,
-  ): ModelManifestEntry {
+  function registerModel(declaration: ts.ClassDeclaration, ownerId: string): ModelManifestEntry {
     assertConcreteClass(declaration)
     if (!extendsNamedClass(declaration, 'Model', checker)) {
       fail(declaration, `${requiredClassName(declaration)} must extend Model.`)
@@ -745,35 +832,62 @@ export async function compileApplication(
     const tableValue = readOptionalStaticJson(declaration, 'table')
     if (tableValue === undefined) return { kind: 'entity-state' }
     if (typeof tableValue !== 'string' || !validQualifiedIdentifier(tableValue)) {
-      fail(declaration, `${requiredClassName(declaration)}.table must be a literal PostgreSQL table name.`)
+      fail(
+        declaration,
+        `${requiredClassName(declaration)}.table must be a literal PostgreSQL table name.`,
+      )
     }
     const columnsValue = readOptionalStaticJson(declaration, 'columns') ?? {}
     if (!isStringRecord(columnsValue)) {
-      fail(declaration, `${requiredClassName(declaration)}.columns must be a literal attribute-to-column string object.`)
+      fail(
+        declaration,
+        `${requiredClassName(declaration)}.columns must be a literal attribute-to-column string object.`,
+      )
     }
     for (const [attribute, column] of Object.entries(columnsValue)) {
       if (!validIdentifier(attribute) || !validIdentifier(column)) {
-        fail(declaration, `${requiredClassName(declaration)}.columns contains an invalid attribute or PostgreSQL column name.`)
+        fail(
+          declaration,
+          `${requiredClassName(declaration)}.columns contains an invalid attribute or PostgreSQL column name.`,
+        )
       }
     }
-    const primaryKeyValue = readOptionalStaticJson(declaration, 'primaryKey') ?? columnsValue.id ?? 'id'
+    const primaryKeyValue =
+      readOptionalStaticJson(declaration, 'primaryKey') ?? columnsValue.id ?? 'id'
     if (typeof primaryKeyValue !== 'string' || !validIdentifier(primaryKeyValue)) {
-      fail(declaration, `${requiredClassName(declaration)}.primaryKey must be a literal PostgreSQL column name.`)
+      fail(
+        declaration,
+        `${requiredClassName(declaration)}.primaryKey must be a literal PostgreSQL column name.`,
+      )
     }
     const versionValue = readOptionalStaticJson(declaration, 'versionColumn')
-    if (versionValue !== undefined && (typeof versionValue !== 'string' || !validIdentifier(versionValue))) {
-      fail(declaration, `${requiredClassName(declaration)}.versionColumn must be a literal PostgreSQL column name.`)
+    if (
+      versionValue !== undefined &&
+      (typeof versionValue !== 'string' || !validIdentifier(versionValue))
+    ) {
+      fail(
+        declaration,
+        `${requiredClassName(declaration)}.versionColumn must be a literal PostgreSQL column name.`,
+      )
     }
     const timestampsValue = readOptionalStaticJson(declaration, 'timestamps') ?? false
     let timestamps: false | { readonly createdAt: string; readonly updatedAt: string }
     if (timestampsValue === false) timestamps = false
-    else if (timestampsValue === true) timestamps = { createdAt: 'created_at', updatedAt: 'updated_at' }
-    else if (isStringRecord(timestampsValue)
-      && typeof timestampsValue.createdAt === 'string' && validIdentifier(timestampsValue.createdAt)
-      && typeof timestampsValue.updatedAt === 'string' && validIdentifier(timestampsValue.updatedAt)) {
+    else if (timestampsValue === true)
+      timestamps = { createdAt: 'created_at', updatedAt: 'updated_at' }
+    else if (
+      isStringRecord(timestampsValue) &&
+      typeof timestampsValue.createdAt === 'string' &&
+      validIdentifier(timestampsValue.createdAt) &&
+      typeof timestampsValue.updatedAt === 'string' &&
+      validIdentifier(timestampsValue.updatedAt)
+    ) {
       timestamps = { createdAt: timestampsValue.createdAt, updatedAt: timestampsValue.updatedAt }
     } else {
-      fail(declaration, `${requiredClassName(declaration)}.timestamps must be false, true, or { createdAt, updatedAt } column names.`)
+      fail(
+        declaration,
+        `${requiredClassName(declaration)}.timestamps must be false, true, or { createdAt, updatedAt } column names.`,
+      )
     }
     return {
       kind: 'table',
@@ -794,25 +908,41 @@ export async function compileApplication(
       fail(declaration, `${requiredClassName(declaration)} must extend Observer.`)
     }
     const phaseNames = [
-      'retrieved', 'saving', 'creating', 'updating',
-      'created', 'updated', 'saved', 'committed',
+      'retrieved',
+      'saving',
+      'creating',
+      'updating',
+      'created',
+      'updated',
+      'saved',
+      'committed',
     ] as const
     const methods = declaration.members.filter(
-      (member): member is ts.MethodDeclaration => ts.isMethodDeclaration(member)
-        && phaseNames.includes(propertyName(member.name) as typeof phaseNames[number]),
+      (member): member is ts.MethodDeclaration =>
+        ts.isMethodDeclaration(member) &&
+        phaseNames.includes(propertyName(member.name) as (typeof phaseNames)[number]),
     )
     if (methods.length === 0) {
-      fail(declaration, `${requiredClassName(declaration)} must define at least one model lifecycle method.`)
+      fail(
+        declaration,
+        `${requiredClassName(declaration)} must define at least one model lifecycle method.`,
+      )
     }
     let model: ModelManifestEntry | undefined
     for (const method of methods) {
       if (method.parameters.length !== 1) {
-        fail(method, `Observer method ${propertyName(method.name)} must accept one typed model parameter.`)
+        fail(
+          method,
+          `Observer method ${propertyName(method.name)} must accept one typed model parameter.`,
+        )
       }
       const modelDeclaration = classDeclarationForType(method.parameters[0]!, checker)
       const candidate = modelDeclaration ? modelByDeclaration.get(modelDeclaration) : undefined
       if (!candidate) {
-        fail(method.parameters[0]!, 'Observer lifecycle methods must name a Model declared by a selected Feature.')
+        fail(
+          method.parameters[0]!,
+          'Observer lifecycle methods must name a Model declared by a selected Feature.',
+        )
       }
       if (model && model.id !== candidate.id) {
         fail(method, `${requiredClassName(declaration)} cannot observe more than one Model.`)
@@ -830,7 +960,7 @@ export async function compileApplication(
       name,
       exportName: name,
       modelId: model!.id,
-      phases: methods.map((method) => propertyName(method.name) as typeof phaseNames[number]),
+      phases: methods.map((method) => propertyName(method.name) as (typeof phaseNames)[number]),
       scope: 'transient',
       source: sourceOf(declaration, normalized.projectRoot),
       dependencies: [],
@@ -843,10 +973,7 @@ export async function compileApplication(
     return complete
   }
 
-  function registerEvent(
-    declaration: ts.ClassDeclaration,
-    ownerId: string,
-  ): EventManifestEntry {
+  function registerEvent(declaration: ts.ClassDeclaration, ownerId: string): EventManifestEntry {
     assertConcreteClass(declaration)
     if (!extendsNamedClass(declaration, 'Event', checker)) {
       fail(declaration, `${requiredClassName(declaration)} must extend Event.`)
@@ -876,11 +1003,14 @@ export async function compileApplication(
       fail(declaration, `${requiredClassName(declaration)} must extend Listener.`)
     }
     const handle = declaration.members.find(
-      (member): member is ts.MethodDeclaration => ts.isMethodDeclaration(member)
-        && propertyName(member.name) === 'handle',
+      (member): member is ts.MethodDeclaration =>
+        ts.isMethodDeclaration(member) && propertyName(member.name) === 'handle',
     )
     if (!handle || handle.parameters.length !== 1) {
-      fail(declaration, `${requiredClassName(declaration)} must define handle(event) with one typed event parameter.`)
+      fail(
+        declaration,
+        `${requiredClassName(declaration)} must define handle(event) with one typed event parameter.`,
+      )
     }
     const eventDeclaration = classDeclarationForType(handle.parameters[0]!, checker)
     const event = eventDeclaration ? eventByDeclaration.get(eventDeclaration) : undefined
@@ -895,7 +1025,8 @@ export async function compileApplication(
       'ShouldQueueAfterCommit',
       checker,
     )
-    const queued = queuedAfterCommit || implementsNamedInterface(declaration, 'ShouldQueue', checker)
+    const queued =
+      queuedAfterCommit || implementsNamedInterface(declaration, 'ShouldQueue', checker)
     const afterCommit = implementsNamedInterface(
       declaration,
       'ShouldHandleEventsAfterCommit',
@@ -909,7 +1040,10 @@ export async function compileApplication(
     }
     const lifecycle = lifecycleOf(declaration, checker)
     if (lifecycle.start || lifecycle.drain || lifecycle.stop) {
-      fail(declaration, `${requiredClassName(declaration)} may define dispose(), but listeners cannot own application lifecycle phases.`)
+      fail(
+        declaration,
+        `${requiredClassName(declaration)} may define dispose(), but listeners cannot own application lifecycle phases.`,
+      )
     }
     const name = requiredClassName(declaration)
     const entry: ListenerManifestEntry = {
@@ -924,7 +1058,7 @@ export async function compileApplication(
           ? 'queued'
           : afterCommit
             ? 'after-commit'
-          : 'local',
+            : 'local',
       access: readAccess(declaration),
       scope: 'transient',
       source: sourceOf(declaration, normalized.projectRoot),
@@ -938,10 +1072,7 @@ export async function compileApplication(
     return complete
   }
 
-  function registerRoute(
-    declaration: ts.ClassDeclaration,
-    ownerId: string,
-  ): RouteManifestEntry {
+  function registerRoute(declaration: ts.ClassDeclaration, ownerId: string): RouteManifestEntry {
     assertConcreteClass(declaration)
     if (!extendsNamedClass(declaration, 'Route', checker)) {
       fail(declaration, `${requiredClassName(declaration)} must extend Route.`)
@@ -955,15 +1086,18 @@ export async function compileApplication(
       fail(declaration, `${requiredClassName(declaration)}.path must begin with /.`)
     }
     const handle = declaration.members.find(
-      (member): member is ts.MethodDeclaration => ts.isMethodDeclaration(member)
-        && propertyName(member.name) === 'handle',
+      (member): member is ts.MethodDeclaration =>
+        ts.isMethodDeclaration(member) && propertyName(member.name) === 'handle',
     )
     if (!handle || handle.parameters.length !== 1) {
       fail(declaration, `${requiredClassName(declaration)} must define handle(request).`)
     }
     const lifecycle = lifecycleOf(declaration, checker)
     if (lifecycle.start || lifecycle.drain || lifecycle.stop) {
-      fail(declaration, `${requiredClassName(declaration)} may define dispose(), but routes cannot own application lifecycle phases.`)
+      fail(
+        declaration,
+        `${requiredClassName(declaration)} may define dispose(), but routes cannot own application lifecycle phases.`,
+      )
     }
     const name = requiredClassName(declaration)
     const access = readRequiredStaticString(declaration, 'access')
@@ -990,24 +1124,24 @@ export async function compileApplication(
     return complete
   }
 
-  function registerJob(
-    declaration: ts.ClassDeclaration,
-    ownerId: string,
-  ): JobManifestEntry {
+  function registerJob(declaration: ts.ClassDeclaration, ownerId: string): JobManifestEntry {
     assertConcreteClass(declaration)
     if (!extendsNamedClass(declaration, 'Job', checker)) {
       fail(declaration, `${requiredClassName(declaration)} must extend Job.`)
     }
     const handle = declaration.members.find(
-      (member): member is ts.MethodDeclaration => ts.isMethodDeclaration(member)
-        && propertyName(member.name) === 'handle',
+      (member): member is ts.MethodDeclaration =>
+        ts.isMethodDeclaration(member) && propertyName(member.name) === 'handle',
     )
     if (!handle || handle.parameters.length !== 1) {
       fail(declaration, `${requiredClassName(declaration)} must define handle(input).`)
     }
     const lifecycle = lifecycleOf(declaration, checker)
     if (lifecycle.start || lifecycle.drain || lifecycle.stop) {
-      fail(declaration, `${requiredClassName(declaration)} may define dispose(), but jobs cannot own application lifecycle phases.`)
+      fail(
+        declaration,
+        `${requiredClassName(declaration)} may define dispose(), but jobs cannot own application lifecycle phases.`,
+      )
     }
     const name = requiredClassName(declaration)
     const retries = readOptionalStaticNumber(declaration, 'retries', 3)
@@ -1054,23 +1188,39 @@ export async function compileApplication(
     }
     const jobDeclaration = readRequiredStaticClass(declaration, 'job', checker)
     const job = jobByDeclaration.get(jobDeclaration)
-    if (!job) fail(declaration, `${requiredClassName(declaration)}.job must name a Job declared by a selected Feature.`)
+    if (!job)
+      fail(
+        declaration,
+        `${requiredClassName(declaration)}.job must name a Job declared by a selected Feature.`,
+      )
     const cron = readOptionalStaticString(declaration, 'cron')
     const everySeconds = readOptionalStaticNumberValue(declaration, 'everySeconds')
     if ((cron === undefined) === (everySeconds === undefined)) {
-      fail(declaration, `${requiredClassName(declaration)} must declare exactly one of static cron or static everySeconds.`)
+      fail(
+        declaration,
+        `${requiredClassName(declaration)} must declare exactly one of static cron or static everySeconds.`,
+      )
     }
     if (cron !== undefined && cron.trim().split(/\s+/).length !== 5) {
-      fail(declaration, `${requiredClassName(declaration)}.cron must use a five-field cron expression.`)
+      fail(
+        declaration,
+        `${requiredClassName(declaration)}.cron must use a five-field cron expression.`,
+      )
     }
     if (everySeconds !== undefined && (!Number.isInteger(everySeconds) || everySeconds < 1)) {
-      fail(declaration, `${requiredClassName(declaration)}.everySeconds must be a positive integer.`)
+      fail(
+        declaration,
+        `${requiredClassName(declaration)}.everySeconds must be a positive integer.`,
+      )
     }
     const timeZone = readOptionalStaticString(declaration, 'timeZone') ?? 'UTC'
     try {
       new Intl.DateTimeFormat('en-US', { timeZone }).format()
     } catch {
-      fail(declaration, `${requiredClassName(declaration)}.timeZone must be a valid IANA time-zone name.`)
+      fail(
+        declaration,
+        `${requiredClassName(declaration)}.timeZone must be a valid IANA time-zone name.`,
+      )
     }
     const overlap = readOptionalStaticString(declaration, 'overlap') ?? 'serialize'
     if (overlap !== 'allow' && overlap !== 'serialize') {
@@ -1086,9 +1236,10 @@ export async function compileApplication(
       name: requiredClassName(declaration),
       exportName: requiredClassName(declaration),
       jobId: job.id,
-      cadence: cron !== undefined
-        ? { kind: 'cron', expression: cron }
-        : { kind: 'interval', seconds: everySeconds! },
+      cadence:
+        cron !== undefined
+          ? { kind: 'cron', expression: cron }
+          : { kind: 'interval', seconds: everySeconds! },
       timeZone,
       overlap,
       misfire,
@@ -1101,28 +1252,29 @@ export async function compileApplication(
     return entry
   }
 
-  function registerPolicy(
-    declaration: ts.ClassDeclaration,
-    ownerId: string,
-  ): PolicyManifestEntry {
+  function registerPolicy(declaration: ts.ClassDeclaration, ownerId: string): PolicyManifestEntry {
     assertConcreteClass(declaration)
     if (!extendsNamedClass(declaration, 'Policy', checker)) {
       fail(declaration, `${requiredClassName(declaration)} must extend Policy.`)
     }
     const decide = declaration.members.find(
-      (member): member is ts.MethodDeclaration => ts.isMethodDeclaration(member)
-        && propertyName(member.name) === 'decide',
+      (member): member is ts.MethodDeclaration =>
+        ts.isMethodDeclaration(member) && propertyName(member.name) === 'decide',
     )
     if (!decide || decide.parameters.length !== 1) {
       fail(declaration, `${requiredClassName(declaration)} must define decide(request).`)
     }
     const lifecycle = lifecycleOf(declaration, checker)
     if (lifecycle.start || lifecycle.drain || lifecycle.stop) {
-      fail(declaration, `${requiredClassName(declaration)} may define dispose(), but policies cannot own application lifecycle phases.`)
+      fail(
+        declaration,
+        `${requiredClassName(declaration)} may define dispose(), but policies cannot own application lifecycle phases.`,
+      )
     }
     const name = requiredClassName(declaration)
     const abilities = readRequiredStaticStringArray(declaration, 'abilities')
-    if (abilities.length === 0) fail(declaration, `${name}.abilities must contain at least one ability.`)
+    if (abilities.length === 0)
+      fail(declaration, `${name}.abilities must contain at least one ability.`)
     const entry: PolicyManifestEntry = {
       id: `policy:${ownerId}/${readRequiredStaticString(declaration, 'id')}`,
       ownerId,
@@ -1168,18 +1320,25 @@ export async function compileApplication(
       fail(declaration, `${requiredClassName(declaration)} must extend SignalHandler.`)
     }
     const handle = declaration.members.find(
-      (member): member is ts.MethodDeclaration => ts.isMethodDeclaration(member)
-        && propertyName(member.name) === 'handle',
+      (member): member is ts.MethodDeclaration =>
+        ts.isMethodDeclaration(member) && propertyName(member.name) === 'handle',
     )
     if (!handle || handle.parameters.length !== 1) {
       fail(declaration, `${requiredClassName(declaration)} must define handle(signal).`)
     }
     const signalDeclaration = classDeclarationForType(handle.parameters[0]!, checker)
     const signal = signalDeclaration ? signalByDeclaration.get(signalDeclaration) : undefined
-    if (!signal) fail(handle.parameters[0]!, 'SignalHandler handle(signal) must name a Signal declared by a selected Feature.')
+    if (!signal)
+      fail(
+        handle.parameters[0]!,
+        'SignalHandler handle(signal) must name a Signal declared by a selected Feature.',
+      )
     const lifecycle = lifecycleOf(declaration, checker)
     if (lifecycle.start || lifecycle.drain || lifecycle.stop) {
-      fail(declaration, `${requiredClassName(declaration)} may define dispose(), but signal handlers cannot own lifecycle phases.`)
+      fail(
+        declaration,
+        `${requiredClassName(declaration)} may define dispose(), but signal handlers cannot own lifecycle phases.`,
+      )
     }
     const name = requiredClassName(declaration)
     const entry: SignalHandlerManifestEntry = {
@@ -1201,16 +1360,29 @@ export async function compileApplication(
     return complete
   }
 
-  function registerCommand(declaration: ts.ClassDeclaration, ownerId: string): CommandManifestEntry {
+  function registerCommand(
+    declaration: ts.ClassDeclaration,
+    ownerId: string,
+  ): CommandManifestEntry {
     assertConcreteClass(declaration)
-    if (!extendsNamedClass(declaration, 'Command', checker)) fail(declaration, `${requiredClassName(declaration)} must extend Command.`)
-    const handle = declaration.members.find((member): member is ts.MethodDeclaration => ts.isMethodDeclaration(member) && propertyName(member.name) === 'handle')
-    if (!handle || handle.parameters.length !== 1) fail(declaration, `${requiredClassName(declaration)} must define handle(arguments_).`)
+    if (!extendsNamedClass(declaration, 'Command', checker))
+      fail(declaration, `${requiredClassName(declaration)} must extend Command.`)
+    const handle = declaration.members.find(
+      (member): member is ts.MethodDeclaration =>
+        ts.isMethodDeclaration(member) && propertyName(member.name) === 'handle',
+    )
+    if (!handle || handle.parameters.length !== 1)
+      fail(declaration, `${requiredClassName(declaration)} must define handle(arguments_).`)
     const lifecycle = lifecycleOf(declaration, checker)
-    if (lifecycle.start || lifecycle.drain || lifecycle.stop) fail(declaration, `${requiredClassName(declaration)} may define dispose(), but commands cannot own application lifecycle phases.`)
+    if (lifecycle.start || lifecycle.drain || lifecycle.stop)
+      fail(
+        declaration,
+        `${requiredClassName(declaration)} may define dispose(), but commands cannot own application lifecycle phases.`,
+      )
     const name = requiredClassName(declaration)
     const command = readRequiredStaticString(declaration, 'name')
-    if (!/^[a-z][a-z0-9]*(?::[a-z][a-z0-9-]*)*$/.test(command)) fail(declaration, `${name}.name must be a stable colon-delimited command name.`)
+    if (!/^[a-z][a-z0-9]*(?::[a-z][a-z0-9-]*)*$/.test(command))
+      fail(declaration, `${name}.name must be a stable colon-delimited command name.`)
     const entry: CommandManifestEntry = {
       id: `command:${ownerId}/${readRequiredStaticString(declaration, 'id')}`,
       ownerId,
@@ -1260,7 +1432,11 @@ function createProgram(tsconfigPath: string): ts.Program {
   if (configFile.error) {
     throw new CanopyCompilationError(formatDiagnostics([configFile.error]))
   }
-  const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, path.dirname(tsconfigPath))
+  const parsed = ts.parseJsonConfigFileContent(
+    configFile.config,
+    ts.sys,
+    path.dirname(tsconfigPath),
+  )
   if (parsed.errors.length > 0) {
     throw new CanopyCompilationError(formatDiagnostics(parsed.errors))
   }
@@ -1284,24 +1460,37 @@ function formatDiagnostics(diagnostics: readonly ts.Diagnostic[]): string {
 
 function findExportedClass(source: ts.SourceFile, exportName: string): ts.ClassDeclaration {
   const declaration = source.statements.find(
-    (statement): statement is ts.ClassDeclaration => ts.isClassDeclaration(statement)
-      && statement.name?.text === exportName
-      && hasModifier(statement, ts.SyntaxKind.ExportKeyword),
+    (statement): statement is ts.ClassDeclaration =>
+      ts.isClassDeclaration(statement) &&
+      statement.name?.text === exportName &&
+      hasModifier(statement, ts.SyntaxKind.ExportKeyword),
   )
   if (!declaration) {
-    throw new CanopyCompilationError(`Expected exported Application class ${exportName} in ${source.fileName}.`)
+    throw new CanopyCompilationError(
+      `Expected exported Application class ${exportName} in ${source.fileName}.`,
+    )
   }
   return declaration
 }
 
-function assertDeclarationOnly(declaration: ts.ClassDeclaration, kind: 'Application' | 'Feature'): void {
+function assertDeclarationOnly(
+  declaration: ts.ClassDeclaration,
+  kind: 'Application' | 'Feature',
+): void {
   for (const member of declaration.members) {
     if (!ts.isPropertyDeclaration(member)) {
       fail(member, `${kind} declarations may contain declarative fields only.`)
     }
     const name = propertyName(member.name)
-    if (!name || !DECLARATION_FIELDS.has(name) || hasModifier(member, ts.SyntaxKind.StaticKeyword)) {
-      fail(member, `${kind} field ${name ?? member.name.getText()} is not a supported declaration field.`)
+    if (
+      !name ||
+      !DECLARATION_FIELDS.has(name) ||
+      hasModifier(member, ts.SyntaxKind.StaticKeyword)
+    ) {
+      fail(
+        member,
+        `${kind} field ${name ?? member.name.getText()} is not a supported declaration field.`,
+      )
     }
   }
 }
@@ -1334,7 +1523,10 @@ function readClassArray(
   })
 }
 
-function resolveClassReference(node: ts.Expression, checker: ts.TypeChecker): ts.ClassDeclaration | undefined {
+function resolveClassReference(
+  node: ts.Expression,
+  checker: ts.TypeChecker,
+): ts.ClassDeclaration | undefined {
   let symbol = checker.getSymbolAtLocation(node)
   if (symbol && (symbol.flags & ts.SymbolFlags.Alias) !== 0) {
     symbol = checker.getAliasedSymbol(symbol)
@@ -1355,13 +1547,16 @@ function classDeclarationForType(
 
 function roleInjectionKind(call: ts.CallExpression): 'required' | 'optional' | undefined {
   if (!ts.isPropertyAccessExpression(call.expression)) return undefined
-  if (call.expression.name.text === 'inject'
-    && call.expression.expression.kind === ts.SyntaxKind.ThisKeyword) return 'required'
+  if (
+    call.expression.name.text === 'inject' &&
+    call.expression.expression.kind === ts.SyntaxKind.ThisKeyword
+  )
+    return 'required'
   const receiver = call.expression.expression
-  return call.expression.name.text === 'optional'
-    && ts.isPropertyAccessExpression(receiver)
-    && receiver.name.text === 'inject'
-    && receiver.expression.kind === ts.SyntaxKind.ThisKeyword
+  return call.expression.name.text === 'optional' &&
+    ts.isPropertyAccessExpression(receiver) &&
+    receiver.name.text === 'inject' &&
+    receiver.expression.kind === ts.SyntaxKind.ThisKeyword
     ? 'optional'
     : undefined
 }
@@ -1381,16 +1576,19 @@ function compileConfigurationProperty(
   const kind = secret
     ? 'secret-string'
     : literalValues
-    ? 'literal-union'
-    : (nonNullable.flags & ts.TypeFlags.StringLike) !== 0
-      ? 'string'
-      : (nonNullable.flags & ts.TypeFlags.NumberLike) !== 0
-        ? 'number'
-        : (nonNullable.flags & ts.TypeFlags.BooleanLike) !== 0
-          ? 'boolean'
-          : undefined
+      ? 'literal-union'
+      : (nonNullable.flags & ts.TypeFlags.StringLike) !== 0
+        ? 'string'
+        : (nonNullable.flags & ts.TypeFlags.NumberLike) !== 0
+          ? 'number'
+          : (nonNullable.flags & ts.TypeFlags.BooleanLike) !== 0
+            ? 'boolean'
+            : undefined
   if (!kind) {
-    fail(property, `Configuration property ${name} must use a supported scalar or literal union type.`)
+    fail(
+      property,
+      `Configuration property ${name} must use a supported scalar or literal union type.`,
+    )
   }
 
   const defaultValue = property.initializer
@@ -1428,10 +1626,10 @@ function literalUnionValues(type: ts.Type): readonly ConfigurationDefault[] | un
 function isNamedCoreType(type: ts.Type, name: string): boolean {
   const declaration = type.getSymbol()?.declarations?.[0]
   return Boolean(
-    declaration
-      && ts.isClassDeclaration(declaration)
-      && declaration.name?.text === name
-      && isCoreDeclaration(declaration),
+    declaration &&
+    ts.isClassDeclaration(declaration) &&
+    declaration.name?.text === name &&
+    isCoreDeclaration(declaration),
   )
 }
 
@@ -1459,12 +1657,16 @@ function implementsNamedInterface(
   name: string,
   checker: ts.TypeChecker,
 ): boolean {
-  return declaration.heritageClauses
-    ?.filter((clause) => clause.token === ts.SyntaxKind.ImplementsKeyword)
-    .some((clause) => clause.types.some((type) => {
-      const referenced = resolveNamedDeclaration(type.expression, checker)
-      return referenced?.name?.text === name && isCoreDeclaration(referenced)
-    })) ?? false
+  return (
+    declaration.heritageClauses
+      ?.filter((clause) => clause.token === ts.SyntaxKind.ImplementsKeyword)
+      .some((clause) =>
+        clause.types.some((type) => {
+          const referenced = resolveNamedDeclaration(type.expression, checker)
+          return referenced?.name?.text === name && isCoreDeclaration(referenced)
+        }),
+      ) ?? false
+  )
 }
 
 function extendsNamedClass(
@@ -1486,7 +1688,7 @@ function extendsNamedClass(
 function resolveNamedDeclaration(
   node: ts.Expression,
   checker: ts.TypeChecker,
-): ts.Declaration & { readonly name?: ts.Identifier } | undefined {
+): (ts.Declaration & { readonly name?: ts.Identifier }) | undefined {
   let symbol = checker.getSymbolAtLocation(node)
   if (symbol && (symbol.flags & ts.SymbolFlags.Alias) !== 0) {
     symbol = checker.getAliasedSymbol(symbol)
@@ -1504,9 +1706,19 @@ function isCoreDeclaration(declaration: ts.Declaration): boolean {
 
 function builtinIdForDeclaration(declaration: ts.ClassDeclaration): string | undefined {
   const name = requiredClassName(declaration)
-  if (name !== 'ActionBus' && name !== 'QueryBus' && name !== 'CurrentExecution'
-    && name !== 'CurrentJob' && name !== 'UnitOfWork' && name !== 'Authorization'
-    && name !== 'Mailer' && name !== 'Sms' && name !== 'DeliveryLedger' && name !== 'Logger') return undefined
+  if (
+    name !== 'ActionBus' &&
+    name !== 'QueryBus' &&
+    name !== 'CurrentExecution' &&
+    name !== 'CurrentJob' &&
+    name !== 'UnitOfWork' &&
+    name !== 'Authorization' &&
+    name !== 'Mailer' &&
+    name !== 'Sms' &&
+    name !== 'DeliveryLedger' &&
+    name !== 'Logger'
+  )
+    return undefined
   const source = declaration.getSourceFile().fileName.split(path.sep).join('/')
   if (!source.includes('/packages/core/') && !source.includes('/@canopy/core/')) return undefined
   if (name === 'ActionBus') return 'canopy:action-bus'
@@ -1525,24 +1737,43 @@ function providerCapabilityForDeclaration(
   declaration: ts.ClassDeclaration,
 ): ProviderManifestEntry['capabilities'][number] | undefined {
   const name = requiredClassName(declaration)
-  if (name !== 'Auth' && name !== 'TransactionManager' && name !== 'QueueManager'
-    && name !== 'Cache' && name !== 'MailTransport' && name !== 'SmsTransport'
-    && name !== 'Telemetry' && name !== 'ObservationRecorder') return undefined
+  if (
+    name !== 'Auth' &&
+    name !== 'TransactionManager' &&
+    name !== 'QueueManager' &&
+    name !== 'Cache' &&
+    name !== 'MailTransport' &&
+    name !== 'SmsTransport' &&
+    name !== 'Telemetry' &&
+    name !== 'ObservationRecorder'
+  )
+    return undefined
   const source = declaration.getSourceFile().fileName.split(path.sep).join('/')
   return source.includes('/packages/core/') || source.includes('/@canopy/core/')
-    ? name === 'Auth' ? 'authentication'
-      : name === 'TransactionManager' ? 'transactions'
-        : name === 'QueueManager' ? 'queues'
-          : name === 'Cache' ? 'cache'
-            : name === 'MailTransport' ? 'mail'
-              : name === 'SmsTransport' ? 'sms'
-                : name === 'Telemetry' ? 'telemetry' : 'observations'
+    ? name === 'Auth'
+      ? 'authentication'
+      : name === 'TransactionManager'
+        ? 'transactions'
+        : name === 'QueueManager'
+          ? 'queues'
+          : name === 'Cache'
+            ? 'cache'
+            : name === 'MailTransport'
+              ? 'mail'
+              : name === 'SmsTransport'
+                ? 'sms'
+                : name === 'Telemetry'
+                  ? 'telemetry'
+                  : 'observations'
     : undefined
 }
 
 function assertConcreteClass(declaration: ts.ClassDeclaration): void {
   if (hasModifier(declaration, ts.SyntaxKind.AbstractKeyword)) {
-    fail(declaration, `${requiredClassName(declaration)} must be concrete before it can be registered.`)
+    fail(
+      declaration,
+      `${requiredClassName(declaration)} must be concrete before it can be registered.`,
+    )
   }
 }
 
@@ -1581,20 +1812,26 @@ function renderRegistry(
     ...signals,
     ...signalHandlers,
     ...commands,
-  ]
-    .sort((left, right) => left.id.localeCompare(right.id))
+  ].sort((left, right) => left.id.localeCompare(right.id))
   const imports = registrations.map((registration, index) => {
     const sourceFile = registration.declaration.getSourceFile().fileName
     const relativeSource = path.relative(options.sourceRoot, sourceFile)
     if (relativeSource.startsWith('..') || path.isAbsolute(relativeSource)) {
-      fail(registration.declaration, 'Registry classes must be emitted from within the configured source root.')
+      fail(
+        registration.declaration,
+        'Registry classes must be emitted from within the configured source root.',
+      )
     }
-    const outputFile = path.join(options.outputRoot, relativeSource).replace(/\.(?:mts|cts|tsx|ts)$/, '.js')
+    const outputFile = path
+      .join(options.outputRoot, relativeSource)
+      .replace(/\.(?:mts|cts|tsx|ts)$/, '.js')
     let specifier = path.relative(options.artifactsDirectory, outputFile).split(path.sep).join('/')
     if (!specifier.startsWith('.')) specifier = `./${specifier}`
     return `import { ${requiredClassName(registration.declaration)} as C${index} } from ${JSON.stringify(specifier)}`
   })
-  const entries = registrations.map((registration, index) => `  ${JSON.stringify(registration.id)}: C${index},`)
+  const entries = registrations.map(
+    (registration, index) => `  ${JSON.stringify(registration.id)}: C${index},`,
+  )
   return [
     '// Generated by @canopy/compiler. Do not edit.',
     ...imports,
@@ -1610,20 +1847,35 @@ function renderRegistry(
 
 function readRequiredInstanceString(declaration: ts.ClassDeclaration, name: string): string {
   const property = findInstanceProperty(declaration, name)
-  if (!property?.initializer || !ts.isStringLiteral(property.initializer) || property.initializer.text.length === 0) {
-    fail(declaration, `${requiredClassName(declaration)}.${name} must be a non-empty string literal.`)
+  if (
+    !property?.initializer ||
+    !ts.isStringLiteral(property.initializer) ||
+    property.initializer.text.length === 0
+  ) {
+    fail(
+      declaration,
+      `${requiredClassName(declaration)}.${name} must be a non-empty string literal.`,
+    )
   }
   return property.initializer.text
 }
 
 function readRequiredStaticString(declaration: ts.ClassDeclaration, name: string): string {
   const property = declaration.members.find(
-    (member): member is ts.PropertyDeclaration => ts.isPropertyDeclaration(member)
-      && hasModifier(member, ts.SyntaxKind.StaticKeyword)
-      && propertyName(member.name) === name,
+    (member): member is ts.PropertyDeclaration =>
+      ts.isPropertyDeclaration(member) &&
+      hasModifier(member, ts.SyntaxKind.StaticKeyword) &&
+      propertyName(member.name) === name,
   )
-  if (!property?.initializer || !ts.isStringLiteral(property.initializer) || property.initializer.text.length === 0) {
-    fail(declaration, `${requiredClassName(declaration)} must declare static ${name} as a non-empty string literal.`)
+  if (
+    !property?.initializer ||
+    !ts.isStringLiteral(property.initializer) ||
+    property.initializer.text.length === 0
+  ) {
+    fail(
+      declaration,
+      `${requiredClassName(declaration)} must declare static ${name} as a non-empty string literal.`,
+    )
   }
   return property.initializer.text
 }
@@ -1631,7 +1883,10 @@ function readRequiredStaticString(declaration: ts.ClassDeclaration, name: string
 function readAccess(declaration: ts.ClassDeclaration): string {
   const access = readRequiredStaticString(declaration, 'access')
   if (access !== 'public' && !/^[a-z][a-z0-9._:-]{1,127}$/.test(access)) {
-    fail(declaration, `${requiredClassName(declaration)}.access must be "public" or a stable ability name.`)
+    fail(
+      declaration,
+      `${requiredClassName(declaration)}.access must be "public" or a stable ability name.`,
+    )
   }
   return access
 }
@@ -1641,9 +1896,10 @@ function staticProperty(
   name: string,
 ): ts.PropertyDeclaration | undefined {
   return declaration.members.find(
-    (member): member is ts.PropertyDeclaration => ts.isPropertyDeclaration(member)
-      && hasModifier(member, ts.SyntaxKind.StaticKeyword)
-      && propertyName(member.name) === name,
+    (member): member is ts.PropertyDeclaration =>
+      ts.isPropertyDeclaration(member) &&
+      hasModifier(member, ts.SyntaxKind.StaticKeyword) &&
+      propertyName(member.name) === name,
   )
 }
 
@@ -1653,8 +1909,11 @@ function readOptionalStaticString(
 ): string | undefined {
   const property = staticProperty(declaration, name)
   if (!property) return undefined
-  if (!property.initializer || !ts.isStringLiteral(property.initializer)
-    || property.initializer.text.length === 0) {
+  if (
+    !property.initializer ||
+    !ts.isStringLiteral(property.initializer) ||
+    property.initializer.text.length === 0
+  ) {
     fail(property, `${requiredClassName(declaration)}.${name} must be a non-empty string literal.`)
   }
   return property.initializer.text
@@ -1666,11 +1925,17 @@ function readRequiredStaticStringArray(
 ): readonly string[] {
   const property = staticProperty(declaration, name)
   if (!property?.initializer || !ts.isArrayLiteralExpression(property.initializer)) {
-    fail(declaration, `${requiredClassName(declaration)} must declare static ${name} as a literal string array.`)
+    fail(
+      declaration,
+      `${requiredClassName(declaration)} must declare static ${name} as a literal string array.`,
+    )
   }
   return property.initializer.elements.map((element) => {
     if (!ts.isStringLiteral(element) || element.text.length === 0) {
-      fail(element, `${requiredClassName(declaration)}.${name} may contain only non-empty string literals.`)
+      fail(
+        element,
+        `${requiredClassName(declaration)}.${name} may contain only non-empty string literals.`,
+      )
     }
     return element.text
   })
@@ -1695,10 +1960,14 @@ function readRequiredStaticClass(
 ): ts.ClassDeclaration {
   const property = staticProperty(declaration, name)
   if (!property?.initializer) {
-    fail(declaration, `${requiredClassName(declaration)} must declare static ${name} as a direct class reference.`)
+    fail(
+      declaration,
+      `${requiredClassName(declaration)} must declare static ${name} as a direct class reference.`,
+    )
   }
   const resolved = resolveClassReference(property.initializer, checker)
-  if (!resolved) fail(property, `${requiredClassName(declaration)}.${name} must be a direct class reference.`)
+  if (!resolved)
+    fail(property, `${requiredClassName(declaration)}.${name} must be a direct class reference.`)
   return resolved
 }
 
@@ -1708,8 +1977,12 @@ function readOptionalStaticJson(declaration: ts.ClassDeclaration, name: string):
 }
 
 function readJsonLiteral(node: ts.Expression): unknown {
-  if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node)
-    || ts.isTypeAssertionExpression(node) || ts.isSatisfiesExpression(node)) {
+  if (
+    ts.isParenthesizedExpression(node) ||
+    ts.isAsExpression(node) ||
+    ts.isTypeAssertionExpression(node) ||
+    ts.isSatisfiesExpression(node)
+  ) {
     return readJsonLiteral(node.expression)
   }
   if (ts.isStringLiteral(node) || ts.isNumericLiteral(node)) {
@@ -1718,8 +1991,12 @@ function readJsonLiteral(node: ts.Expression): unknown {
   if (node.kind === ts.SyntaxKind.TrueKeyword) return true
   if (node.kind === ts.SyntaxKind.FalseKeyword) return false
   if (node.kind === ts.SyntaxKind.NullKeyword) return null
-  if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.MinusToken
-    && ts.isNumericLiteral(node.operand)) return -Number(node.operand.text)
+  if (
+    ts.isPrefixUnaryExpression(node) &&
+    node.operator === ts.SyntaxKind.MinusToken &&
+    ts.isNumericLiteral(node.operand)
+  )
+    return -Number(node.operand.text)
   if (ts.isArrayLiteralExpression(node)) {
     return node.elements.map((element) => {
       if (ts.isSpreadElement(element)) fail(element, 'Schedule input may not contain spreads.')
@@ -1727,14 +2004,16 @@ function readJsonLiteral(node: ts.Expression): unknown {
     })
   }
   if (ts.isObjectLiteralExpression(node)) {
-    return Object.fromEntries(node.properties.map((property) => {
-      if (!ts.isPropertyAssignment(property)) {
-        fail(property, 'Schedule input must use explicit JSON property assignments.')
-      }
-      const key = propertyName(property.name)
-      if (!key) fail(property, 'Schedule input property names must be literal.')
-      return [key, readJsonLiteral(property.initializer)]
-    }))
+    return Object.fromEntries(
+      node.properties.map((property) => {
+        if (!ts.isPropertyAssignment(property)) {
+          fail(property, 'Schedule input must use explicit JSON property assignments.')
+        }
+        const key = propertyName(property.name)
+        if (!key) fail(property, 'Schedule input property names must be literal.')
+        return [key, readJsonLiteral(property.initializer)]
+      }),
+    )
   }
   fail(node, 'Schedule input must be a JSON literal so Cultivate and the manifest can inspect it.')
 }
@@ -1749,8 +2028,12 @@ function validQualifiedIdentifier(value: string): boolean {
 }
 
 function isStringRecord(value: unknown): value is Record<string, string> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    && Object.values(value).every((entry) => typeof entry === 'string')
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every((entry) => typeof entry === 'string')
+  )
 }
 
 function readOptionalStaticNumber(
@@ -1759,9 +2042,10 @@ function readOptionalStaticNumber(
   fallback: number,
 ): number {
   const property = declaration.members.find(
-    (member): member is ts.PropertyDeclaration => ts.isPropertyDeclaration(member)
-      && hasModifier(member, ts.SyntaxKind.StaticKeyword)
-      && propertyName(member.name) === name,
+    (member): member is ts.PropertyDeclaration =>
+      ts.isPropertyDeclaration(member) &&
+      hasModifier(member, ts.SyntaxKind.StaticKeyword) &&
+      propertyName(member.name) === name,
   )
   if (!property) return fallback
   if (!property.initializer || !ts.isNumericLiteral(property.initializer)) {
@@ -1776,9 +2060,10 @@ function readOptionalStaticBoolean(
   fallback: boolean,
 ): boolean {
   const property = declaration.members.find(
-    (member): member is ts.PropertyDeclaration => ts.isPropertyDeclaration(member)
-      && hasModifier(member, ts.SyntaxKind.StaticKeyword)
-      && propertyName(member.name) === name,
+    (member): member is ts.PropertyDeclaration =>
+      ts.isPropertyDeclaration(member) &&
+      hasModifier(member, ts.SyntaxKind.StaticKeyword) &&
+      propertyName(member.name) === name,
   )
   if (!property) return fallback
   if (property.initializer?.kind === ts.SyntaxKind.TrueKeyword) return true
@@ -1786,11 +2071,15 @@ function readOptionalStaticBoolean(
   fail(property, `${requiredClassName(declaration)}.${name} must be a boolean literal.`)
 }
 
-function findInstanceProperty(declaration: ts.ClassDeclaration, name: string): ts.PropertyDeclaration | undefined {
+function findInstanceProperty(
+  declaration: ts.ClassDeclaration,
+  name: string,
+): ts.PropertyDeclaration | undefined {
   return declaration.members.find(
-    (member): member is ts.PropertyDeclaration => ts.isPropertyDeclaration(member)
-      && !hasModifier(member, ts.SyntaxKind.StaticKeyword)
-      && propertyName(member.name) === name,
+    (member): member is ts.PropertyDeclaration =>
+      ts.isPropertyDeclaration(member) &&
+      !hasModifier(member, ts.SyntaxKind.StaticKeyword) &&
+      propertyName(member.name) === name,
   )
 }
 
@@ -1814,72 +2103,15 @@ function sourceOf(node: ts.Node, projectRoot: string): SourceProvenance {
 }
 
 function includesUndefined(type: ts.Type): boolean {
-  return type.isUnion() && type.types.some((member) => (member.flags & ts.TypeFlags.Undefined) !== 0)
+  return (
+    type.isUnion() && type.types.some((member) => (member.flags & ts.TypeFlags.Undefined) !== 0)
+  )
 }
 
 function hasModifier(node: ts.Node, kind: ts.SyntaxKind): boolean {
-  return Boolean(ts.canHaveModifiers(node) && ts.getModifiers(node)?.some((modifier) => modifier.kind === kind))
-}
-
-function assertUnique<T>(items: readonly T[], identity: (item: T) => string, label: string): void {
-  const seen = new Set<string>()
-  for (const item of items) {
-    const id = identity(item)
-    if (seen.has(id)) throw new CanopyCompilationError(`Duplicate ${label}: ${id}`)
-    seen.add(id)
-  }
-}
-
-function assertAcyclicProviderGraph(providers: readonly ProviderManifestEntry[]): void {
-  const byId = new Map(providers.map((provider) => [provider.id, provider]))
-  const visiting = new Set<string>()
-  const visited = new Set<string>()
-
-  const visit = (id: string, path: readonly string[]): void => {
-    if (visiting.has(id)) {
-      throw new CanopyCompilationError(`Dependency cycle: ${[...path, id].join(' -> ')}`)
-    }
-    if (visited.has(id)) return
-    const provider = byId.get(id)
-    if (!provider) return
-    visiting.add(id)
-    for (const dependency of provider.dependencies) {
-      if (dependency.targetId && byId.has(dependency.targetId)) {
-        visit(dependency.targetId, [...path, id])
-      }
-    }
-    visiting.delete(id)
-    visited.add(id)
-  }
-
-  for (const provider of providers) visit(provider.id, [])
-}
-
-function assertScopeSafety(providers: readonly ProviderManifestEntry[]): void {
-  const byId = new Map(providers.map((provider) => [provider.id, provider]))
-
-  const reachesExecutionScope = (id: string, visited: Set<string>): boolean => {
-    if (visited.has(id)) return false
-    visited.add(id)
-    const provider = byId.get(id)
-    if (!provider) return false
-    if (provider.scope === 'execution') return true
-    return provider.dependencies.some(
-      (dependency) => dependency.targetId
-        && reachesExecutionScope(dependency.targetId, visited),
-    )
-  }
-
-  for (const provider of providers) {
-    if (provider.scope !== 'singleton') continue
-    for (const dependency of provider.dependencies) {
-      if (dependency.targetId && reachesExecutionScope(dependency.targetId, new Set())) {
-        throw new CanopyCompilationError(
-          `Singleton ${provider.id} cannot depend on execution-scoped ${dependency.targetId}.`,
-        )
-      }
-    }
-  }
+  return Boolean(
+    ts.canHaveModifiers(node) && ts.getModifiers(node)?.some((modifier) => modifier.kind === kind),
+  )
 }
 
 function byId(left: { readonly id: string }, right: { readonly id: string }): number {
@@ -1887,15 +2119,23 @@ function byId(left: { readonly id: string }, right: { readonly id: string }): nu
 }
 
 function toKebabCase(value: string): string {
-  return value.replace(/([a-z0-9])([A-Z])/g, '$1-$2').replace(/_/g, '-').toLowerCase()
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/_/g, '-')
+    .toLowerCase()
 }
 
 function toScreamingSnake(value: string): string {
-  return value.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/-/g, '_').toUpperCase()
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/-/g, '_')
+    .toUpperCase()
 }
 
 function fail(node: ts.Node, message: string): never {
   const source = node.getSourceFile()
   const position = source.getLineAndCharacterOfPosition(node.getStart(source))
-  throw new CanopyCompilationError(`${source.fileName}:${position.line + 1}:${position.character + 1} ${message}`)
+  throw new CanopyCompilationError(
+    `${source.fileName}:${position.line + 1}:${position.character + 1} ${message}`,
+  )
 }

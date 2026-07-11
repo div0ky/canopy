@@ -7,18 +7,18 @@
 
 ## Decision
 
-Canopy imposes no semantic folder structure. Feature declarations explicitly own
-framework-facing classes, while ordinary concrete services and helpers are discovered through
-constructor reachability. Developers may reorganize source files and domain folders without
-framework configuration or behavioral changes.
+Canopy imposes no semantic folder structure. Feature declarations explicitly own framework-facing
+classes, while ordinary concrete services and helpers are discovered through constructor
+reachability. Developers may reorganize source files and domain folders without framework
+configuration or behavioral changes.
 
 This direction is summarized as:
 
 > Folder paths organize humans. Imports and Feature declarations organize Canopy.
 
-The compiler records source locations for provenance and diagnostics, but a path must never
-activate a class, determine its framework role, change its identity, select its scope, or alter its
-runtime behavior.
+The compiler records source locations for provenance and diagnostics, but a path must never activate
+a class, determine its framework role, change its identity, select its scope, or alter its runtime
+behavior.
 
 ## Organizational freedom
 
@@ -41,12 +41,12 @@ packages/billing/src/jobs/process-refund.ts
 ```
 
 The owning Feature imports and declares the framework-facing class. Moving the class updates its
-TypeScript import but does not change its stable manifest ID, Feature ownership, listeners,
-journal identity, queue identity, dependency scope, or runtime semantics.
+TypeScript import but does not change its stable manifest ID, Feature ownership, listeners, journal
+identity, queue identity, dependency scope, or runtime semantics.
 
 Canopy starters and generators may provide an opinionated layout, but that layout is a placement
-default rather than a discovery contract. Large applications may introduce domain folders or
-deepen a Feature into internal business areas without declaring nested framework modules.
+default rather than a discovery contract. Large applications may introduce domain folders or deepen
+a Feature into internal business areas without declaring nested framework modules.
 
 ## File conventions
 
@@ -66,12 +66,11 @@ and the manifest remain unambiguous.
 ## Framework-facing classes
 
 Feature role arrays remain the sole ownership declarations for models, actions, queries, routes,
-policies, events, listeners, observers, jobs, schedules, commands, and other framework entry
-points.
+policies, events, listeners, observers, jobs, schedules, commands, and other framework entry points.
 
-The compiler must inspect the TypeScript program for exported Canopy role classes that do not
-belong to any selected Feature. It should report an unowned declaration with source-aware fixes,
-but it must not silently register or classify the class based on its path.
+The compiler must inspect the TypeScript program for exported Canopy role classes that do not belong
+to any selected Feature. It should report an unowned declaration with source-aware fixes, but it
+must not silently register or classify the class based on its path.
 
 ## Ordinary services
 
@@ -92,11 +91,11 @@ export class PricingService {
 
 When a declared Action, Query, Listener, Job, Route, or other role injects a concrete class through
 `this.inject()`, Canopy recursively follows and autowires that service's constructor dependencies.
-Concrete services do not require a Canopy base class, decorator, Feature role array, provider
-entry, or service registration.
+Concrete services do not require a Canopy base class, decorator, Feature role array, provider entry,
+or service registration.
 
-Abstract ports, aliases, primitive values, factories, and non-default scopes remain explicit
-Feature bindings because the compiler cannot or should not infer application intent.
+Abstract ports, aliases, primitive values, factories, and non-default scopes remain explicit Feature
+bindings because the compiler cannot or should not infer application intent.
 
 ## Separation of concerns
 
@@ -111,15 +110,15 @@ Canopy encourages the following division without requiring a directory for each 
 - Adapters implement ports using infrastructure.
 - Features own framework-facing behavior and intentional cross-domain capabilities.
 
-OOP is the primary programming model, not a requirement to turn every small pure transformation
-into a container-managed class. Large Actions and Models should be decomposed into intention-
-revealing collaborators without moving domain invariants into arbitrary utility code.
+OOP is the primary programming model, not a requirement to turn every small pure transformation into
+a container-managed class. Large Actions and Models should be decomposed into intention- revealing
+collaborators without moving domain invariants into arbitrary utility code.
 
 ## Feature privacy and sharing
 
-The concrete dependency closure beneath a Feature is private to that Feature by default. Canopy
-must reject an accidental concrete dependency from one Feature into another and must reject a
-concrete service with ambiguous ownership across multiple Features.
+The concrete dependency closure beneath a Feature is private to that Feature by default. Canopy must
+reject an accidental concrete dependency from one Feature into another and must reject a concrete
+service with ambiguous ownership across multiple Features.
 
 Intentional sharing requires one of the following:
 
@@ -133,9 +132,9 @@ Canopy must not silently create a global service namespace or a `shared/services
 
 ## Service providers and lifecycle
 
-Ordinary application services do not need a Laravel-style runtime `ServiceProvider.register()`
-step. Feature bindings declare abstract composition, constructor analysis discovers concrete
-services, and the generated manifest fixes the dependency graph before boot.
+Ordinary application services do not need a Laravel-style runtime `ServiceProvider.register()` step.
+Feature bindings declare abstract composition, constructor analysis discovers concrete services, and
+the generated manifest fixes the dependency graph before boot.
 
 Resources that own startup, shutdown, connection, or process lifecycle are not ordinary helper
 services. They require explicit provider or adapter declarations so lifecycle, scope, health, and
@@ -144,12 +143,11 @@ disposal remain inspectable.
 ## Testing
 
 A focused service must be directly constructible with ordinary fakes or test doubles. Unit tests
-must not boot or reconstruct the application container merely to exercise isolated business
-logic.
+must not boot or reconstruct the application container merely to exercise isolated business logic.
 
-Application-level tests may replace ports or concrete dependencies through first-party,
-test-scoped Canopy overrides. Overrides must preserve scope validation and remain isolated between
-concurrent test applications.
+Application-level tests may replace ports or concrete dependencies through first-party, test-scoped
+Canopy overrides. Overrides must preserve scope validation and remain isolated between concurrent
+test applications.
 
 ## Consequences
 
@@ -169,8 +167,7 @@ The MVP must prove:
 
 1. Identical application behavior from role-first, domain-first, feature-first, and package-based
    source layouts without Canopy configuration changes.
-2. Moving a declared class changes source provenance but not manifest identity or runtime
-   behavior.
+2. Moving a declared class changes source provenance but not manifest identity or runtime behavior.
 3. An undeclared Canopy role class produces a source-aware diagnostic and is never silently
    activated.
 4. A multi-level concrete service graph is autowired without Feature or provider registration.
@@ -181,7 +178,8 @@ The MVP must prove:
 8. Test-scoped dependency overrides remain isolated and retain container semantics.
 9. Generators update direct imports and Feature role arrays without requiring barrel files.
 
-The [pg-boss queue and worker vertical slice](../implementation/pg-boss-queue-worker-vertical-slice.md#application-organization)
+The
+[pg-boss queue and worker vertical slice](../implementation/pg-boss-queue-worker-vertical-slice.md#application-organization)
 reorganizes the integrated application from one flat directory into infrastructure, counters, and
 system domains with role folders. All behavior remains green without folder configuration, while
 manifest ownership changes only through the new Feature declarations and imports.

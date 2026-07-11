@@ -17,7 +17,9 @@ export class ExerciseCache extends Action<string, ExerciseCacheResult> {
     const added = await this.cache.add(`${key}:counter`, 1, { ttlSeconds: 60 })
     const duplicateAdded = await this.cache.add(`${key}:counter`, 99)
     const incremented = await this.cache.increment(`${key}:counter`, 2)
-    const remembered = await this.cache.remember(`${key}:label`, () => 'computed', { ttlSeconds: 60 })
+    const remembered = await this.cache.remember(`${key}:label`, () => 'computed', {
+      ttlSeconds: 60,
+    })
     return { added, duplicateAdded, incremented, remembered }
   }
 }

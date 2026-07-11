@@ -55,9 +55,9 @@ ceremony imposed on every model.
 
 ## Authentication experience
 
-Auth mapping belongs in authentication configuration rather than an application `User` model.
-Canopy Auth must remain usable without a domain user class, and it must know the exact security
-meaning of every configured field:
+Auth mapping belongs in authentication configuration rather than an application `User` model. Canopy
+Auth must remain usable without a domain user class, and it must know the exact security meaning of
+every configured field:
 
 ```ts
 super({
@@ -83,13 +83,13 @@ super({
 })
 ```
 
-Session, bearer-token, challenge, abuse, and audit tables continue using Canopy defaults unless
-they are explicitly mapped. An application may therefore reuse its existing user and password
-records without also adopting a legacy session design.
+Session, bearer-token, challenge, abuse, and audit tables continue using Canopy defaults unless they
+are explicitly mapped. An application may therefore reuse its existing user and password records
+without also adopting a legacy session design.
 
-Auth configuration must validate required columns, uniqueness, nullability, hash format,
-identifier compatibility, and writable operations before readiness. It must never infer password,
-verification, revocation, or authority fields merely because a column has a familiar name.
+Auth configuration must validate required columns, uniqueness, nullability, hash format, identifier
+compatibility, and writable operations before readiness. It must never infer password, verification,
+revocation, or authority fields merely because a column has a familiar name.
 
 The mapped password column stores a versioned Canopy Argon2id record. Existing non-Canopy password
 formats remain a deferred adapter boundary: they require an explicit password-hasher adapter and a
@@ -112,7 +112,8 @@ relabels that format or silently weakens password policy.
 2. Key, column, timestamp, and version overrides retain observer and concurrency semantics.
 3. Advanced multi-record mappers remain an explicit post-MVP extension point.
 4. Auth can register and authenticate against mapped identity and credential tables.
-5. Auth can map identities while retaining default Canopy session, token, challenge, and audit tables.
+5. Auth can map identities while retaining default Canopy session, token, challenge, and audit
+   tables.
 6. Unknown password formats fail closed; legacy hash adapters remain deferred.
 7. Missing mapped columns and invalid identifiers fail before readiness; deeper type and uniqueness
    diagnostics remain a future hardening layer.

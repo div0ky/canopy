@@ -4,15 +4,25 @@ import path from 'node:path'
 import { fork, spawn, type ChildProcess } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { compileApplication } from '@canopy/compiler'
 import { HonoHttpHost } from '@canopy/http-hono'
 import { cancelQueueJob, listQueueJobs, retryQueueJob } from '@canopy/queue-pg-boss'
 import type { LogFormat, LogLevel, QueueEnvelope } from '@canopy/core'
 import { Canopy } from '@canopy/runtime'
-import { listenUndergrowth, pruneUndergrowth } from '@canopy/undergrowth'
 import { Pool } from 'pg'
 
 import { HotReloadSupervisor, type HotReloadTarget } from './hot-reload.js'
+import {
+  integerOption,
+  kebab,
+  numberOption,
+  option,
+  pascal,
+  positiveIntegerOption,
+  required,
+} from './command-values.js'
+import { ArborCommandError } from './errors.js'
+
+export { ArborCommandError } from './errors.js'
 
 export interface ArborIo {
   readonly out: (message: string) => void
@@ -23,10 +33,6 @@ export interface ArborIo {
     cwd: string,
     environment: NodeJS.ProcessEnv,
   ) => Promise<number>
-}
-
-export class ArborCommandError extends Error {
-  override readonly name = 'ArborCommandError'
 }
 
 const help = `Canopy Arbor
@@ -142,6 +148,7 @@ export async function runArbor(
       return 0
     }
     if (command === 'undergrowth:prune') {
+      const { pruneUndergrowth } = await loadUndergrowthTools()
       const connectionString = await databaseConnection(cwd, args)
       const count = await pruneUndergrowth(connectionString, {
         retentionDays: numberOption(args, 'days', 7),
@@ -151,27 +158,59 @@ export async function runArbor(
       return 0
     }
     if (command === 'test') {
-      return await runProcess(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', ['test', ...args], cwd)
+      return await runProcess(
+        process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+        ['test', ...args],
+        cwd,
+      )
     }
     if (command === 'route:list' || command === 'model:list' || command === 'graph') {
       const manifest = (await buildApplication(cwd)).manifest as unknown as Record<string, unknown>
       if (command === 'route:list') {
-        const routes = manifest.routes as Array<{ method: string; path: string; id: string; access: string }>
-        for (const route of routes) io.out(`${route.method.padEnd(7)} ${route.path.padEnd(32)} ${route.access.padEnd(24)} ${route.id}`)
+        const routes = manifest.routes as Array<{
+          method: string
+          path: string
+          id: string
+          access: string
+        }>
+        for (const route of routes)
+          io.out(
+            `${route.method.padEnd(7)} ${route.path.padEnd(32)} ${route.access.padEnd(24)} ${route.id}`,
+          )
       } else if (command === 'model:list') {
         const models = manifest.models as Array<{
           id: string
-          storage: { kind: 'entity-state' } | { kind: 'table'; table: string; primaryKey: string; versionColumn?: string }
+          storage:
+            | { kind: 'entity-state' }
+            | { kind: 'table'; table: string; primaryKey: string; versionColumn?: string }
         }>
         for (const model of models) {
-          const storage = model.storage.kind === 'entity-state'
-            ? 'canopy canopy_entity_states'
-            : `external ${model.storage.table} key=${model.storage.primaryKey} version=${model.storage.versionColumn ?? 'xmin'}`
+          const storage =
+            model.storage.kind === 'entity-state'
+              ? 'canopy canopy_entity_states'
+              : `external ${model.storage.table} key=${model.storage.primaryKey} version=${model.storage.versionColumn ?? 'xmin'}`
           io.out(`${model.id} ${storage}`)
         }
       } else {
-        for (const field of ['features', 'providers', 'models', 'observers', 'actions', 'queries', 'routes', 'events', 'listeners', 'signals', 'signalHandlers', 'jobs', 'schedules', 'policies']) {
-          io.out(`${field.padEnd(16)} ${Array.isArray(manifest[field]) ? manifest[field].length : 0}`)
+        for (const field of [
+          'features',
+          'providers',
+          'models',
+          'observers',
+          'actions',
+          'queries',
+          'routes',
+          'events',
+          'listeners',
+          'signals',
+          'signalHandlers',
+          'jobs',
+          'schedules',
+          'policies',
+        ]) {
+          io.out(
+            `${field.padEnd(16)} ${Array.isArray(manifest[field]) ? manifest[field].length : 0}`,
+          )
         }
       }
       return 0
@@ -179,16 +218,26 @@ export async function runArbor(
     const inspection = inspectionField(command)
     if (inspection) {
       const manifest = (await buildApplication(cwd)).manifest as unknown as Record<string, unknown>
-      for (const entry of manifest[inspection] as Array<Record<string, unknown>>) io.out(formatInspection(inspection, entry))
+      for (const entry of manifest[inspection] as Array<Record<string, unknown>>)
+        io.out(formatInspection(inspection, entry))
       return 0
     }
     if (command === 'delivery:list') {
       await withDatabase(cwd, args, async (pool) => {
-        const result = await pool.query<{ id: string; channel: string; state: string; provider_message_id: string | null; updated_at: Date }>(`
+        const result = await pool.query<{
+          id: string
+          channel: string
+          state: string
+          provider_message_id: string | null
+          updated_at: Date
+        }>(`
           SELECT id, channel, state, provider_message_id, updated_at
           FROM canopy_delivery_messages ORDER BY updated_at DESC, id LIMIT 100
         `)
-        for (const row of result.rows) io.out(`${row.channel.padEnd(5)} ${row.state.padEnd(12)} ${row.id} ${row.provider_message_id ?? '-'} ${row.updated_at.toISOString()}`)
+        for (const row of result.rows)
+          io.out(
+            `${row.channel.padEnd(5)} ${row.state.padEnd(12)} ${row.id} ${row.provider_message_id ?? '-'} ${row.updated_at.toISOString()}`,
+          )
       })
       return 0
     }
@@ -214,7 +263,10 @@ export async function runArbor(
     }
     if (command === 'queue:list' || command === 'queue:failed') {
       const connectionString = await databaseConnection(cwd, args)
-      for (const job of await listQueueJobs(connectionString, command === 'queue:failed' ? 'failed' : undefined)) {
+      for (const job of await listQueueJobs(
+        connectionString,
+        command === 'queue:failed' ? 'failed' : undefined,
+      )) {
         io.out(`${job.state.padEnd(10)} ${job.id} attempts=${job.retryCount}/${job.retryLimit + 1}`)
       }
       return 0
@@ -232,7 +284,9 @@ export async function runArbor(
       return 0
     }
     if (command === 'auth:identities' || command === 'auth:sessions' || command === 'auth:tokens') {
-      await withDatabase(cwd, args, async (pool) => listAuth(pool, command, option(args, 'identity'), io))
+      await withDatabase(cwd, args, async (pool) =>
+        listAuth(pool, command, option(args, 'identity'), io),
+      )
       return 0
     }
     if (command === 'auth:revoke-session' || command === 'auth:revoke-token') {
@@ -262,14 +316,26 @@ export async function runArbor(
     }
     if (command === 'cache:forget' || command === 'cache:prune') {
       await withDatabase(cwd, command === 'cache:forget' ? args.slice(1) : args, async (pool) => {
-        const result = command === 'cache:forget'
-          ? await pool.query('DELETE FROM canopy_cache_entries WHERE key = $1', [required(args[0], 'cache:forget requires a key.')])
-          : await pool.query('DELETE FROM canopy_cache_entries WHERE expires_at IS NOT NULL AND expires_at <= now()')
-        io.out(`${command === 'cache:forget' ? 'Forgot' : 'Pruned'} ${result.rowCount ?? 0} cache entr${result.rowCount === 1 ? 'y' : 'ies'}.`)
+        const result =
+          command === 'cache:forget'
+            ? await pool.query('DELETE FROM canopy_cache_entries WHERE key = $1', [
+                required(args[0], 'cache:forget requires a key.'),
+              ])
+            : await pool.query(
+                'DELETE FROM canopy_cache_entries WHERE expires_at IS NOT NULL AND expires_at <= now()',
+              )
+        io.out(
+          `${command === 'cache:forget' ? 'Forgot' : 'Pruned'} ${result.rowCount ?? 0} cache entr${result.rowCount === 1 ? 'y' : 'ies'}.`,
+        )
       })
       return 0
     }
-    if (command === 'schedule:status' || command === 'schedule:enable' || command === 'schedule:disable' || command === 'schedule:run') {
+    if (
+      command === 'schedule:status' ||
+      command === 'schedule:enable' ||
+      command === 'schedule:disable' ||
+      command === 'schedule:run'
+    ) {
       await operateSchedule(command, cwd, args, io)
       return 0
     }
@@ -291,7 +357,10 @@ export async function runArbor(
       return 0
     }
     if (command === 'make:test') {
-      const file = await makeTest(cwd, parseTarget(required(args[0], 'make:test requires Feature/Name.')))
+      const file = await makeTest(
+        cwd,
+        parseTarget(required(args[0], 'make:test requires Feature/Name.')),
+      )
       io.out(`Created ${path.relative(cwd, file)}`)
       return 0
     }
@@ -310,16 +379,30 @@ export async function runArbor(
   }
 }
 
-async function withDatabase<Output>(cwd: string, args: readonly string[], work: (pool: Pool) => Promise<Output>): Promise<Output> {
+async function withDatabase<Output>(
+  cwd: string,
+  args: readonly string[],
+  work: (pool: Pool) => Promise<Output>,
+): Promise<Output> {
   const connectionString = await databaseConnection(cwd, args)
   const pool = new Pool({ connectionString, application_name: 'canopy-arbor' })
-  try { return await work(pool) } finally { await pool.end() }
+  try {
+    return await work(pool)
+  } finally {
+    await pool.end()
+  }
 }
 
 async function databaseConnection(cwd: string, args: readonly string[]): Promise<string> {
   const explicit = args.find((argument) => argument.startsWith('--database='))?.slice(11)
-  const connectionString = explicit || process.env.DATABASE_CONNECTION_STRING || await dotenvValue(cwd, 'DATABASE_CONNECTION_STRING')
-  if (!connectionString) throw new ArborCommandError('DATABASE_CONNECTION_STRING is required through the environment, .env, or --database=.')
+  const connectionString =
+    explicit ||
+    process.env.DATABASE_CONNECTION_STRING ||
+    (await dotenvValue(cwd, 'DATABASE_CONNECTION_STRING'))
+  if (!connectionString)
+    throw new ArborCommandError(
+      'DATABASE_CONNECTION_STRING is required through the environment, .env, or --database=.',
+    )
   return connectionString
 }
 
@@ -329,8 +412,13 @@ async function runDatabaseStudio(
   io: ArborIo,
 ): Promise<number> {
   for (const argument of args) {
-    if (argument === '--verbose' || argument.startsWith('--database=')
-      || argument.startsWith('--host=') || argument.startsWith('--port=')) continue
+    if (
+      argument === '--verbose' ||
+      argument.startsWith('--database=') ||
+      argument.startsWith('--host=') ||
+      argument.startsWith('--port=')
+    )
+      continue
     throw new ArborCommandError(`Unknown db:studio option ${argument}.`)
   }
   const connectionString = await databaseConnection(cwd, args)
@@ -340,19 +428,30 @@ async function runDatabaseStudio(
   const artifactsDirectory = path.join(cwd, '.canopy')
   const configPath = path.join(artifactsDirectory, 'drizzle-studio.config.mjs')
   await mkdir(artifactsDirectory, { recursive: true })
-  await writeFile(configPath, [
-    '// Generated by Canopy Arbor. Do not edit.',
-    'export default {',
-    "  dialect: 'postgresql',",
-    '  dbCredentials: { url: process.env.DATABASE_CONNECTION_STRING },',
-    '}',
-    '',
-  ].join('\n'), 'utf8')
-
-  const drizzleKit = path.join(
-    path.dirname(fileURLToPath(import.meta.resolve('drizzle-kit'))),
-    'bin.cjs',
+  await writeFile(
+    configPath,
+    [
+      '// Generated by Canopy Arbor. Do not edit.',
+      'export default {',
+      "  dialect: 'postgresql',",
+      '  dbCredentials: { url: process.env.DATABASE_CONNECTION_STRING },',
+      '}',
+      '',
+    ].join('\n'),
+    'utf8',
   )
+
+  let drizzleKit: string
+  try {
+    drizzleKit = path.join(
+      path.dirname(fileURLToPath(import.meta.resolve('drizzle-kit'))),
+      'bin.cjs',
+    )
+  } catch {
+    throw new ArborCommandError(
+      'Drizzle Studio tooling is not installed. Reinstall development dependencies before running arbor db:studio.',
+    )
+  }
   const drizzleArguments = [
     drizzleKit,
     'studio',
@@ -362,7 +461,7 @@ async function runDatabaseStudio(
     ...(args.includes('--verbose') ? ['--verbose'] : []),
   ]
   const environment = {
-    ...await dotenvEnvironment(cwd),
+    ...(await dotenvEnvironment(cwd)),
     ...process.env,
     DATABASE_CONNECTION_STRING: connectionString,
   }
@@ -371,13 +470,23 @@ async function runDatabaseStudio(
 }
 
 async function runUndergrowth(cwd: string, args: readonly string[], io: ArborIo): Promise<void> {
+  const { listenUndergrowth } = await loadUndergrowthTools()
   for (const argument of args) {
-    if (argument.startsWith('--database=') || argument.startsWith('--host=') || argument.startsWith('--port=')) continue
+    if (
+      argument.startsWith('--database=') ||
+      argument.startsWith('--host=') ||
+      argument.startsWith('--port=')
+    )
+      continue
     throw new ArborCommandError(`Unknown undergrowth option ${argument}.`)
   }
   const host = option(args, 'host') ?? '127.0.0.1'
   const port = integerOption(args, 'port', 4_400)
-  const service = await listenUndergrowth({ connectionString: await databaseConnection(cwd, args), host, port })
+  const service = await listenUndergrowth({
+    connectionString: await databaseConnection(cwd, args),
+    host,
+    port,
+  })
   io.out(`Undergrowth is revealing ${service.url.toString()}`)
   await new Promise<void>((resolve) => {
     let stopping = false
@@ -400,7 +509,8 @@ async function addUndergrowth(cwd: string): Promise<void> {
     scripts?: Record<string, string>
   }
   packageJson.dependencies ??= {}
-  packageJson.dependencies['@canopy/undergrowth'] = packageJson.dependencies['@canopy/core'] ?? '^0.1.0'
+  packageJson.dependencies['@canopy/undergrowth'] =
+    packageJson.dependencies['@canopy/core'] ?? (await frameworkDependencyRange())
   packageJson.scripts ??= {}
   packageJson.scripts.undergrowth = 'arbor undergrowth'
   packageJson.scripts['undergrowth:prune'] = 'arbor undergrowth:prune'
@@ -408,13 +518,22 @@ async function addUndergrowth(cwd: string): Promise<void> {
 
   const providerPath = path.join(cwd, 'src/infrastructure/undergrowth.ts')
   await mkdir(path.dirname(providerPath), { recursive: true })
-  if (!await fileExists(providerPath)) {
-    await writeFile(providerPath, `import { PostgresUndergrowth } from '@canopy/undergrowth'\nimport { DatabaseConfig } from './database.config.js'\n\nexport class ApplicationUndergrowth extends PostgresUndergrowth {\n  static override readonly id = 'undergrowth'\n  constructor(config: DatabaseConfig) {\n    super({ connectionString: config.connectionString.reveal() })\n  }\n}\n`, 'utf8')
+  if (!(await fileExists(providerPath))) {
+    await writeFile(
+      providerPath,
+      `import { PostgresUndergrowth } from '@canopy/undergrowth'\nimport { DatabaseConfig } from './database.config.js'\n\nexport class ApplicationUndergrowth extends PostgresUndergrowth {\n  static override readonly id = 'undergrowth'\n  constructor(config: DatabaseConfig) {\n    super({ connectionString: config.connectionString.reveal() })\n  }\n}\n`,
+      'utf8',
+    )
   }
   const featurePath = path.join(cwd, 'src/infrastructure/infrastructure.feature.ts')
   let feature: string
-  try { feature = await readFile(featurePath, 'utf8') }
-  catch { throw new ArborCommandError('Undergrowth expects src/infrastructure/infrastructure.feature.ts. Generate an Infrastructure Feature first.') }
+  try {
+    feature = await readFile(featurePath, 'utf8')
+  } catch {
+    throw new ArborCommandError(
+      'Undergrowth expects src/infrastructure/infrastructure.feature.ts. Generate an Infrastructure Feature first.',
+    )
+  }
   if (!feature.includes("from './undergrowth.js'")) {
     const importLine = "import { ApplicationUndergrowth } from './undergrowth.js'\n"
     const lastImport = [...feature.matchAll(/^import .*$/gm)].at(-1)
@@ -422,9 +541,16 @@ async function addUndergrowth(cwd: string): Promise<void> {
     feature = feature.slice(0, insertAt) + importLine + feature.slice(insertAt)
   }
   if (!/providers\s*=\s*\[[^\]]*ApplicationUndergrowth/s.test(feature)) {
-    feature = feature.replace(/providers\s*=\s*\[([^\]]*)\]/s, (_match, providers: string) => `providers = [${providers.trim()}${providers.trim() ? ', ' : ''}ApplicationUndergrowth]`)
+    feature = feature.replace(
+      /providers\s*=\s*\[([^\]]*)\]/s,
+      (_match, providers: string) =>
+        `providers = [${providers.trim()}${providers.trim() ? ', ' : ''}ApplicationUndergrowth]`,
+    )
   }
-  if (!feature.includes('ApplicationUndergrowth]')) throw new ArborCommandError('Could not add Undergrowth to the Infrastructure Feature providers array.')
+  if (!feature.includes('ApplicationUndergrowth]'))
+    throw new ArborCommandError(
+      'Could not add Undergrowth to the Infrastructure Feature providers array.',
+    )
   await writeFile(featurePath, feature, 'utf8')
 }
 
@@ -432,12 +558,23 @@ async function redriveDelivery(pool: Pool, id: string): Promise<void> {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    const found = await client.query<{ channel: 'mail' | 'sms'; state: string; payload: unknown; context: Record<string, unknown> }>(`
+    const found = await client.query<{
+      channel: 'mail' | 'sms'
+      state: string
+      payload: unknown
+      context: Record<string, unknown>
+    }>(
+      `
       SELECT channel, state, payload, context FROM canopy_delivery_messages WHERE id = $1 FOR UPDATE
-    `, [id])
+    `,
+      [id],
+    )
     const delivery = found.rows[0]
     if (!delivery) throw new ArborCommandError(`Delivery ${id} was not found.`)
-    if (!['failed', 'undelivered'].includes(delivery.state)) throw new ArborCommandError(`Delivery ${id} is ${delivery.state}; only failed or undelivered deliveries may be retried.`)
+    if (!['failed', 'undelivered'].includes(delivery.state))
+      throw new ArborCommandError(
+        `Delivery ${id} is ${delivery.state}; only failed or undelivered deliveries may be retried.`,
+      )
     const outboxId = randomUUID()
     const envelopeId = randomUUID()
     const context = delivery.context
@@ -447,27 +584,39 @@ async function redriveDelivery(pool: Pool, id: string): Promise<void> {
       sourceExecutionId: executionId,
       causationId: id,
     }
-    await client.query(`
+    await client.query(
+      `
       UPDATE canopy_delivery_messages
       SET state = 'pending', failure_kind = NULL, failure_code = NULL, updated_at = now()
       WHERE id = $1
-    `, [id])
-    await client.query(`
+    `,
+      [id],
+    )
+    await client.query(
+      `
       INSERT INTO canopy_outbox_messages (id, message_type, payload, context, status, available_at, created_at)
       VALUES ($1, 'canopy.queue', $2::jsonb, $3::jsonb, 'pending', now(), now())
-    `, [outboxId, JSON.stringify({
-      id: envelopeId,
-      kind: delivery.channel,
-      targetId: `canopy:${delivery.channel}`,
-      payload: delivery.payload,
-      context: queueContext,
-      policy: { retries: 3, retryDelay: 1, backoff: true, timeout: 30 },
-    }), JSON.stringify(context)])
+    `,
+      [
+        outboxId,
+        JSON.stringify({
+          id: envelopeId,
+          kind: delivery.channel,
+          targetId: `canopy:${delivery.channel}`,
+          payload: delivery.payload,
+          context: queueContext,
+          policy: { retries: 3, retryDelay: 1, backoff: true, timeout: 30 },
+        }),
+        JSON.stringify(context),
+      ],
+    )
     await client.query('COMMIT')
   } catch (error) {
     await client.query('ROLLBACK').catch(() => undefined)
     throw error
-  } finally { client.release() }
+  } finally {
+    client.release()
+  }
 }
 
 async function listAuth(
@@ -477,25 +626,58 @@ async function listAuth(
   io: ArborIo,
 ): Promise<void> {
   if (command === 'auth:identities') {
-    const result = await pool.query<{ id: string; email: string; email_verified_at: Date | null; created_at: Date }>(`
+    const result = await pool.query<{
+      id: string
+      email: string
+      email_verified_at: Date | null
+      created_at: Date
+    }>(`
       SELECT id, email, email_verified_at, created_at FROM canopy_auth_identities ORDER BY created_at DESC LIMIT 100
     `)
-    for (const row of result.rows) io.out(`${row.id} ${row.email} verified=${row.email_verified_at ? 'yes' : 'no'} created=${row.created_at.toISOString()}`)
+    for (const row of result.rows)
+      io.out(
+        `${row.id} ${row.email} verified=${row.email_verified_at ? 'yes' : 'no'} created=${row.created_at.toISOString()}`,
+      )
     return
   }
   if (command === 'auth:sessions') {
-    const result = await pool.query<{ id: string; identity_id: string; last_seen_at: Date; expires_at: Date; revoked_at: Date | null }>(`
+    const result = await pool.query<{
+      id: string
+      identity_id: string
+      last_seen_at: Date
+      expires_at: Date
+      revoked_at: Date | null
+    }>(
+      `
       SELECT id, identity_id, last_seen_at, expires_at, revoked_at FROM canopy_auth_sessions
       WHERE ($1::text IS NULL OR identity_id = $1) ORDER BY created_at DESC LIMIT 100
-    `, [identityId ?? null])
-    for (const row of result.rows) io.out(`${row.id} identity=${row.identity_id} ${row.revoked_at ? 'revoked' : 'active'} last=${row.last_seen_at.toISOString()} expires=${row.expires_at.toISOString()}`)
+    `,
+      [identityId ?? null],
+    )
+    for (const row of result.rows)
+      io.out(
+        `${row.id} identity=${row.identity_id} ${row.revoked_at ? 'revoked' : 'active'} last=${row.last_seen_at.toISOString()} expires=${row.expires_at.toISOString()}`,
+      )
     return
   }
-  const result = await pool.query<{ id: string; identity_id: string; name: string; display_prefix: string; expires_at: Date; revoked_at: Date | null }>(`
+  const result = await pool.query<{
+    id: string
+    identity_id: string
+    name: string
+    display_prefix: string
+    expires_at: Date
+    revoked_at: Date | null
+  }>(
+    `
     SELECT id, identity_id, name, display_prefix, expires_at, revoked_at FROM canopy_auth_access_tokens
     WHERE ($1::text IS NULL OR identity_id = $1) ORDER BY created_at DESC LIMIT 100
-  `, [identityId ?? null])
-  for (const row of result.rows) io.out(`${row.id} identity=${row.identity_id} ${row.revoked_at ? 'revoked' : 'active'} ${row.name} prefix=${row.display_prefix} expires=${row.expires_at.toISOString()}`)
+  `,
+    [identityId ?? null],
+  )
+  for (const row of result.rows)
+    io.out(
+      `${row.id} identity=${row.identity_id} ${row.revoked_at ? 'revoked' : 'active'} ${row.name} prefix=${row.display_prefix} expires=${row.expires_at.toISOString()}`,
+    )
 }
 
 async function revokeAuth(
@@ -505,17 +687,31 @@ async function revokeAuth(
 ): Promise<void> {
   const session = command === 'auth:revoke-session'
   const table = session ? 'canopy_auth_sessions' : 'canopy_auth_access_tokens'
-  const result = await pool.query<{ identity_id: string }>(`
+  const result = await pool.query<{ identity_id: string }>(
+    `
     UPDATE ${table} SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL RETURNING identity_id
-  `, [id])
+  `,
+    [id],
+  )
   const row = result.rows[0]
-  if (!row) throw new ArborCommandError(`${session ? 'Session' : 'Access token'} ${id} is unavailable or already revoked.`)
-  await pool.query(`
+  if (!row)
+    throw new ArborCommandError(
+      `${session ? 'Session' : 'Access token'} ${id} is unavailable or already revoked.`,
+    )
+  await pool.query(
+    `
     INSERT INTO canopy_auth_audit_events (id, event_type, identity_id, ${session ? 'session_id,' : ''} metadata, occurred_at)
     VALUES ($1, $2, $3, ${session ? '$4,' : ''} $${session ? 5 : 4}::jsonb, now())
-  `, session
-    ? [randomUUID(), 'session.revoked_by_operator', row.identity_id, id, JSON.stringify({})]
-    : [randomUUID(), 'access_token.revoked_by_operator', row.identity_id, JSON.stringify({ tokenId: id })])
+  `,
+    session
+      ? [randomUUID(), 'session.revoked_by_operator', row.identity_id, id, JSON.stringify({})]
+      : [
+          randomUUID(),
+          'access_token.revoked_by_operator',
+          row.identity_id,
+          JSON.stringify({ tokenId: id }),
+        ],
+  )
 }
 
 async function listInfrastructure(
@@ -524,23 +720,41 @@ async function listInfrastructure(
   io: ArborIo,
 ): Promise<void> {
   if (command === 'journal:list') {
-    const result = await pool.query<{ id: string; fact_type: string; entity_type: string; entity_id: string; occurred_at: Date }>(`
+    const result = await pool.query<{
+      id: string
+      fact_type: string
+      entity_type: string
+      entity_id: string
+      occurred_at: Date
+    }>(`
       SELECT id, fact_type, entity_type, entity_id, occurred_at FROM canopy_journal_entries ORDER BY occurred_at DESC LIMIT 100
     `)
-    for (const row of result.rows) io.out(`${row.occurred_at.toISOString()} ${row.fact_type} ${row.entity_type}/${row.entity_id} ${row.id}`)
+    for (const row of result.rows)
+      io.out(
+        `${row.occurred_at.toISOString()} ${row.fact_type} ${row.entity_type}/${row.entity_id} ${row.id}`,
+      )
     return
   }
   if (command === 'outbox:list') {
-    const result = await pool.query<{ id: string; message_type: string; status: string; available_at: Date }>(`
+    const result = await pool.query<{
+      id: string
+      message_type: string
+      status: string
+      available_at: Date
+    }>(`
       SELECT id, message_type, status, available_at FROM canopy_outbox_messages ORDER BY created_at DESC LIMIT 100
     `)
-    for (const row of result.rows) io.out(`${row.status.padEnd(10)} ${row.message_type} ${row.id} available=${row.available_at.toISOString()}`)
+    for (const row of result.rows)
+      io.out(
+        `${row.status.padEnd(10)} ${row.message_type} ${row.id} available=${row.available_at.toISOString()}`,
+      )
     return
   }
   const result = await pool.query<{ key: string; expires_at: Date | null }>(`
     SELECT key, expires_at FROM canopy_cache_entries WHERE expires_at IS NULL OR expires_at > now() ORDER BY key LIMIT 100
   `)
-  for (const row of result.rows) io.out(`${row.key} expires=${row.expires_at?.toISOString() ?? 'never'}`)
+  for (const row of result.rows)
+    io.out(`${row.key} expires=${row.expires_at?.toISOString() ?? 'never'}`)
 }
 
 async function operateSchedule(
@@ -551,21 +765,40 @@ async function operateSchedule(
 ): Promise<void> {
   const result = await loadPrebuiltApplication(cwd)
   const schedules = result.manifest.schedules
-  const requested = command === 'schedule:status' ? undefined : required(args[0], `${command} requires a schedule ID.`)
-  const schedule = requested ? schedules.find((entry) => entry.id === requested || entry.id.endsWith(`/${requested}`)) : undefined
+  const requested =
+    command === 'schedule:status'
+      ? undefined
+      : required(args[0], `${command} requires a schedule ID.`)
+  const schedule = requested
+    ? schedules.find((entry) => entry.id === requested || entry.id.endsWith(`/${requested}`))
+    : undefined
   if (requested && !schedule) throw new ArborCommandError(`Schedule ${requested} is not declared.`)
   await withDatabase(cwd, requested ? args.slice(1) : args, async (pool) => {
-    for (const entry of schedules) await pool.query(`INSERT INTO canopy_schedule_controls (schedule_id, enabled) VALUES ($1, true) ON CONFLICT (schedule_id) DO NOTHING`, [entry.id])
+    for (const entry of schedules)
+      await pool.query(
+        `INSERT INTO canopy_schedule_controls (schedule_id, enabled) VALUES ($1, true) ON CONFLICT (schedule_id) DO NOTHING`,
+        [entry.id],
+      )
     if (command === 'schedule:status') {
-      const controls = await pool.query<{ schedule_id: string; enabled: boolean }>('SELECT schedule_id, enabled FROM canopy_schedule_controls')
+      const controls = await pool.query<{ schedule_id: string; enabled: boolean }>(
+        'SELECT schedule_id, enabled FROM canopy_schedule_controls',
+      )
       const enabled = new Map(controls.rows.map((row) => [row.schedule_id, row.enabled]))
-      for (const entry of schedules) io.out(`${enabled.get(entry.id) === false ? 'disabled' : 'enabled '} ${entry.id} -> ${entry.jobId} ${JSON.stringify(entry.cadence)}`)
+      for (const entry of schedules)
+        io.out(
+          `${enabled.get(entry.id) === false ? 'disabled' : 'enabled '} ${entry.id} -> ${entry.jobId} ${JSON.stringify(entry.cadence)}`,
+        )
       return
     }
     if (command === 'schedule:enable' || command === 'schedule:disable') {
       const value = command === 'schedule:enable'
-      await pool.query('UPDATE canopy_schedule_controls SET enabled = $2, updated_at = now() WHERE schedule_id = $1', [schedule!.id, value])
-      io.out(`${value ? 'Enabled' : 'Disabled'} schedule ${schedule!.id}. Restart a background role to reconcile immediately.`)
+      await pool.query(
+        'UPDATE canopy_schedule_controls SET enabled = $2, updated_at = now() WHERE schedule_id = $1',
+        [schedule!.id, value],
+      )
+      io.out(
+        `${value ? 'Enabled' : 'Disabled'} schedule ${schedule!.id}. Restart a background role to reconcile immediately.`,
+      )
       return
     }
     const job = result.manifest.jobs.find((entry) => entry.id === schedule!.jobId)
@@ -589,29 +822,48 @@ async function operateSchedule(
       scheduleId: schedule!.id,
       payload: schedule!.input as import('@canopy/core').JsonValue,
       context,
-      policy: { retries: job.retries, retryDelay: job.retryDelay, backoff: job.backoff, timeout: job.timeout },
+      policy: {
+        retries: job.retries,
+        retryDelay: job.retryDelay,
+        backoff: job.backoff,
+        timeout: job.timeout,
+      },
     }
-    await pool.query(`
+    await pool.query(
+      `
       INSERT INTO canopy_outbox_messages (id, message_type, payload, context, status, available_at, created_at)
       VALUES ($1, 'canopy.queue', $2::jsonb, $3::jsonb, 'pending', now(), now())
-    `, [randomUUID(), JSON.stringify(envelope), JSON.stringify(context)])
+    `,
+      [randomUUID(), JSON.stringify(envelope), JSON.stringify(context)],
+    )
     io.out(`Fired schedule ${schedule!.id} as queue job ${envelopeId}.`)
   })
 }
 
 async function dotenvValue(cwd: string, key: string): Promise<string | undefined> {
   let content: string
-  try { content = await readFile(path.join(cwd, '.env'), 'utf8') } catch { return undefined }
+  try {
+    content = await readFile(path.join(cwd, '.env'), 'utf8')
+  } catch {
+    return undefined
+  }
   for (const line of content.split(/\r?\n/)) {
     const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/)
     if (!match || match[1] !== key) continue
     const value = match[2]!
-    return ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) ? value.slice(1, -1) : value
+    return (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+      ? value.slice(1, -1)
+      : value
   }
   return undefined
 }
 
-interface MigrationFile { readonly id: string; readonly sql: string; readonly checksum: string }
+interface MigrationFile {
+  readonly id: string
+  readonly sql: string
+  readonly checksum: string
+}
 
 async function discoverMigrations(cwd: string): Promise<readonly MigrationFile[]> {
   const framework = ['postgres-drizzle', 'auth-postgres', 'queue-pg-boss']
@@ -620,14 +872,20 @@ async function discoverMigrations(cwd: string): Promise<readonly MigrationFile[]
   for (const name of framework) {
     const installed = path.join(cwd, 'node_modules', '@canopy', name, 'migrations')
     const workspace = path.resolve(import.meta.dirname, '..', '..', name, 'migrations')
-    roots.push({ prefix: `framework/${name}`, directory: await directoryExists(installed) ? installed : workspace })
+    roots.push({
+      prefix: `framework/${name}`,
+      directory: (await directoryExists(installed)) ? installed : workspace,
+    })
   }
   roots.push({ prefix: 'application', directory: path.join(cwd, 'migrations') })
   const migrations: MigrationFile[] = []
   for (const root of roots) {
     let names: string[]
-    try { names = (await readdir(root.directory)).filter((name) => name.endsWith('.sql')).sort() }
-    catch { continue }
+    try {
+      names = (await readdir(root.directory)).filter((name) => name.endsWith('.sql')).sort()
+    } catch {
+      continue
+    }
     for (const name of names) {
       const sql = await readFile(path.join(root.directory, name), 'utf8')
       migrations.push({
@@ -643,13 +901,22 @@ async function discoverMigrations(cwd: string): Promise<readonly MigrationFile[]
 async function packageDeclares(cwd: string, dependency: string): Promise<boolean> {
   try {
     const packageJson = JSON.parse(await readFile(path.join(cwd, 'package.json'), 'utf8')) as {
-      dependencies?: Record<string, string>; devDependencies?: Record<string, string>
+      dependencies?: Record<string, string>
+      devDependencies?: Record<string, string>
     }
-    return dependency in (packageJson.dependencies ?? {}) || dependency in (packageJson.devDependencies ?? {})
-  } catch { return false }
+    return (
+      dependency in (packageJson.dependencies ?? {}) ||
+      dependency in (packageJson.devDependencies ?? {})
+    )
+  } catch {
+    return false
+  }
 }
 
-async function applyMigrations(pool: Pool, migrations: readonly MigrationFile[]): Promise<readonly string[]> {
+async function applyMigrations(
+  pool: Pool,
+  migrations: readonly MigrationFile[],
+): Promise<readonly string[]> {
   const client = await pool.connect()
   const applied: string[] = []
   try {
@@ -662,20 +929,30 @@ async function applyMigrations(pool: Pool, migrations: readonly MigrationFile[])
       )
     `)
     await client.query(`SELECT pg_advisory_lock(hashtext('canopy:migrations'))`)
-    const existing = await client.query<{ id: string; checksum: string }>('SELECT id, checksum FROM canopy_migrations')
+    const existing = await client.query<{ id: string; checksum: string }>(
+      'SELECT id, checksum FROM canopy_migrations',
+    )
     const byId = new Map(existing.rows.map((row) => [row.id, row.checksum]))
     for (const migration of migrations) {
       const checksum = byId.get(migration.id)
-      if (checksum && checksum !== migration.checksum) throw new ArborCommandError(`Applied migration ${migration.id} has changed; create a new migration instead.`)
+      if (checksum && checksum !== migration.checksum)
+        throw new ArborCommandError(
+          `Applied migration ${migration.id} has changed; create a new migration instead.`,
+        )
     }
-    const batchResult = await client.query<{ batch: number }>('SELECT COALESCE(max(batch), 0) + 1 AS batch FROM canopy_migrations')
+    const batchResult = await client.query<{ batch: number }>(
+      'SELECT COALESCE(max(batch), 0) + 1 AS batch FROM canopy_migrations',
+    )
     const batch = batchResult.rows[0]!.batch
     for (const migration of migrations) {
       if (byId.has(migration.id)) continue
       await client.query('BEGIN')
       try {
         await client.query(migration.sql)
-        await client.query('INSERT INTO canopy_migrations (id, checksum, batch, applied_at) VALUES ($1, $2, $3, now())', [migration.id, migration.checksum, batch])
+        await client.query(
+          'INSERT INTO canopy_migrations (id, checksum, batch, applied_at) VALUES ($1, $2, $3, now())',
+          [migration.id, migration.checksum, batch],
+        )
         await client.query('COMMIT')
         applied.push(migration.id)
       } catch (error) {
@@ -685,29 +962,47 @@ async function applyMigrations(pool: Pool, migrations: readonly MigrationFile[])
     }
     return applied
   } finally {
-    await client.query(`SELECT pg_advisory_unlock(hashtext('canopy:migrations'))`).catch(() => undefined)
+    await client
+      .query(`SELECT pg_advisory_unlock(hashtext('canopy:migrations'))`)
+      .catch(() => undefined)
     client.release()
   }
 }
 
-async function migrationStatus(pool: Pool, migrations: readonly MigrationFile[]): Promise<readonly { id: string; state: 'applied' | 'pending' | 'drifted' }[]> {
-  const exists = await pool.query<{ exists: boolean }>(`SELECT to_regclass('public.canopy_migrations') IS NOT NULL AS exists`)
+async function migrationStatus(
+  pool: Pool,
+  migrations: readonly MigrationFile[],
+): Promise<readonly { id: string; state: 'applied' | 'pending' | 'drifted' }[]> {
+  const exists = await pool.query<{ exists: boolean }>(
+    `SELECT to_regclass('public.canopy_migrations') IS NOT NULL AS exists`,
+  )
   const rows = exists.rows[0]?.exists
-    ? await pool.query<{ id: string; checksum: string }>('SELECT id, checksum FROM canopy_migrations')
+    ? await pool.query<{ id: string; checksum: string }>(
+        'SELECT id, checksum FROM canopy_migrations',
+      )
     : { rows: [] as Array<{ id: string; checksum: string }> }
   const applied = new Map(rows.rows.map((row) => [row.id, row.checksum]))
   return migrations.map((migration) => ({
     id: migration.id,
-    state: !applied.has(migration.id) ? 'pending'
-      : applied.get(migration.id) === migration.checksum ? 'applied' : 'drifted',
+    state: !applied.has(migration.id)
+      ? 'pending'
+      : applied.get(migration.id) === migration.checksum
+        ? 'applied'
+        : 'drifted',
   }))
 }
 
 async function directoryExists(directory: string): Promise<boolean> {
-  try { await readdir(directory); return true } catch { return false }
+  try {
+    await readdir(directory)
+    return true
+  } catch {
+    return false
+  }
 }
 
 async function compile(cwd: string) {
+  const { compileApplication } = await loadCompiler()
   return compileApplication({
     tsconfigPath: path.join(cwd, 'tsconfig.json'),
     applicationFile: path.join(cwd, 'src/application.ts'),
@@ -717,53 +1012,106 @@ async function compile(cwd: string) {
   })
 }
 
+async function loadCompiler(): Promise<typeof import('@canopy/compiler')> {
+  try {
+    return await import('@canopy/compiler')
+  } catch (error) {
+    throw new ArborCommandError(
+      'Canopy compiler tooling is not installed. Reinstall development dependencies before running build or development commands.',
+      { cause: error },
+    )
+  }
+}
+
+async function loadUndergrowthTools(): Promise<typeof import('@canopy/undergrowth')> {
+  try {
+    return await import('@canopy/undergrowth')
+  } catch (error) {
+    throw new ArborCommandError(
+      'Undergrowth tooling is not installed. Install @canopy/undergrowth before running this command.',
+      { cause: error },
+    )
+  }
+}
+
+async function frameworkDependencyRange(): Promise<string> {
+  const packageJson = JSON.parse(
+    await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'),
+  ) as { version?: unknown }
+  if (typeof packageJson.version !== 'string' || packageJson.version.length === 0) {
+    throw new ArborCommandError('The installed Arbor package does not declare a valid version.')
+  }
+  return `^${packageJson.version}`
+}
+
 async function makeApplication(directory: string, rawName: string): Promise<void> {
   const name = pascal(rawName)
   const packageName = kebab(rawName)
+  const frameworkRange = await frameworkDependencyRange()
   await mkdir(path.join(directory, 'src', 'app', 'http'), { recursive: true })
   const files: Readonly<Record<string, string>> = {
-    'package.json': `${JSON.stringify({
-      name: packageName,
-      version: '0.1.0',
-      private: true,
-      type: 'module',
-      packageManager: 'pnpm@11.10.0',
-      scripts: {
-        arbor: 'arbor',
-        build: 'arbor build',
-        dev: 'arbor dev',
-        start: 'arbor serve',
-        serve: 'arbor serve',
-        background: 'arbor work',
-        work: 'arbor work',
-        schedule: 'arbor schedule',
-        migrate: 'arbor migrate',
-        'db:studio': 'arbor db:studio',
-        test: 'arbor build && vitest run',
+    'package.json': `${JSON.stringify(
+      {
+        name: packageName,
+        version: '0.1.0',
+        private: true,
+        type: 'module',
+        packageManager: 'pnpm@11.10.0',
+        scripts: {
+          arbor: 'arbor',
+          build: 'arbor build',
+          dev: 'arbor dev',
+          start: 'arbor serve',
+          serve: 'arbor serve',
+          background: 'arbor work',
+          work: 'arbor work',
+          schedule: 'arbor schedule',
+          migrate: 'arbor migrate',
+          'db:studio': 'arbor db:studio',
+          test: 'arbor build && vitest run',
+        },
+        dependencies: {
+          '@canopy/arbor': frameworkRange,
+          '@canopy/auth-postgres': frameworkRange,
+          '@canopy/core': frameworkRange,
+          '@canopy/http-hono': frameworkRange,
+          '@canopy/postgres-drizzle': frameworkRange,
+          '@canopy/queue-pg-boss': frameworkRange,
+          '@canopy/runtime': frameworkRange,
+        },
+        devDependencies: {
+          '@canopy/testing': frameworkRange,
+          '@types/node': '^24.0.0',
+          typescript: '^6.0.0',
+          vitest: '^4.0.0',
+        },
+        engines: { node: '>=24 <25' },
       },
-      dependencies: {
-        '@canopy/arbor': '^0.1.0',
-        '@canopy/auth-postgres': '^0.1.0',
-        '@canopy/compiler': '^0.1.0',
-        '@canopy/core': '^0.1.0',
-        '@canopy/http-hono': '^0.1.0',
-        '@canopy/postgres-drizzle': '^0.1.0',
-        '@canopy/queue-pg-boss': '^0.1.0',
-        '@canopy/runtime': '^0.1.0',
+      null,
+      2,
+    )}\n`,
+    'tsconfig.json': `${JSON.stringify(
+      {
+        compilerOptions: {
+          target: 'ES2024',
+          lib: ['ES2024'],
+          module: 'NodeNext',
+          moduleResolution: 'NodeNext',
+          types: ['node'],
+          strict: true,
+          noUncheckedIndexedAccess: true,
+          exactOptionalPropertyTypes: true,
+          verbatimModuleSyntax: true,
+          skipLibCheck: true,
+          rootDir: 'src',
+          outDir: 'dist',
+          sourceMap: true,
+        },
+        include: ['src/**/*.ts'],
       },
-      devDependencies: { '@canopy/testing': '^0.1.0', '@types/node': '^24.0.0', typescript: '^6.0.0', vitest: '^4.0.0' },
-      engines: { node: '>=24 <25' },
-    }, null, 2)}\n`,
-    'tsconfig.json': `${JSON.stringify({
-      compilerOptions: {
-        target: 'ES2024', lib: ['ES2024'], module: 'NodeNext', moduleResolution: 'NodeNext',
-        types: ['node'], strict: true, noUncheckedIndexedAccess: true,
-        exactOptionalPropertyTypes: true, verbatimModuleSyntax: true,
-        skipLibCheck: true,
-        rootDir: 'src', outDir: 'dist', sourceMap: true,
-      },
-      include: ['src/**/*.ts'],
-    }, null, 2)}\n`,
+      null,
+      2,
+    )}\n`,
     '.gitignore': 'node_modules\ndist\n.canopy\n.env\n.env.*\n!.env.example\n',
     '.dockerignore': `.git
 .github
@@ -779,7 +1127,7 @@ compose.yaml
 compose.production.yaml
 README.md
 `,
-    'Dockerfile': `# syntax=docker/dockerfile:1
+    Dockerfile: `# syntax=docker/dockerfile:1
 
 ARG NODE_VERSION=24.14.0
 
@@ -796,7 +1144,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 FROM dependencies AS build
 COPY . .
 RUN pnpm build
-RUN pnpm prune --prod
+RUN pnpm prune --prod --no-optional
 
 FROM node:\${NODE_VERSION}-bookworm-slim AS runtime
 ENV NODE_ENV=production
@@ -853,7 +1201,8 @@ services:
     restart: "no"
 `,
     'migrations/.gitkeep': '',
-    '.env.example': 'DATABASE_CONNECTION_STRING=postgresql://canopy:canopy@127.0.0.1:54329/canopy\nPORT=3000\nHOST=127.0.0.1\nCANOPY_LOG_LEVEL=info\n# CANOPY_LOG_FORMAT=pretty\n',
+    '.env.example':
+      'DATABASE_CONNECTION_STRING=postgresql://canopy:canopy@127.0.0.1:54329/canopy\nPORT=3000\nHOST=127.0.0.1\nCANOPY_LOG_LEVEL=info\n# CANOPY_LOG_FORMAT=pretty\n',
     'compose.yaml': `services:\n  postgres:\n    image: postgres:17-alpine\n    environment:\n      POSTGRES_USER: canopy\n      POSTGRES_PASSWORD: canopy\n      POSTGRES_DB: canopy\n    ports:\n      - "54329:5432"\n    healthcheck:\n      test: ["CMD-SHELL", "pg_isready -U canopy"]\n      interval: 2s\n      timeout: 2s\n      retries: 20\n`,
     'README.md': `# ${name}\n\nGenerated by Canopy Arbor.\n\n\`\`\`sh\npnpm install\ncp .env.example .env\ndocker compose up -d\npnpm migrate\npnpm dev\n\`\`\`\n\n\`pnpm dev\` watches \`src/\`, keeps the last good server alive when a build fails, and hot reloads a fresh runtime after valid changes. Run \`pnpm db:studio\` to browse the configured PostgreSQL database.\n\n## Production containers\n\nCanopy builds one immutable image and runs it as separate web and background services. The background service consumes queues and runs distributed-safe schedules. Migrations are an explicit release job and never run during service startup.\n\n\`\`\`sh\nexport DATABASE_CONNECTION_STRING=postgresql://...\ndocker compose -f compose.production.yaml build\ndocker compose -f compose.production.yaml --profile release run --rm migrate\ndocker compose -f compose.production.yaml up -d web background\n\`\`\`\n\nFor advanced schedule isolation, run background replicas with \`arbor work --without-scheduler\` and a separate \`arbor schedule\` service from the same image.\n`,
     'src/application.ts': `import { CanopyApplication } from '@canopy/core'\n\nimport { AccountsFeature } from './accounts/accounts.feature.js'\nimport { AppFeature } from './app/app.feature.js'\nimport { InfrastructureFeature } from './infrastructure/infrastructure.feature.js'\nimport { TasksFeature } from './tasks/tasks.feature.js'\n\nexport class Application extends CanopyApplication {\n  id = '${packageName}'\n  features = [InfrastructureFeature, AccountsFeature, TasksFeature, AppFeature]\n}\n`,
@@ -902,7 +1251,11 @@ services:
 }
 
 async function buildApplication(cwd: string) {
-  const code = await runProcess(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', ['exec', 'tsc', '-p', 'tsconfig.json'], cwd)
+  const code = await runProcess(
+    process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+    ['exec', 'tsc', '-p', 'tsconfig.json'],
+    cwd,
+  )
   if (code !== 0) throw new ArborCommandError(`TypeScript build failed with exit code ${code}.`)
   const result = await compile(cwd)
   await writeCultivateKnowledge(cwd, result.manifest as unknown as Record<string, unknown>)
@@ -945,8 +1298,13 @@ async function loadPrebuiltApplication(cwd: string): Promise<PrebuiltApplication
       readFile(applicationPath, 'utf8'),
     ])
     manifest = JSON.parse(manifestJson) as PrebuiltApplication['manifest']
-    if (!manifest.applicationId || !manifest.buildHash || !Array.isArray(manifest.commands)
-      || !Array.isArray(manifest.schedules) || !Array.isArray(manifest.jobs)) {
+    if (
+      !manifest.applicationId ||
+      !manifest.buildHash ||
+      !Array.isArray(manifest.commands) ||
+      !Array.isArray(manifest.schedules) ||
+      !Array.isArray(manifest.jobs)
+    ) {
       throw new Error('invalid manifest')
     }
   } catch (error) {
@@ -954,18 +1312,42 @@ async function loadPrebuiltApplication(cwd: string): Promise<PrebuiltApplication
       `Prebuilt Canopy artifacts are missing or invalid. Run arbor build before starting a production role. (${errorMessage(error)})`,
     )
   }
-  const registry = await import(`${pathToFileURL(registryPath).href}?buildHash=${manifest.buildHash}`) as {
+  const registry = (await import(
+    `${pathToFileURL(registryPath).href}?buildHash=${manifest.buildHash}`
+  )) as {
     constructors?: Record<string, Parameters<typeof Canopy.boot>[0]>
   }
   const Application = registry.constructors?.[`application:${manifest.applicationId}`]
-  if (!Application) throw new ArborCommandError('The prebuilt registry does not export the declared Application.')
+  if (!Application)
+    throw new ArborCommandError('The prebuilt registry does not export the declared Application.')
   return { Application, manifest }
 }
 
-async function writeCultivateKnowledge(cwd: string, manifest: Record<string, unknown>): Promise<void> {
-  const roles = ['features', 'configurations', 'providers', 'models', 'observers', 'actions', 'queries', 'routes', 'events', 'listeners', 'signals', 'signalHandlers', 'jobs', 'schedules', 'policies', 'commands']
+async function writeCultivateKnowledge(
+  cwd: string,
+  manifest: Record<string, unknown>,
+): Promise<void> {
+  const roles = [
+    'features',
+    'configurations',
+    'providers',
+    'models',
+    'observers',
+    'actions',
+    'queries',
+    'routes',
+    'events',
+    'listeners',
+    'signals',
+    'signalHandlers',
+    'jobs',
+    'schedules',
+    'policies',
+    'commands',
+  ]
   const providers = manifest.providers as Array<{ capabilities?: readonly string[] }> | undefined
-  const hasUndergrowth = providers?.some((provider) => provider.capabilities?.includes('observations')) ?? false
+  const hasUndergrowth =
+    providers?.some((provider) => provider.capabilities?.includes('observations')) ?? false
   const knowledge = {
     schemaVersion: 1,
     framework: 'Canopy',
@@ -998,8 +1380,31 @@ async function writeCultivateKnowledge(cwd: string, manifest: Record<string, unk
     undergrowth: {
       installed: hasUndergrowth,
       purpose: 'Read-only correlation and causation debugger for framework executions.',
-      observationKinds: ['execution', 'http', 'action', 'query', 'transaction', 'model', 'event', 'listener', 'signal', 'job', 'schedule', 'authorization', 'cache', 'mail', 'sms', 'log', 'exception'],
-      safety: ['recursive secret redaction', 'bounded PostgreSQL retention', 'loopback-only host', 'recording failure isolation'],
+      observationKinds: [
+        'execution',
+        'http',
+        'action',
+        'query',
+        'transaction',
+        'model',
+        'event',
+        'listener',
+        'signal',
+        'job',
+        'schedule',
+        'authorization',
+        'cache',
+        'mail',
+        'sms',
+        'log',
+        'exception',
+      ],
+      safety: [
+        'recursive secret redaction',
+        'bounded PostgreSQL retention',
+        'loopback-only host',
+        'recording failure isolation',
+      ],
     },
     deployment: {
       strategy: 'one-immutable-image',
@@ -1011,9 +1416,16 @@ async function writeCultivateKnowledge(cwd: string, manifest: Record<string, unk
         runtimeCompilation: false,
       },
       roles: {
-        web: { command: 'arbor serve', scalesHorizontally: true, health: 'application HTTP health route' },
+        web: {
+          command: 'arbor serve',
+          scalesHorizontally: true,
+          health: 'application HTTP health route',
+        },
         background: {
-          command: 'arbor work', scalesHorizontally: true, consumesQueues: true, admitsSchedules: true,
+          command: 'arbor work',
+          scalesHorizontally: true,
+          consumesQueues: true,
+          admitsSchedules: true,
         },
         migration: { command: 'arbor migrate', releaseJob: true, automaticOnBoot: false },
       },
@@ -1036,15 +1448,62 @@ async function writeCultivateKnowledge(cwd: string, manifest: Record<string, unk
       ],
     },
     arbor: {
-      generate: ['new', 'make:feature', 'make:config', 'make:provider', 'make:service', 'make:model', 'make:observer', 'make:action', 'make:query', 'make:route', 'make:policy', 'make:event', 'make:listener', 'make:signal', 'make:signal-handler', 'make:job', 'make:schedule', 'make:command', 'make:migration', 'make:test'],
+      generate: [
+        'new',
+        'make:feature',
+        'make:config',
+        'make:provider',
+        'make:service',
+        'make:model',
+        'make:observer',
+        'make:action',
+        'make:query',
+        'make:route',
+        'make:policy',
+        'make:event',
+        'make:listener',
+        'make:signal',
+        'make:signal-handler',
+        'make:job',
+        'make:schedule',
+        'make:command',
+        'make:migration',
+        'make:test',
+      ],
       runtime: ['dev', 'serve', 'work', 'work --without-scheduler', 'schedule'],
-      operations: ['migrate', 'migrate:status', 'db:studio', 'queue:list', 'queue:failed', 'queue:retry', 'queue:cancel', 'delivery:list', 'delivery:retry'],
+      operations: [
+        'migrate',
+        'migrate:status',
+        'db:studio',
+        'queue:list',
+        'queue:failed',
+        'queue:retry',
+        'queue:cancel',
+        'delivery:list',
+        'delivery:retry',
+      ],
       developmentDebugger: ['add undergrowth', 'undergrowth', 'undergrowth:prune'],
-      inspect: ['graph', 'route:list', 'model:list', 'auth:storage', 'event:list', 'listener:list', 'observer:list', 'job:list', 'schedule:list', 'policy:list', 'command:list'],
+      inspect: [
+        'graph',
+        'route:list',
+        'model:list',
+        'auth:storage',
+        'event:list',
+        'listener:list',
+        'observer:list',
+        'job:list',
+        'schedule:list',
+        'policy:list',
+        'command:list',
+      ],
     },
   }
   await mkdir(path.join(cwd, '.canopy'), { recursive: true })
-  await writeFile(path.join(cwd, '.canopy/cultivate.json'), `${JSON.stringify(knowledge, null, 2)}\n`, 'utf8')
+  await writeFile(
+    path.join(cwd, '.canopy/cultivate.json'),
+    `${JSON.stringify(knowledge, null, 2)}\n`,
+    'utf8',
+  )
 }
 
 async function runRuntimeCommand(
@@ -1058,9 +1517,10 @@ async function runRuntimeCommand(
     return
   }
   const applicationModule = await loadPrebuiltApplication(cwd)
-  const environment = { ...await dotenvEnvironment(cwd), ...process.env }
+  const environment = { ...(await dotenvEnvironment(cwd)), ...process.env }
   const worker = command === 'work'
-  const scheduler = command === 'schedule' || (command === 'work' && !args.includes('--without-scheduler'))
+  const scheduler =
+    command === 'schedule' || (command === 'work' && !args.includes('--without-scheduler'))
   const runtime = await Canopy.boot(applicationModule.Application, {
     artifactsDirectory: path.join(cwd, '.canopy'),
     dotenvPath: false,
@@ -1081,9 +1541,11 @@ async function runRuntimeCommand(
   if (command === 'serve' && host) {
     io.out(`Canopy ${command} ready at ${host.url}`)
   } else {
-    io.out(command === 'work' && scheduler
-      ? 'Canopy background role ready (workers + schedules).'
-      : `Canopy ${command} role ready.`)
+    io.out(
+      command === 'work' && scheduler
+        ? 'Canopy background role ready (workers + schedules).'
+        : `Canopy ${command} role ready.`,
+    )
   }
   await shutdown
 }
@@ -1098,14 +1560,20 @@ async function runHotDevelopment(cwd: string, args: readonly string[], io: Arbor
     start: () => startDevelopmentChild(cwd, args),
     onWatching: () => io.out('Canopy dev is watching src/ for changes.'),
     onReloaded: () => io.out('Canopy hot reload complete.'),
-    onError: (error, phase) => io.error(phase === 'build'
-      ? `Canopy hot reload build failed; the last good server remains active. ${errorMessage(error)}`
-      : `Canopy hot reload ${phase} failed. ${errorMessage(error)}`),
+    onError: (error, phase) =>
+      io.error(
+        phase === 'build'
+          ? `Canopy hot reload build failed; the last good server remains active. ${errorMessage(error)}`
+          : `Canopy hot reload ${phase} failed. ${errorMessage(error)}`,
+      ),
   })
   await waitForShutdown(() => supervisor.stop())
 }
 
-async function startDevelopmentChild(cwd: string, args: readonly string[]): Promise<HotReloadTarget> {
+async function startDevelopmentChild(
+  cwd: string,
+  args: readonly string[],
+): Promise<HotReloadTarget> {
   const child = fork(path.join(import.meta.dirname, 'dev-child.js'), [cwd, JSON.stringify(args)], {
     cwd,
     env: process.env,
@@ -1119,21 +1587,35 @@ async function startDevelopmentChild(cwd: string, args: readonly string[]): Prom
       child.kill('SIGTERM')
       const timer = setTimeout(() => child.kill('SIGKILL'), 15_000)
       timer.unref()
-      try { await exited } finally { clearTimeout(timer) }
+      try {
+        await exited
+      } finally {
+        clearTimeout(timer)
+      }
     },
   }
 }
 
 function waitForChildReady(child: ChildProcess): Promise<void> {
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => finish(new Error('Development runtime did not become ready within 30 seconds.')), 30_000)
+    const timeout = setTimeout(
+      () => finish(new Error('Development runtime did not become ready within 30 seconds.')),
+      30_000,
+    )
     timeout.unref()
     const onMessage = (message: unknown) => {
-      if (typeof message === 'object' && message !== null && 'type' in message
-        && (message as { type?: unknown }).type === 'ready') finish()
+      if (
+        typeof message === 'object' &&
+        message !== null &&
+        'type' in message &&
+        (message as { type?: unknown }).type === 'ready'
+      )
+        finish()
     }
     const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
-      finish(new Error(`Development runtime exited before readiness (${code ?? signal ?? 'unknown'}).`))
+      finish(
+        new Error(`Development runtime exited before readiness (${code ?? signal ?? 'unknown'}).`),
+      )
     }
     const onError = (error: Error) => finish(error)
     const finish = (error?: Error) => {
@@ -1157,7 +1639,7 @@ function waitForChildExit(child: ChildProcess): Promise<void> {
 
 export async function runDevelopmentRuntime(cwd: string, args: readonly string[]): Promise<void> {
   const applicationModule = await loadPrebuiltApplication(cwd)
-  const environment = { ...await dotenvEnvironment(cwd), ...process.env }
+  const environment = { ...(await dotenvEnvironment(cwd)), ...process.env }
   const runtime = await Canopy.boot(applicationModule.Application, {
     artifactsDirectory: path.join(cwd, '.canopy'),
     dotenvPath: false,
@@ -1183,10 +1665,14 @@ export async function runDevelopmentRuntime(cwd: string, args: readonly string[]
   }
 }
 
-async function runApplicationCommand(name: string, args: readonly string[], cwd: string): Promise<boolean> {
+async function runApplicationCommand(
+  name: string,
+  args: readonly string[],
+  cwd: string,
+): Promise<boolean> {
   const module = await loadPrebuiltApplication(cwd)
   if (!module.manifest.commands.some((command) => command.command === name)) return false
-  const environment = { ...await dotenvEnvironment(cwd), ...process.env }
+  const environment = { ...(await dotenvEnvironment(cwd)), ...process.env }
   const runtime = await Canopy.boot(module.Application, {
     artifactsDirectory: path.join(cwd, '.canopy'),
     dotenvPath: false,
@@ -1195,22 +1681,31 @@ async function runApplicationCommand(name: string, args: readonly string[], cwd:
     logging: loggingOptions(environment),
   })
   try {
-    await runtime.admit({
-      actor: { kind: 'system', id: 'canopy:arbor' },
-      authentication: { state: 'authenticated', identityId: 'canopy:arbor', method: 'console' },
-      transport: { kind: 'console', name },
-    }, () => runtime.dispatchCommand(name, args))
-  } finally { await runtime.shutdown() }
+    await runtime.admit(
+      {
+        actor: { kind: 'system', id: 'canopy:arbor' },
+        authentication: { state: 'authenticated', identityId: 'canopy:arbor', method: 'console' },
+        transport: { kind: 'console', name },
+      },
+      () => runtime.dispatchCommand(name, args),
+    )
+  } finally {
+    await runtime.shutdown()
+  }
   return true
 }
 
-async function describeAuthStorage(cwd: string, args: readonly string[], io: ArborIo): Promise<void> {
+async function describeAuthStorage(
+  cwd: string,
+  args: readonly string[],
+  io: ArborIo,
+): Promise<void> {
   const module = await loadPrebuiltApplication(cwd)
   const runtime = await Canopy.boot(module.Application, {
     artifactsDirectory: path.join(cwd, '.canopy'),
     dotenvPath: false,
     environment: {
-      ...await dotenvEnvironment(cwd),
+      ...(await dotenvEnvironment(cwd)),
       ...process.env,
       DATABASE_CONNECTION_STRING: await databaseConnection(cwd, args),
     },
@@ -1225,7 +1720,9 @@ async function describeAuthStorage(cwd: string, args: readonly string[], io: Arb
       const table = entry as { table: string; ownership: string }
       io.out(`${name.padEnd(14)} ${table.ownership.padEnd(8)} ${table.table}`)
     }
-  } finally { await runtime.shutdown() }
+  } finally {
+    await runtime.shutdown()
+  }
 }
 
 function runProcess(
@@ -1260,43 +1757,32 @@ async function waitForShutdown(shutdown: () => Promise<void>): Promise<void> {
 
 async function dotenvEnvironment(cwd: string): Promise<Record<string, string>> {
   let content: string
-  try { content = await readFile(path.join(cwd, '.env'), 'utf8') } catch { return {} }
+  try {
+    content = await readFile(path.join(cwd, '.env'), 'utf8')
+  } catch {
+    return {}
+  }
   const environment: Record<string, string> = {}
   for (const line of content.split(/\r?\n/)) {
     const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/)
     if (!match) continue
     const value = match[2]!
-    environment[match[1]!] = ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) ? value.slice(1, -1) : value
+    environment[match[1]!] =
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+        ? value.slice(1, -1)
+        : value
   }
   return environment
 }
 
-function integerOption(args: readonly string[], name: string, fallback: number): number {
-  const value = option(args, name)
-  if (value === undefined) return fallback
-  const parsed = Number(value)
-  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 65_535) throw new ArborCommandError(`--${name} must be an integer from 0 through 65535.`)
-  return parsed
-}
-
-function numberOption(args: readonly string[], name: string, fallback: number): number {
-  const value = option(args, name)
-  if (value === undefined) return fallback
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed <= 0) throw new ArborCommandError(`--${name} must be a positive number.`)
-  return parsed
-}
-
-function positiveIntegerOption(args: readonly string[], name: string, fallback: number): number {
-  const value = option(args, name)
-  if (value === undefined) return fallback
-  const parsed = Number(value)
-  if (!Number.isInteger(parsed) || parsed <= 0) throw new ArborCommandError(`--${name} must be a positive integer.`)
-  return parsed
-}
-
 async function fileExists(file: string): Promise<boolean> {
-  try { await readFile(file); return true } catch { return false }
+  try {
+    await readFile(file)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function loggingOptions(environment: Readonly<Record<string, string | undefined>>): {
@@ -1328,17 +1814,33 @@ async function makeFeature(cwd: string, rawName: string): Promise<void> {
   const segment = kebab(name)
   const directory = path.join(cwd, 'src', segment)
   await mkdir(directory, { recursive: true })
-  await writeNew(path.join(directory, `${segment}.feature.ts`), `import { Feature } from '@canopy/core'\n\nexport class ${name}Feature extends Feature {\n  id = '${segment}'\n}\n`)
-  await registerApplicationFeature(path.join(cwd, 'src/application.ts'), `${name}Feature`, `./${segment}/${segment}.feature.js`)
+  await writeNew(
+    path.join(directory, `${segment}.feature.ts`),
+    `import { Feature } from '@canopy/core'\n\nexport class ${name}Feature extends Feature {\n  id = '${segment}'\n}\n`,
+  )
+  await registerApplicationFeature(
+    path.join(cwd, 'src/application.ts'),
+    `${name}Feature`,
+    `./${segment}/${segment}.feature.js`,
+  )
 }
 
-async function registerApplicationFeature(applicationFile: string, className: string, specifier: string): Promise<void> {
+async function registerApplicationFeature(
+  applicationFile: string,
+  className: string,
+  specifier: string,
+): Promise<void> {
   let source: string
-  try { source = await readFile(applicationFile, 'utf8') } catch { return }
+  try {
+    source = await readFile(applicationFile, 'utf8')
+  } catch {
+    return
+  }
   if (source.includes(`{ ${className} }`)) return
   source = source.replace(/(export class )/, `import { ${className} } from '${specifier}'\n\n$1`)
   const existing = /(\n  features\s*=\s*\[)([^\]]*)(\])/
-  if (!existing.test(source)) throw new ArborCommandError('Application must declare a literal features array.')
+  if (!existing.test(source))
+    throw new ArborCommandError('Application must declare a literal features array.')
   source = source.replace(existing, (_match, open: string, contents: string, close: string) => {
     const trimmed = contents.trim()
     return `${open}${trimmed ? `${trimmed}, ` : ''}${className}${close}`
@@ -1346,10 +1848,27 @@ async function registerApplicationFeature(applicationFile: string, className: st
   await writeFile(applicationFile, source, 'utf8')
 }
 
-interface Target { readonly feature: string; readonly name: string }
-type GeneratorRole = 'model' | 'action' | 'query' | 'route' | 'event' | 'listener'
-  | 'signal' | 'signal-handler' | 'observer' | 'job' | 'schedule' | 'policy'
-  | 'config' | 'provider' | 'service' | 'command'
+interface Target {
+  readonly feature: string
+  readonly name: string
+}
+type GeneratorRole =
+  | 'model'
+  | 'action'
+  | 'query'
+  | 'route'
+  | 'event'
+  | 'listener'
+  | 'signal'
+  | 'signal-handler'
+  | 'observer'
+  | 'job'
+  | 'schedule'
+  | 'policy'
+  | 'config'
+  | 'provider'
+  | 'service'
+  | 'command'
 
 async function makeRole(
   cwd: string,
@@ -1368,70 +1887,173 @@ async function makeRole(
   const source = definition.source(className)
   const file = path.join(directory, fileName)
   await writeNew(file, source)
-  if (field) await registerFeatureClass(featureFile, field, className, `./${folder}/${kebab(className)}.js`)
+  if (field)
+    await registerFeatureClass(featureFile, field, className, `./${folder}/${kebab(className)}.js`)
   return file
 }
 
-function roleDefinition(role: GeneratorRole, target: Target, args: readonly string[]): {
+function roleDefinition(
+  role: GeneratorRole,
+  target: Target,
+  args: readonly string[],
+): {
   readonly field?: string
   readonly folder: string
   readonly source: (name: string) => string
 } {
-  const access = ['action', 'query', 'route', 'listener', 'signal-handler', 'job', 'schedule', 'command'].includes(role)
-    ? parseAccess(args) : undefined
-  const simple = (base: string, extra = '') => (name: string) => `import { ${base} } from '@canopy/core'\n\nexport class ${name} extends ${base} {\n  static override readonly id = '${kebab(name)}'\n${extra}}\n`
-  if (role === 'model') return { field: 'models', folder: 'models', source: (name) => `import { Model, type ModelAttributes } from '@canopy/core'\n\nexport interface ${name}Attributes extends ModelAttributes {}\n\nexport class ${name} extends Model<${name}Attributes> {\n  static override readonly id = '${kebab(name)}'\n}\n` }
-  if (role === 'action' || role === 'query') return { field: `${role}s`, folder: `${role}s`, source: (name) => `import { ${pascal(role)} } from '@canopy/core'\n\nexport class ${name} extends ${pascal(role)}<void, void> {\n  static id = '${kebab(name)}'\n  static override readonly access = '${access}'\n\n  async handle(): Promise<void> {\n    // TODO: implement ${name}.\n  }\n}\n` }
+  const access = [
+    'action',
+    'query',
+    'route',
+    'listener',
+    'signal-handler',
+    'job',
+    'schedule',
+    'command',
+  ].includes(role)
+    ? parseAccess(args)
+    : undefined
+  const simple =
+    (base: string, extra = '') =>
+    (name: string) =>
+      `import { ${base} } from '@canopy/core'\n\nexport class ${name} extends ${base} {\n  static override readonly id = '${kebab(name)}'\n${extra}}\n`
+  if (role === 'model')
+    return {
+      field: 'models',
+      folder: 'models',
+      source: (name) =>
+        `import { Model, type ModelAttributes } from '@canopy/core'\n\nexport interface ${name}Attributes extends ModelAttributes {}\n\nexport class ${name} extends Model<${name}Attributes> {\n  static override readonly id = '${kebab(name)}'\n}\n`,
+    }
+  if (role === 'action' || role === 'query')
+    return {
+      field: `${role}s`,
+      folder: `${role}s`,
+      source: (name) =>
+        `import { ${pascal(role)} } from '@canopy/core'\n\nexport class ${name} extends ${pascal(role)}<void, void> {\n  static id = '${kebab(name)}'\n  static override readonly access = '${access}'\n\n  async handle(): Promise<void> {\n    // TODO: implement ${name}.\n  }\n}\n`,
+    }
   if (role === 'event') return { field: 'events', folder: 'events', source: simple('Event') }
   if (role === 'signal') return { field: 'signals', folder: 'signals', source: simple('Signal') }
   if (role === 'route') {
     const method = option(args, 'method')?.toUpperCase()
     const routePath = option(args, 'path')
-    if (!method || !['DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT'].includes(method)) throw new ArborCommandError('Routes require --method=GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS.')
-    if (!routePath?.startsWith('/')) throw new ArborCommandError('Routes require an absolute --path=/... value.')
-    return { field: 'routes', folder: 'http', source: (name) => `import { type HttpRequest, Route } from '@canopy/core'\n\nexport class ${name} extends Route {\n  static override readonly id = '${kebab(name)}'\n  static override readonly access = '${access}'\n  readonly method = '${method}'\n  readonly path = '${routePath}'\n\n  handle(_request: HttpRequest) {\n    return { message: '${kebab(name)}' }\n  }\n}\n` }
+    if (!method || !['DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT'].includes(method))
+      throw new ArborCommandError('Routes require --method=GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS.')
+    if (!routePath?.startsWith('/'))
+      throw new ArborCommandError('Routes require an absolute --path=/... value.')
+    return {
+      field: 'routes',
+      folder: 'http',
+      source: (name) =>
+        `import { type HttpRequest, Route } from '@canopy/core'\n\nexport class ${name} extends Route {\n  static override readonly id = '${kebab(name)}'\n  static override readonly access = '${access}'\n  readonly method = '${method}'\n  readonly path = '${routePath}'\n\n  handle(_request: HttpRequest) {\n    return { message: '${kebab(name)}' }\n  }\n}\n`,
+    }
   }
   if (role === 'listener') {
     const related = pascal(required(option(args, 'event'), 'Listeners require --event=EventName.'))
-    const delivery = args.includes('--queued-after-commit') ? 'ShouldQueueAfterCommit'
-      : args.includes('--queued') ? 'ShouldQueue'
-        : args.includes('--after-commit') ? 'ShouldHandleEventsAfterCommit' : undefined
-    return { field: 'listeners', folder: 'listeners', source: (name) => `import { Listener${delivery ? `, type ${delivery}` : ''} } from '@canopy/core'\nimport { ${related} } from '../events/${kebab(related)}.js'\n\nexport class ${name} extends Listener<${related}>${delivery ? ` implements ${delivery}` : ''} {\n  static id = '${kebab(name)}'\n  static override readonly access = '${access}'\n  async handle(_event: ${related}): Promise<void> {}\n}\n` }
+    const delivery = args.includes('--queued-after-commit')
+      ? 'ShouldQueueAfterCommit'
+      : args.includes('--queued')
+        ? 'ShouldQueue'
+        : args.includes('--after-commit')
+          ? 'ShouldHandleEventsAfterCommit'
+          : undefined
+    return {
+      field: 'listeners',
+      folder: 'listeners',
+      source: (name) =>
+        `import { Listener${delivery ? `, type ${delivery}` : ''} } from '@canopy/core'\nimport { ${related} } from '../events/${kebab(related)}.js'\n\nexport class ${name} extends Listener<${related}>${delivery ? ` implements ${delivery}` : ''} {\n  static id = '${kebab(name)}'\n  static override readonly access = '${access}'\n  async handle(_event: ${related}): Promise<void> {}\n}\n`,
+    }
   }
   if (role === 'signal-handler') {
-    const related = pascal(required(option(args, 'signal'), 'Signal handlers require --signal=SignalName.'))
-    return { field: 'signalHandlers', folder: 'signal-handlers', source: (name) => `import { SignalHandler } from '@canopy/core'\nimport { ${related} } from '../signals/${kebab(related)}.js'\n\nexport class ${name} extends SignalHandler<${related}> {\n  static id = '${kebab(name)}'\n  static override readonly access = '${access}'\n  async handle(_signal: ${related}): Promise<void> {}\n}\n` }
+    const related = pascal(
+      required(option(args, 'signal'), 'Signal handlers require --signal=SignalName.'),
+    )
+    return {
+      field: 'signalHandlers',
+      folder: 'signal-handlers',
+      source: (name) =>
+        `import { SignalHandler } from '@canopy/core'\nimport { ${related} } from '../signals/${kebab(related)}.js'\n\nexport class ${name} extends SignalHandler<${related}> {\n  static id = '${kebab(name)}'\n  static override readonly access = '${access}'\n  async handle(_signal: ${related}): Promise<void> {}\n}\n`,
+    }
   }
   if (role === 'observer') {
     const related = pascal(required(option(args, 'model'), 'Observers require --model=ModelName.'))
-    return { field: 'observers', folder: 'observers', source: (name) => `import { Observer } from '@canopy/core'\nimport { ${related} } from '../models/${kebab(related)}.js'\n\nexport class ${name} extends Observer<${related}> {\n  static id = '${kebab(name)}'\n  async saved(_model: ${related}): Promise<void> {}\n}\n` }
+    return {
+      field: 'observers',
+      folder: 'observers',
+      source: (name) =>
+        `import { Observer } from '@canopy/core'\nimport { ${related} } from '../models/${kebab(related)}.js'\n\nexport class ${name} extends Observer<${related}> {\n  static id = '${kebab(name)}'\n  async saved(_model: ${related}): Promise<void> {}\n}\n`,
+    }
   }
-  if (role === 'job') return { field: 'jobs', folder: 'jobs', source: (name) => `import { Job } from '@canopy/core'\n\nexport class ${name} extends Job<void> {\n  static override readonly id = '${kebab(name)}'\n  static override readonly access = '${access}'\n  async handle(): Promise<void> {}\n}\n` }
+  if (role === 'job')
+    return {
+      field: 'jobs',
+      folder: 'jobs',
+      source: (name) =>
+        `import { Job } from '@canopy/core'\n\nexport class ${name} extends Job<void> {\n  static override readonly id = '${kebab(name)}'\n  static override readonly access = '${access}'\n  async handle(): Promise<void> {}\n}\n`,
+    }
   if (role === 'schedule') {
     const job = pascal(required(option(args, 'job'), 'Schedules require --job=JobName.'))
-    const cron = option(args, 'cron'); const every = option(args, 'every')
-    if (Boolean(cron) === Boolean(every)) throw new ArborCommandError('Schedules require exactly one of --cron= or --every=seconds.')
-    if (every && (!Number.isFinite(Number(every)) || Number(every) <= 0)) throw new ArborCommandError('--every must be a positive number of seconds.')
-    return { field: 'schedules', folder: 'schedules', source: (name) => `import { Schedule } from '@canopy/core'\nimport { ${job} } from '../jobs/${kebab(job)}.js'\n\nexport class ${name} extends Schedule<void> {\n  static override readonly id = '${kebab(name)}'\n  static override readonly access = '${access}'\n  static override readonly job = ${job}\n  static override readonly ${cron ? `cron = ${JSON.stringify(cron)}` : `everySeconds = ${Number(every)}`}\n  static override readonly input = undefined\n}\n` }
+    const cron = option(args, 'cron')
+    const every = option(args, 'every')
+    if (Boolean(cron) === Boolean(every))
+      throw new ArborCommandError('Schedules require exactly one of --cron= or --every=seconds.')
+    if (every && (!Number.isFinite(Number(every)) || Number(every) <= 0))
+      throw new ArborCommandError('--every must be a positive number of seconds.')
+    return {
+      field: 'schedules',
+      folder: 'schedules',
+      source: (name) =>
+        `import { Schedule } from '@canopy/core'\nimport { ${job} } from '../jobs/${kebab(job)}.js'\n\nexport class ${name} extends Schedule<void> {\n  static override readonly id = '${kebab(name)}'\n  static override readonly access = '${access}'\n  static override readonly job = ${job}\n  static override readonly ${cron ? `cron = ${JSON.stringify(cron)}` : `everySeconds = ${Number(every)}`}\n  static override readonly input = undefined\n}\n`,
+    }
   }
   if (role === 'policy') {
-    const abilities = required(option(args, 'abilities'), 'Policies require --abilities=one,two.').split(',').map((value) => value.trim()).filter(Boolean)
-    if (abilities.length === 0) throw new ArborCommandError('Policies require at least one ability.')
-    return { field: 'policies', folder: 'policies', source: (name) => `import { allow, deny, Policy, type PolicyRequest, type PolicyDecision } from '@canopy/core'\n\nexport class ${name} extends Policy {\n  static id = '${kebab(name)}'\n  static override readonly abilities = ${JSON.stringify(abilities)}\n  decide(request: PolicyRequest): PolicyDecision {\n    return request.actor.kind === 'anonymous' ? deny('authentication_required') : allow('authenticated')\n  }\n}\n` }
+    const abilities = required(option(args, 'abilities'), 'Policies require --abilities=one,two.')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
+    if (abilities.length === 0)
+      throw new ArborCommandError('Policies require at least one ability.')
+    return {
+      field: 'policies',
+      folder: 'policies',
+      source: (name) =>
+        `import { allow, deny, Policy, type PolicyRequest, type PolicyDecision } from '@canopy/core'\n\nexport class ${name} extends Policy {\n  static id = '${kebab(name)}'\n  static override readonly abilities = ${JSON.stringify(abilities)}\n  decide(request: PolicyRequest): PolicyDecision {\n    return request.actor.kind === 'anonymous' ? deny('authentication_required') : allow('authenticated')\n  }\n}\n`,
+    }
   }
-  if (role === 'config') return { field: 'configs', folder: 'config', source: (name) => `import { Configuration } from '@canopy/core'\n\nexport class ${name} extends Configuration {\n  declare enabled: boolean\n}\n` }
-  if (role === 'provider') return { field: 'providers', folder: 'providers', source: (name) => `export class ${name} {\n  static id = '${kebab(name)}'\n}\n` }
+  if (role === 'config')
+    return {
+      field: 'configs',
+      folder: 'config',
+      source: (name) =>
+        `import { Configuration } from '@canopy/core'\n\nexport class ${name} extends Configuration {\n  declare enabled: boolean\n}\n`,
+    }
+  if (role === 'provider')
+    return {
+      field: 'providers',
+      folder: 'providers',
+      source: (name) => `export class ${name} {\n  static id = '${kebab(name)}'\n}\n`,
+    }
   if (role === 'command') {
     const commandName = option(args, 'name') ?? `${target.feature}:${kebab(target.name)}`
     const description = option(args, 'description') ?? ''
-    return { field: 'commands', folder: 'commands', source: (name) => `import { Command } from '@canopy/core'\n\nexport class ${name} extends Command {\n  static override readonly id = '${kebab(name)}'\n  static override readonly name = '${commandName}'\n  static override readonly description = ${JSON.stringify(description)}\n  static override readonly access = '${access}'\n\n  async handle(_arguments: readonly string[]): Promise<void> {}\n}\n` }
+    return {
+      field: 'commands',
+      folder: 'commands',
+      source: (name) =>
+        `import { Command } from '@canopy/core'\n\nexport class ${name} extends Command {\n  static override readonly id = '${kebab(name)}'\n  static override readonly name = '${commandName}'\n  static override readonly description = ${JSON.stringify(description)}\n  static override readonly access = '${access}'\n\n  async handle(_arguments: readonly string[]): Promise<void> {}\n}\n`,
+    }
   }
   return { folder: 'services', source: (name) => `export class ${name} {}\n` }
 }
 
-async function registerFeatureClass(featureFile: string, field: string, className: string, specifier: string): Promise<void> {
+async function registerFeatureClass(
+  featureFile: string,
+  field: string,
+  className: string,
+  specifier: string,
+): Promise<void> {
   let source = await readFile(featureFile, 'utf8')
-  if (source.includes(`{ ${className} }`)) throw new ArborCommandError(`${className} is already registered.`)
+  if (source.includes(`{ ${className} }`))
+    throw new ArborCommandError(`${className} is already registered.`)
   source = source.replace(/(export class )/, `import { ${className} } from '${specifier}'\n\n$1`)
   const existing = new RegExp(`(\\n  ${field}\\s*=\\s*\\[)([^\\]]*)(\\])`)
   if (existing.test(source)) {
@@ -1447,28 +2069,52 @@ async function registerFeatureClass(featureFile: string, field: string, classNam
 
 function generatorRole(command: string): GeneratorRole | undefined {
   const value = command.startsWith('make:') ? command.slice(5) : ''
-  return ['model', 'action', 'query', 'route', 'event', 'listener', 'signal', 'signal-handler', 'observer', 'job', 'schedule', 'policy', 'config', 'provider', 'service', 'command'].includes(value)
-    ? value as GeneratorRole : undefined
+  return [
+    'model',
+    'action',
+    'query',
+    'route',
+    'event',
+    'listener',
+    'signal',
+    'signal-handler',
+    'observer',
+    'job',
+    'schedule',
+    'policy',
+    'config',
+    'provider',
+    'service',
+    'command',
+  ].includes(value)
+    ? (value as GeneratorRole)
+    : undefined
 }
 
 function inspectionField(command: string): string | undefined {
-  return ({
-    'event:list': 'events',
-    'listener:list': 'listeners',
-    'observer:list': 'observers',
-    'job:list': 'jobs',
-    'schedule:list': 'schedules',
-    'policy:list': 'policies',
-    'command:list': 'commands',
-  } as Record<string, string>)[command]
+  return (
+    {
+      'event:list': 'events',
+      'listener:list': 'listeners',
+      'observer:list': 'observers',
+      'job:list': 'jobs',
+      'schedule:list': 'schedules',
+      'policy:list': 'policies',
+      'command:list': 'commands',
+    } as Record<string, string>
+  )[command]
 }
 
 function formatInspection(field: string, entry: Record<string, unknown>): string {
   if (field === 'events') return `${String(entry.id)} ${String(entry.dispatch)}`
-  if (field === 'listeners') return `${String(entry.id)} <- ${String(entry.eventId)} ${String(entry.delivery)} ${String(entry.access)}`
-  if (field === 'observers') return `${String(entry.id)} <- ${String(entry.modelId)} ${(entry.phases as unknown[]).join(',')}`
-  if (field === 'jobs') return `${String(entry.id)} retries=${String(entry.retries)} timeout=${String(entry.timeout)} access=${String(entry.access)}`
-  if (field === 'schedules') return `${String(entry.id)} -> ${String(entry.jobId)} ${JSON.stringify(entry.cadence)}`
+  if (field === 'listeners')
+    return `${String(entry.id)} <- ${String(entry.eventId)} ${String(entry.delivery)} ${String(entry.access)}`
+  if (field === 'observers')
+    return `${String(entry.id)} <- ${String(entry.modelId)} ${(entry.phases as unknown[]).join(',')}`
+  if (field === 'jobs')
+    return `${String(entry.id)} retries=${String(entry.retries)} timeout=${String(entry.timeout)} access=${String(entry.access)}`
+  if (field === 'schedules')
+    return `${String(entry.id)} -> ${String(entry.jobId)} ${JSON.stringify(entry.cadence)}`
   if (field === 'policies') return `${String(entry.id)} ${(entry.abilities as unknown[]).join(',')}`
   return `${String(entry.command)} ${String(entry.access)} ${String(entry.description)}`
 }
@@ -1495,7 +2141,10 @@ async function makeTest(cwd: string, target: Target): Promise<string> {
   const directory = path.join(cwd, 'tests', target.feature)
   await mkdir(directory, { recursive: true })
   const file = path.join(directory, `${kebab(name)}.test.ts`)
-  await writeNew(file, `import { describe, expect, it } from 'vitest'\n\ndescribe('${name}', () => {\n  it('works', () => {\n    expect(true).toBe(true)\n  })\n})\n`)
+  await writeNew(
+    file,
+    `import { describe, expect, it } from 'vitest'\n\ndescribe('${name}', () => {\n  it('works', () => {\n    expect(true).toBe(true)\n  })\n})\n`,
+  )
   return file
 }
 
@@ -1509,32 +2158,17 @@ function parseAccess(arguments_: readonly string[]): string {
   if (arguments_.includes('--public')) return 'public'
   const ability = arguments_.find((argument) => argument.startsWith('--ability='))?.slice(10)
   if (ability) return ability
-  throw new ArborCommandError('Framework entry roles require --public or --ability=<stable ability>.')
-}
-
-function option(arguments_: readonly string[], name: string): string | undefined {
-  return arguments_.find((argument) => argument.startsWith(`--${name}=`))?.slice(name.length + 3)
+  throw new ArborCommandError(
+    'Framework entry roles require --public or --ability=<stable ability>.',
+  )
 }
 
 async function writeNew(file: string, content: string): Promise<void> {
   try {
     await writeFile(file, content, { encoding: 'utf8', flag: 'wx' })
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new ArborCommandError(`${file} already exists.`)
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST')
+      throw new ArborCommandError(`${file} already exists.`)
     throw error
   }
-}
-
-function required(value: string | undefined, message: string): string {
-  if (!value) throw new ArborCommandError(message)
-  return value
-}
-
-function pascal(value: string): string {
-  return value.split(/[^A-Za-z0-9]+/).filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join('')
-}
-
-function kebab(value: string): string {
-  return value.replace(/([a-z0-9])([A-Z])/g, '$1-$2').replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()
 }

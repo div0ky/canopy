@@ -3,10 +3,8 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "tsBuildInfoFile": "dist/.tsbuildinfo"
+    "tsBuildInfoFile": "../../.cache/tsbuildinfo/auth-postgres.tsbuildinfo"
   },
-  "references": [
-    { "path": "../core" }
-  ],
+  "references": [{ "path": "../core" }],
   "include": ["src/**/*.ts"]
 }

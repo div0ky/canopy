@@ -30,24 +30,21 @@ await OrderShipped.dispatch({ orderId: order.id })
 ```
 
 `dispatch()` is inherited framework behavior. It creates the event with the supplied typed payload
-and routes it through the active Canopy application and execution context. Developers do not need
-to inject a dispatcher merely to raise a named event from an action, model method, listener, job,
+and routes it through the active Canopy application and execution context. Developers do not need to
+inject a dispatcher merely to raise a named event from an action, model method, listener, job,
 schedule, controller, command, or other framework-managed entry point.
 
-Static event dispatch is a narrow framework capability backed by the current execution context,
-not a general service locator. Code running outside a Canopy-managed execution must enter an
-application scope or use the application runtime's event dispatcher explicitly. Canopy must not
-use one process-global dispatcher that makes multiple applications or tests interfere.
+Static event dispatch is a narrow framework capability backed by the current execution context, not
+a general service locator. Code running outside a Canopy-managed execution must enter an application
+scope or use the application runtime's event dispatcher explicitly. Canopy must not use one
+process-global dispatcher that makes multiple applications or tests interfere.
 
 ## Listener authoring
 
 Listeners are framework role classes with scoped injection:
 
 ```ts
-export class SendShipmentNotification
-  extends Listener
-  implements ShouldQueue
-{
+export class SendShipmentNotification extends Listener implements ShouldQueue {
   private readonly mail = this.inject(Mailer)
 
   async handle(event: OrderShipped): Promise<void> {
@@ -84,22 +81,22 @@ Laravel-aligned capability semantics apply:
 - `ShouldBroadcastNow` requests synchronous broadcasting in the current process.
 
 In an active Canopy Unit of Work, ordinary queued listeners and broadcasts are outbox-backed and
-become eligible after commit by default. This makes the safe behavior automatic while preserving
-the explicit capability vocabulary.
+become eligible after commit by default. This makes the safe behavior automatic while preserving the
+explicit capability vocabulary.
 
-Local listener failures propagate through the current dispatch unless a later specification
-defines an explicit rescue capability. Queued listener failures use Canopy's job retry,
-idempotency, timeout, and terminal-failure semantics.
+Local listener failures propagate through the current dispatch unless a later specification defines
+an explicit rescue capability. Queued listener failures use Canopy's job retry, idempotency,
+timeout, and terminal-failure semantics.
 
 ## Events, domain events, and signals
 
-`Event` is the general Laravel-like application event. It may be dispatched in any
-framework-managed execution and is not automatically a durable domain fact.
+`Event` is the general Laravel-like application event. It may be dispatched in any framework-managed
+execution and is not automatically a durable domain fact.
 
-`DomainEvent` is a specialization of `Event` for a fact produced by an accepted domain mutation.
-It participates in the active Unit of Work and is journaled with entity, actor, initiator,
-correlation, causation, and trace metadata. Dispatching a `DomainEvent` without the required
-mutation and Unit of Work context must fail explicitly rather than silently losing durability.
+`DomainEvent` is a specialization of `Event` for a fact produced by an accepted domain mutation. It
+participates in the active Unit of Work and is journaled with entity, actor, initiator, correlation,
+causation, and trace metadata. Dispatching a `DomainEvent` without the required mutation and Unit of
+Work context must fail explicitly rather than silently losing durability.
 
 `Signal` remains immediate framework coordination. Signals do not enter the domain journal or
 pretend to provide durable delivery. This distinction preserves the MVP's separate event, signal,
@@ -117,8 +114,8 @@ Provider, database-engine, queue-engine, and transport types must not appear in 
 
 ## Testing experience
 
-The first-party test application must support Laravel-like event fakes and assertions, scoped to
-the test application:
+The first-party test application must support Laravel-like event fakes and assertions, scoped to the
+test application:
 
 ```ts
 events.fake([OrderShipped])
@@ -126,14 +123,14 @@ events.fake([OrderShipped])
 await shipOrder()
 
 events.assertDispatched(OrderShipped)
-events.assertDispatched(OrderShipped, event => event.order.id === order.id)
+events.assertDispatched(OrderShipped, (event) => event.order.id === order.id)
 events.assertNotDispatched(OrderFailedToShip)
 events.assertListening(OrderShipped, SendShipmentNotification)
 ```
 
 Tests must also be able to fake all events, fake all except selected events, and scope a fake to a
-callback. Faking prevents listener execution but preserves dispatch records and causal metadata
-for assertions.
+callback. Faking prevents listener execution but preserves dispatch records and causal metadata for
+assertions.
 
 ## Diagnostics and inspection
 
@@ -158,13 +155,12 @@ Canopy must provide an `event:list`-equivalent inspection command showing:
 
 The MVP must prove:
 
-1. A declared event can be dispatched from actions, models, listeners, jobs, schedules,
-   controllers, and commands through the same static API.
+1. A declared event can be dispatched from actions, models, listeners, jobs, schedules, controllers,
+   and commands through the same static API.
 2. Listener association is inferred from the typed `handle` parameter and validated at build time.
 3. Constructor injection, execution context, actor, and causation behave identically for local and
    queued listeners.
-4. Local, after-commit, queued, rollback, retry, and terminal-failure behavior matches the
-   manifest.
+4. Local, after-commit, queued, rollback, retry, and terminal-failure behavior matches the manifest.
 5. Domain events, general events, and signals retain distinct durability semantics.
 6. Model references and versioned payloads serialize and rehydrate predictably.
 7. Event fakes and assertions are isolated between concurrently running test applications.

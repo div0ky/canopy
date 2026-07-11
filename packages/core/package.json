@@ -1,8 +1,32 @@
 {
   "name": "@canopy/core",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.1.0-alpha.0",
+  "description": "The application-facing programming model and contracts for the Canopy framework.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/div0ky/canopy.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/div0ky/canopy#readme",
+  "bugs": {
+    "url": "https://github.com/div0ky/canopy/issues"
+  },
+  "keywords": [
+    "canopy",
+    "framework",
+    "typescript",
+    "backend",
+    "application-framework"
+  ],
   "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -13,5 +37,12 @@
       "default": "./dist/runtime.js"
     }
   },
-  "files": ["dist"]
+  "files": [
+    "dist",
+    "NOTICE"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/prepare-package.mjs",
+    "postpack": "node ../../scripts/prepare-package.mjs --clean"
+  }
 }

@@ -24,26 +24,26 @@ Canopy requires more than type-safe CRUD. A mutating application operation must 
 6. Commit those writes atomically.
 7. Release after-commit and asynchronous work only after durability is established.
 
-The selected persistence engine must make these guarantees straightforward without imposing its
-own application model. It must also support optimized reads, reviewable migrations, PostgreSQL
-features, clear transaction scoping, instrumentation, and deterministic lifecycle management.
+The selected persistence engine must make these guarantees straightforward without imposing its own
+application model. It must also support optimized reads, reviewable migrations, PostgreSQL features,
+clear transaction scoping, instrumentation, and deterministic lifecycle management.
 
 ## Why Drizzle
 
-Drizzle is a thin, typed layer over SQL with SQL-like and relational query APIs. Its transaction
-API exposes a transaction-scoped database object and supports nested savepoints. Its schema tooling
-can generate SQL migration artifacts that remain visible and reviewable.
+Drizzle is a thin, typed layer over SQL with SQL-like and relational query APIs. Its transaction API
+exposes a transaction-scoped database object and supports nested savepoints. Its schema tooling can
+generate SQL migration artifacts that remain visible and reviewable.
 
-These characteristics make Drizzle comparatively easy to contain inside a Canopy adapter. Canopy
-can use Drizzle for query construction, mapping, transactions, and schema tooling without asking
-feature code to adopt Drizzle as its application vocabulary.
+These characteristics make Drizzle comparatively easy to contain inside a Canopy adapter. Canopy can
+use Drizzle for query construction, mapping, transactions, and schema tooling without asking feature
+code to adopt Drizzle as its application vocabulary.
 
 ## Why PostgreSQL
 
 The initial persistence model relies on relational transactions, constraints, optimistic
 concurrency, JSON where appropriate, and reliable claiming of outbox work. PostgreSQL provides a
-strong, well-understood foundation for these requirements and allows the first Canopy adapter to
-be deliberately specific instead of pretending all SQL databases behave identically.
+strong, well-understood foundation for these requirements and allows the first Canopy adapter to be
+deliberately specific instead of pretending all SQL databases behave identically.
 
 Canopy will model the guarantees it needs. It will not claim database portability until another
 adapter proves those guarantees through the same conformance suite.
@@ -58,8 +58,8 @@ Domain and feature code must not import:
 - Drizzle or driver errors.
 
 Infrastructure code may use Drizzle directly when implementing repositories, read models,
-migrations, and the persistence adapter. The adapter translates database failures into stable
-Canopy persistence errors.
+migrations, and the persistence adapter. The adapter translates database failures into stable Canopy
+persistence errors.
 
 The physical schema and the domain model have different responsibilities:
 
@@ -102,15 +102,14 @@ The migration workflow is:
 4. Apply migrations as an explicit deployment step.
 5. Inspect migration state during diagnostics and readiness without mutating it.
 
-Production applications must not apply migrations opportunistically during normal boot.
-Schema-push workflows are limited to disposable local development environments. Custom SQL
-migrations remain first-class when PostgreSQL capabilities cannot be expressed cleanly through the
-schema generator.
+Production applications must not apply migrations opportunistically during normal boot. Schema-push
+workflows are limited to disposable local development environments. Custom SQL migrations remain
+first-class when PostgreSQL capabilities cannot be expressed cleanly through the schema generator.
 
 ## Prisma alternative
 
-Prisma provides an excellent generated client, declarative schema, migration system, and tooling.
-It is the stronger choice when Prisma's generated persistence model is intended to become the
+Prisma provides an excellent generated client, declarative schema, migration system, and tooling. It
+is the stronger choice when Prisma's generated persistence model is intended to become the
 application's data-access model.
 
 That strength creates tension for Canopy. Prisma's schema and generated client establish their own
@@ -156,8 +155,7 @@ enough to support the desired Canopy programming experience.
 ## Revisit when
 
 - The vertical proof requires Drizzle types in normal feature code.
-- Mapping overhead makes ordinary persistence meaningfully harder than the framework promise
-  allows.
+- Mapping overhead makes ordinary persistence meaningfully harder than the framework promise allows.
 - Drizzle cannot express or safely escape to the PostgreSQL operations required by the journal and
   outbox.
 - Drizzle's release stability or upgrade behavior cannot satisfy Canopy's compatibility contract.
@@ -165,7 +163,8 @@ enough to support the desired Canopy programming experience.
 
 ## Implementation evidence
 
-The [PostgreSQL durability vertical slice](../implementation/postgresql-durability-vertical-slice.md)
+The
+[PostgreSQL durability vertical slice](../implementation/postgresql-durability-vertical-slice.md)
 proves atomic entity-state, journal, and outbox writes, rollback, optimistic concurrency,
 after-commit visibility, durable causal metadata, and the Drizzle boundary against PostgreSQL.
 

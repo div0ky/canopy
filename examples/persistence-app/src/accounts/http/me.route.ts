@@ -1,10 +1,4 @@
-import {
-  Auth,
-  CurrentExecution,
-  HttpError,
-  type HttpRequest,
-  Route,
-} from '@canopy/core'
+import { Auth, CurrentExecution, HttpError, type HttpRequest, Route } from '@canopy/core'
 
 export class MeRoute extends Route {
   static override readonly id = 'me'
@@ -17,9 +11,11 @@ export class MeRoute extends Route {
 
   async handle(_request: HttpRequest) {
     const identityId = this.execution.context.authentication.identityId
-    if (!identityId) throw new HttpError(401, 'authentication_required', 'Authentication is required.')
+    if (!identityId)
+      throw new HttpError(401, 'authentication_required', 'Authentication is required.')
     const identity = await this.auth.findIdentity(identityId)
-    if (!identity) throw new HttpError(401, 'authentication_required', 'Authentication is required.')
+    if (!identity)
+      throw new HttpError(401, 'authentication_required', 'Authentication is required.')
     return {
       identity: {
         id: identity.id,

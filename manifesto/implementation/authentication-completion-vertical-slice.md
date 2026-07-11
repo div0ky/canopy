@@ -7,10 +7,10 @@ Canopy's first-party email/password method now includes registration, login, ver
 verification resend, password recovery, password change, browser-session listing/revocation, and
 opaque bearer-token management.
 
-Verification and reset challenges use 256-bit opaque tokens. PostgreSQL stores only SHA-256
-digests, purpose, identity, expiry, and consumption time. Issuing a replacement consumes earlier
-active challenges; successful use is transactional and single-use. HTTP never returns challenge
-material. Canopy queues it through the first-party `Mailer` action and transactional outbox.
+Verification and reset challenges use 256-bit opaque tokens. PostgreSQL stores only SHA-256 digests,
+purpose, identity, expiry, and consumption time. Issuing a replacement consumes earlier active
+challenges; successful use is transactional and single-use. HTTP never returns challenge material.
+Canopy queues it through the first-party `Mailer` action and transactional outbox.
 
 Recovery requests return the same empty `202` response for known and unknown addresses. Login,
 registration, and recovery use durable hashed abuse buckets with fixed windows, temporary blocks,

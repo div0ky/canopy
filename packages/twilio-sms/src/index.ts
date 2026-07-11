@@ -1,6 +1,12 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 
-import { DeliveryError, SmsTransport, type DeliveryAcceptance, type DeliveryUpdate, type SmsMessage } from '@canopy/core'
+import {
+  DeliveryError,
+  SmsTransport,
+  type DeliveryAcceptance,
+  type DeliveryUpdate,
+  type SmsMessage,
+} from '@canopy/core'
 
 export interface TwilioSmsOptions {
   readonly accountSid: string
@@ -12,41 +18,106 @@ export interface TwilioSmsOptions {
 }
 
 export class TwilioSmsTransport extends SmsTransport {
-  constructor(private readonly options: TwilioSmsOptions) { super() }
+  constructor(private readonly options: TwilioSmsOptions) {
+    super()
+  }
   async send(message: SmsMessage): Promise<DeliveryAcceptance> {
-    if (!/^\+[1-9]\d{7,14}$/.test(message.to)) throw new DeliveryError('SMS destination must be E.164.', 'permanent', 'invalid_destination')
-    if (!message.id || !message.text || message.text.length > 1_600) throw new DeliveryError('SMS requires id and 1-1600 characters.', 'permanent', 'invalid_message')
+    if (!/^\+[1-9]\d{7,14}$/.test(message.to))
+      throw new DeliveryError('SMS destination must be E.164.', 'permanent', 'invalid_destination')
+    if (!message.id || !message.text || message.text.length > 1_600)
+      throw new DeliveryError(
+        'SMS requires id and 1-1600 characters.',
+        'permanent',
+        'invalid_message',
+      )
     const callback = new URL(this.options.statusCallback)
     callback.searchParams.set('canopy_message_id', message.id)
-    const body = new URLSearchParams({ To: message.to, Body: message.text, MessagingServiceSid: this.options.messagingServiceSid, StatusCallback: callback.toString() })
-    const endpoint = this.options.endpoint ?? `https://api.twilio.com/2010-04-01/Accounts/${this.options.accountSid}/Messages.json`
-    const response = await (this.options.fetch ?? fetch)(endpoint, { method: 'POST', headers: { authorization: `Basic ${Buffer.from(`${this.options.accountSid}:${this.options.authToken}`).toString('base64')}`, 'content-type': 'application/x-www-form-urlencoded' }, body })
-      .catch((cause) => { throw new DeliveryError('Twilio request failed.', 'transient', 'network_error', { cause }) })
-    const payload = await response.json().catch(() => ({})) as Record<string, unknown>
+    const body = new URLSearchParams({
+      To: message.to,
+      Body: message.text,
+      MessagingServiceSid: this.options.messagingServiceSid,
+      StatusCallback: callback.toString(),
+    })
+    const endpoint =
+      this.options.endpoint ??
+      `https://api.twilio.com/2010-04-01/Accounts/${this.options.accountSid}/Messages.json`
+    const response = await (this.options.fetch ?? fetch)(endpoint, {
+      method: 'POST',
+      headers: {
+        authorization: `Basic ${Buffer.from(`${this.options.accountSid}:${this.options.authToken}`).toString('base64')}`,
+        'content-type': 'application/x-www-form-urlencoded',
+      },
+      body,
+    }).catch((cause) => {
+      throw new DeliveryError('Twilio request failed.', 'transient', 'network_error', { cause })
+    })
+    const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>
     if (!response.ok || typeof payload.sid !== 'string') {
-      const code = typeof payload.code === 'number' ? String(payload.code) : `http_${response.status}`
-      const kind = code === '21610' ? 'opt-out' : response.status === 429 || response.status >= 500 ? 'transient' : 'permanent'
+      const code =
+        typeof payload.code === 'number' ? String(payload.code) : `http_${response.status}`
+      const kind =
+        code === '21610'
+          ? 'opt-out'
+          : response.status === 429 || response.status >= 500
+            ? 'transient'
+            : 'permanent'
       throw new DeliveryError(`Twilio rejected SMS (${code}).`, kind, code)
     }
-    return { messageId: message.id, providerMessageId: payload.sid, state: normalizeState(payload.status) }
+    return {
+      messageId: message.id,
+      providerMessageId: payload.sid,
+      state: normalizeState(payload.status),
+    }
   }
 }
 
-export function verifyTwilioWebhook(url: string, parameters: Readonly<Record<string, string>>, signature: string, authToken: string): boolean {
-  const content = url + Object.keys(parameters).sort().map((key) => key + parameters[key]).join('')
+export function verifyTwilioWebhook(
+  url: string,
+  parameters: Readonly<Record<string, string>>,
+  signature: string,
+  authToken: string,
+): boolean {
+  const content =
+    url +
+    Object.keys(parameters)
+      .sort()
+      .map((key) => key + parameters[key])
+      .join('')
   const expected = createHmac('sha1', authToken).update(content).digest('base64')
-  const left = Buffer.from(expected); const right = Buffer.from(signature)
+  const left = Buffer.from(expected)
+  const right = Buffer.from(signature)
   return left.length === right.length && timingSafeEqual(left, right)
 }
 
-export function normalizeTwilioStatus(parameters: Readonly<Record<string, string>>): DeliveryUpdate {
+export function normalizeTwilioStatus(
+  parameters: Readonly<Record<string, string>>,
+): DeliveryUpdate {
   const providerMessageId = parameters.MessageSid
   const messageId = parameters.CanopyMessageId
   const status = parameters.MessageStatus
-  if (!providerMessageId || !messageId || !status) throw new DeliveryError('Twilio callback is missing correlation fields.', 'permanent', 'invalid_webhook')
+  if (!providerMessageId || !messageId || !status)
+    throw new DeliveryError(
+      'Twilio callback is missing correlation fields.',
+      'permanent',
+      'invalid_webhook',
+    )
   const code = parameters.ErrorCode
-  const kind = code === '21610' ? 'opt-out' : status === 'failed' ? 'permanent' : status === 'undelivered' ? 'transient' : undefined
-  return { messageId, providerMessageId, eventId: `${providerMessageId}:${status}`, state: normalizeState(status), ...(kind ? { failureKind: kind } : {}), ...(code ? { code } : {}) }
+  const kind =
+    code === '21610'
+      ? 'opt-out'
+      : status === 'failed'
+        ? 'permanent'
+        : status === 'undelivered'
+          ? 'transient'
+          : undefined
+  return {
+    messageId,
+    providerMessageId,
+    eventId: `${providerMessageId}:${status}`,
+    state: normalizeState(status),
+    ...(kind ? { failureKind: kind } : {}),
+    ...(code ? { code } : {}),
+  }
 }
 
 function normalizeState(value: unknown): DeliveryUpdate['state'] {

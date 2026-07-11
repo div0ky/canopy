@@ -1,7 +1,7 @@
 # Canopy Principles
 
-These principles are the working tests derived from the [Canopy Manifesto](index.md). They are not
-a second manifesto. They exist to make the manifesto useful when choosing APIs, dependencies, and
+These principles are the working tests derived from the [Canopy Manifesto](index.md). They are not a
+second manifesto. They exist to make the manifesto useful when choosing APIs, dependencies, and
 runtime behavior.
 
 ## 1. Canopy owns application semantics
@@ -14,9 +14,9 @@ If replacing an infrastructure engine requires rewriting feature code, its bound
 
 ## 2. The correct path is the short path
 
-Safe defaults should require less code than bypassing them. Transactions, validation,
-authorization, context propagation, durable side effects, observability, and graceful shutdown
-should compose through the ordinary programming model.
+Safe defaults should require less code than bypassing them. Transactions, validation, authorization,
+context propagation, durable side effects, observability, and graceful shutdown should compose
+through the ordinary programming model.
 
 An escape hatch can be available without becoming the path examples teach first.
 
@@ -49,8 +49,8 @@ Models represent durable domain state, not convenient wrappers around database r
 operations use a defined unit of work. Entity-state persistence, journal entries, and outbox
 messages must agree atomically about what happened.
 
-Lifecycle hooks may participate in defined phases, but they must not hide remote side effects
-inside an ambiguous save operation.
+Lifecycle hooks may participate in defined phases, but they must not hide remote side effects inside
+an ambiguous save operation.
 
 ## 7. Context follows the work
 
@@ -61,8 +61,8 @@ Propagation rules must be deterministic, and intentional context changes must be
 
 ## 8. Boundaries are protected by contracts
 
-An adapter is justified when a dependency's native API would otherwise shape application code.
-The contract should model the capability Canopy promises, not every feature of every possible
+An adapter is justified when a dependency's native API would otherwise shape application code. The
+contract should model the capability Canopy promises, not every feature of every possible
 implementation.
 
 Adapters earn their keep through conformance suites, framework fakes, and replaceability.
@@ -70,16 +70,16 @@ Adapters earn their keep through conformance suites, framework fakes, and replac
 ## 9. Compatibility is a framework responsibility
 
 A Canopy release is a tested system, not a suggestion that a set of semver ranges might coexist.
-Dependency selection, version alignment, configuration defaults, failure behavior, and upgrade
-notes belong to the framework release.
+Dependency selection, version alignment, configuration defaults, failure behavior, and upgrade notes
+belong to the framework release.
 
 Applications upgrade Canopy. They should not independently reconstruct Canopy's compatibility
 matrix.
 
 ## 10. Tooling is part of the framework
 
-Diagnostics, generators, test harnesses, contract output, and lifecycle inspection are not polish
-to add after the runtime works. They are how a convention-heavy framework stays understandable.
+Diagnostics, generators, test harnesses, contract output, and lifecycle inspection are not polish to
+add after the runtime works. They are how a convention-heavy framework stays understandable.
 
 Every major abstraction should answer: how will a developer inspect, generate, fake, and debug it?
 
@@ -112,13 +112,13 @@ Canopy should decide every routine choice it can decide safely. It should infer 
 compiler can prove the result, generate repetitive declarations when explicit artifacts are still
 valuable, and fail before boot when an application is ambiguous or unsafe.
 
-The ordinary path must be difficult to misuse and have one consistent shape that is equally clear
-to developers, the compiler, and Cultivate. If Cultivate must guess which of several equivalent
+The ordinary path must be difficult to misuse and have one consistent shape that is equally clear to
+developers, the compiler, and Cultivate. If Cultivate must guess which of several equivalent
 patterns an application intended, Canopy has failed to be opinionated enough.
 
-Magic is good when it removes incidental decisions while remaining deterministic, inspectable,
-and explainable. Ceremony is justified only when it communicates consequential intent that Canopy
-cannot safely infer.
+Magic is good when it removes incidental decisions while remaining deterministic, inspectable, and
+explainable. Ceremony is justified only when it communicates consequential intent that Canopy cannot
+safely infer.
 
 ## A decision test
 

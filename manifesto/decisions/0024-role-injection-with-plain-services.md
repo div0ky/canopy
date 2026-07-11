@@ -7,9 +7,9 @@
 
 ## Decision
 
-Framework-facing application classes extend their corresponding Canopy role and receive
-dependencies from the active execution scope through the inherited `this.inject()` API. Ordinary
-application services remain plain classes and use constructor injection.
+Framework-facing application classes extend their corresponding Canopy role and receive dependencies
+from the active execution scope through the inherited `this.inject()` API. Ordinary application
+services remain plain classes and use constructor injection.
 
 Application code does not manually call `super()` during normal framework authoring. A developer
 only writes `super()` when deliberately implementing an exceptional custom constructor on a role
@@ -41,8 +41,8 @@ export class OrderService {
 
 Routes, actions, queries, jobs, schedules, events, listeners, observers, policies, commands,
 signals, and other framework entry points extend one Canopy role class. This inheritance is
-meaningful rather than ceremonial: it supplies the role contract, scoped injection, the
-class-bound logger, execution-context access, and role-specific framework behavior.
+meaningful rather than ceremonial: it supplies the role contract, scoped injection, the class-bound
+logger, execution-context access, and role-specific framework behavior.
 
 `this.inject(Dependency)` is:
 
@@ -88,8 +88,8 @@ intentional and should be obvious in review.
 - Ordinary business services retain conventional OOP construction and simple unit testing.
 - Canopy must implement and statically analyze role field injection without falling back to
   reflection or hidden process-global state.
-- Existing generated examples and framework documentation that constructor-inject role classes
-  must migrate to `this.inject()`.
+- Existing generated examples and framework documentation that constructor-inject role classes must
+  migrate to `this.inject()`.
 
 ## Required implementation proof
 

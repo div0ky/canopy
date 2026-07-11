@@ -10,15 +10,7 @@
 Ordinary application and domain code uses one primary Canopy programming-model package:
 
 ```ts
-import {
-  Action,
-  Event,
-  Feature,
-  Model,
-  Query,
-  ShouldQueue,
-  token,
-} from '@canopy/core'
+import { Action, Event, Feature, Model, Query, ShouldQueue, token } from '@canopy/core'
 ```
 
 Compiler, container, manifest, registry, lifecycle, and runtime implementation packages are not
@@ -75,12 +67,12 @@ The MVP physically separates architectural responsibilities:
 ```
 
 - `@canopy/core` contains the application programming model and public contracts only.
-- `@canopy/manifest` contains the serializable manifest schema, validation, and format
-  compatibility contracts only.
+- `@canopy/manifest` contains the serializable manifest schema, validation, and format compatibility
+  contracts only.
 - `@canopy/compiler` analyzes TypeScript and emits canonical manifest and constructor registry
   artifacts.
-- `@canopy/runtime` consumes generated artifacts and owns the container, dispatch, execution
-  scopes, and lifecycle.
+- `@canopy/runtime` consumes generated artifacts and owns the container, dispatch, execution scopes,
+  and lifecycle.
 - `@canopy/testing` builds on public core plus deliberate runtime testing contracts.
 - `@canopy/cli` orchestrates compiler, generators, diagnostics, operational commands, and official
   hosts.
@@ -104,8 +96,8 @@ application-facing manifest contracts.
 ## Closed exports
 
 Every Canopy package defines an explicit package `exports` map. Cross-package consumers may import
-only declared package roots and intentional public subpaths. Deep imports into source, build
-output, or unexported implementation modules are forbidden.
+only declared package roots and intentional public subpaths. Deep imports into source, build output,
+or unexported implementation modules are forbidden.
 
 ```ts
 import { Action } from '@canopy/core'
@@ -148,8 +140,7 @@ The MVP must prove:
 7. Manifest schema validation runs without importing compiler or runtime implementation.
 8. Architectural checks reject package cycles and forbidden dependency directions.
 9. Deep imports and cross-package relative imports fail architectural checks.
-10. Published artifacts contain only files reachable through deliberate exports and runtime
-    assets.
+10. Published artifacts contain only files reachable through deliberate exports and runtime assets.
 11. Internal package reorganization preserves the public core API and generated application.
 
 ## References

@@ -22,8 +22,14 @@ import { SaveLegacyCustomer } from '../examples/persistence-app/dist/counters/ac
 import { CounterIncremented } from '../examples/persistence-app/dist/counters/events/counter-incremented.js'
 import { ProcessCounterJob } from '../examples/persistence-app/dist/counters/jobs/process-counter.job.js'
 import { CounterTouched } from '../examples/persistence-app/dist/counters/signals/counter-touched.js'
-import { recordedEvents, resetRecordedEvents } from '../examples/persistence-app/dist/support/recorded-events.js'
-import { recordedJobAttempts, resetRecordedJobAttempts } from '../examples/persistence-app/dist/support/job-attempts.js'
+import {
+  recordedEvents,
+  resetRecordedEvents,
+} from '../examples/persistence-app/dist/support/recorded-events.js'
+import {
+  recordedJobAttempts,
+  resetRecordedJobAttempts,
+} from '../examples/persistence-app/dist/support/job-attempts.js'
 
 const workspace = path.resolve(import.meta.dirname, '..')
 const applicationRoot = path.join(workspace, 'examples/persistence-app')
@@ -41,7 +47,9 @@ describe('@canopy/testing', () => {
     })
   })
 
-  afterAll(async () => { await rm(artifacts, { recursive: true, force: true }) })
+  afterAll(async () => {
+    await rm(artifacts, { recursive: true, force: true })
+  })
 
   it('boots the real manifest with visible deterministic provider overrides', async () => {
     const queue = new FakeQueueManager()
@@ -65,29 +73,40 @@ describe('@canopy/testing', () => {
     })
     try {
       harness.actingAsUser('ada')
-      expect(await harness.action(CreateCounter, { id: 'memory-counter', value: 4 }))
-        .toEqual(expect.objectContaining({ id: 'memory-counter', version: 1 }))
-      expect(transactions.state.entities.get('model:counters/counter/memory-counter'))
-        .toEqual(expect.objectContaining({ state: { id: 'memory-counter', value: 4 }, version: 1 }))
+      expect(await harness.action(CreateCounter, { id: 'memory-counter', value: 4 })).toEqual(
+        expect.objectContaining({ id: 'memory-counter', version: 1 }),
+      )
+      expect(transactions.state.entities.get('model:counters/counter/memory-counter')).toEqual(
+        expect.objectContaining({ state: { id: 'memory-counter', value: 4 }, version: 1 }),
+      )
 
       const me = await harness.request('http://canopy.test/auth/me')
       expect(me.status).toBe(200)
-      expect(await me.json()).toEqual(expect.objectContaining({
-        ok: true,
-        data: expect.objectContaining({ actor: { kind: 'user', id: 'ada' } }),
-      }))
+      expect(await me.json()).toEqual(
+        expect.objectContaining({
+          ok: true,
+          data: expect.objectContaining({ actor: { kind: 'user', id: 'ada' } }),
+        }),
+      )
       const home = await harness.request('http://canopy.test/')
       expect(home.status).toBe(200)
       expect((await harness.request('http://canopy.test/missing')).status).toBe(404)
-      expect(harness.logs.records).toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          channel: 'home-route',
-          message: 'Canopy home visited',
-          context: expect.objectContaining({ transport: 'http', actorKind: 'user' }),
-        }),
-        expect.objectContaining({ channel: 'http', message: 'Execution completed' }),
-        expect.objectContaining({ channel: 'http', level: 'warn', message: 'GET /missing', attributes: { status: 404 } }),
-      ]))
+      expect(harness.logs.records).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            channel: 'home-route',
+            message: 'Canopy home visited',
+            context: expect.objectContaining({ transport: 'http', actorKind: 'user' }),
+          }),
+          expect.objectContaining({ channel: 'http', message: 'Execution completed' }),
+          expect.objectContaining({
+            channel: 'http',
+            level: 'warn',
+            message: 'GET /missing',
+            attributes: { status: 404 },
+          }),
+        ]),
+      )
 
       const ids = await harness.action(QueueNotifications, undefined)
       expect(queue.queued).toHaveLength(2)
@@ -98,11 +117,15 @@ describe('@canopy/testing', () => {
       expect(transactions.state.deliveries.get(ids.mailId)?.state).toBe('accepted')
       expect(transactions.state.deliveries.get(ids.smsId)?.state).toBe('accepted')
       expect(telemetry.records.some((record) => record.kind === 'span')).toBe(true)
-      expect(harness.observations?.observations).toEqual(expect.arrayContaining([
-        expect.objectContaining({ kind: 'action', phase: 'completed' }),
-        expect.objectContaining({ kind: 'log', name: 'Canopy home visited' }),
-      ]))
-    } finally { await harness.shutdown() }
+      expect(harness.observations?.observations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: 'action', phase: 'completed' }),
+          expect.objectContaining({ kind: 'log', name: 'Canopy home visited' }),
+        ]),
+      )
+    } finally {
+      await harness.shutdown()
+    }
   })
 
   it('preserves rollback and after-commit semantics in memory', async () => {
@@ -123,12 +146,15 @@ describe('@canopy/testing', () => {
     })
     try {
       harness.actingAsSystem()
-      await expect(harness.action(SaveCounter, { id: 'rolled-back', amount: 1, failAfterWrites: true }))
-        .rejects.toThrow('failed after persistence writes')
+      await expect(
+        harness.action(SaveCounter, { id: 'rolled-back', amount: 1, failAfterWrites: true }),
+      ).rejects.toThrow('failed after persistence writes')
       expect(transactions.state.entities.size).toBe(0)
       expect(transactions.state.journal).toEqual([])
       expect(transactions.state.outbox).toEqual([])
-    } finally { await harness.shutdown() }
+    } finally {
+      await harness.shutdown()
+    }
   })
 
   it('preserves mapped-model semantics in the first-party memory fake', async () => {
@@ -149,14 +175,20 @@ describe('@canopy/testing', () => {
     })
     try {
       harness.actingAsSystem()
-      expect(await harness.action(SaveLegacyCustomer, { id: 'mapped-memory', displayName: 'Mapped' }))
-        .toEqual({ id: 'mapped-memory', displayName: 'Mapped', version: 1, created: true })
-      expect(transactions.state.entities.get('model:counters/legacy-customer/mapped-memory'))
-        .toEqual(expect.objectContaining({
+      expect(
+        await harness.action(SaveLegacyCustomer, { id: 'mapped-memory', displayName: 'Mapped' }),
+      ).toEqual({ id: 'mapped-memory', displayName: 'Mapped', version: 1, created: true })
+      expect(
+        transactions.state.entities.get('model:counters/legacy-customer/mapped-memory'),
+      ).toEqual(
+        expect.objectContaining({
           state: { id: 'mapped-memory', displayName: 'Mapped', active: true },
           version: 1,
-        }))
-    } finally { await harness.shutdown() }
+        }),
+      )
+    } finally {
+      await harness.shutdown()
+    }
   })
 
   it('drives events, signals, jobs, and schedules through first-party test APIs', async () => {
@@ -186,14 +218,23 @@ describe('@canopy/testing', () => {
       expect(queue.hasQueued(ProcessCounterJob)).toBe(true)
       await queue.runNext()
       await queue.runSchedule('schedule:counters/process-counters')
-      expect(recordedEvents).toEqual(expect.arrayContaining([
-        expect.objectContaining({ event: 'counter-incremented', value: 2 }),
-        expect.objectContaining({ event: 'counter-touched:direct-signal', phase: 'signal' }),
-      ]))
-      expect(recordedJobAttempts).toEqual(expect.arrayContaining([
-        expect.objectContaining({ jobId, key: 'direct-job' }),
-        expect.objectContaining({ key: 'scheduled-counter-sweep', causationId: 'schedule:counters/process-counters' }),
-      ]))
-    } finally { await harness.shutdown() }
+      expect(recordedEvents).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ event: 'counter-incremented', value: 2 }),
+          expect.objectContaining({ event: 'counter-touched:direct-signal', phase: 'signal' }),
+        ]),
+      )
+      expect(recordedJobAttempts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ jobId, key: 'direct-job' }),
+          expect.objectContaining({
+            key: 'scheduled-counter-sweep',
+            causationId: 'schedule:counters/process-counters',
+          }),
+        ]),
+      )
+    } finally {
+      await harness.shutdown()
+    }
   })
 })

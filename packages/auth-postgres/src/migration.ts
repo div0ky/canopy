@@ -27,7 +27,13 @@ export const CANOPY_AUTH_EXTERNAL_IDENTITIES_MIGRATION_URL = new URL(
 export async function installAuthSchema(connectionString: string): Promise<void> {
   const pool = new Pool({ connectionString })
   try {
-    for (const migration of [CANOPY_AUTH_MIGRATION_URL, CANOPY_AUTH_ACCESS_TOKEN_MIGRATION_URL, CANOPY_AUTH_CHALLENGE_MIGRATION_URL, CANOPY_AUTH_SESSION_ROTATION_MIGRATION_URL, CANOPY_AUTH_EXTERNAL_IDENTITIES_MIGRATION_URL]) {
+    for (const migration of [
+      CANOPY_AUTH_MIGRATION_URL,
+      CANOPY_AUTH_ACCESS_TOKEN_MIGRATION_URL,
+      CANOPY_AUTH_CHALLENGE_MIGRATION_URL,
+      CANOPY_AUTH_SESSION_ROTATION_MIGRATION_URL,
+      CANOPY_AUTH_EXTERNAL_IDENTITIES_MIGRATION_URL,
+    ]) {
       await pool.query(await readFile(migration, 'utf8'))
     }
   } finally {

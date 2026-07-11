@@ -7,12 +7,12 @@
 
 ## Decision
 
-Canopy applications will be composed from explicit, class-first feature boundaries. The
-application root explicitly selects its features, and each feature explicitly declares its
-framework-facing classes in role-based arrays. Canopy's build-time compiler automatically follows
-and wires the concrete dependency graph beneath those declarations. The compiler will produce one
-versioned, framework-owned application manifest consumed by runtime boot, adapters, tests,
-diagnostics, the CLI, and Cultivate.
+Canopy applications will be composed from explicit, class-first feature boundaries. The application
+root explicitly selects its features, and each feature explicitly declares its framework-facing
+classes in role-based arrays. Canopy's build-time compiler automatically follows and wires the
+concrete dependency graph beneath those declarations. The compiler will produce one versioned,
+framework-owned application manifest consumed by runtime boot, adapters, tests, diagnostics, the
+CLI, and Cultivate.
 
 This direction is summarized as:
 
@@ -48,8 +48,8 @@ export class Application extends CanopyApplication {
 }
 ```
 
-The arrays declare ownership and make the feature's application surface readable in one place.
-The class defines its own role and behavior; the array category lets the compiler validate the
+The arrays declare ownership and make the feature's application surface readable in one place. The
+class defines its own role and behavior; the array category lets the compiler validate the
 declaration and gives humans an intentional overview. Generators must create the class and update
 the owning feature declaration as one planned operation.
 
@@ -63,14 +63,14 @@ The Application class is also compile-time metadata. It declares the stable appl
 selected Features, and other supported composition fields. Neither the compiler nor runtime
 constructs the Application or executes its code to discover the application graph.
 
-The Application must not define a constructor, `register()` method, `boot()` method, dynamic
-Feature selection, environment-dependent branching, or arbitrary executable configuration. The
-compiler must reject unsupported members and expressions with source-aware diagnostics.
+The Application must not define a constructor, `register()` method, `boot()` method, dynamic Feature
+selection, environment-dependent branching, or arbitrary executable configuration. The compiler must
+reject unsupported members and expressions with source-aware diagnostics.
 
 Booting an Application produces a separate runtime instance. That runtime owns lifecycle state,
-admission, execution scopes, infrastructure instances, readiness, draining, shutdown, and
-disposal. `Canopy.boot(Application)` produces that runtime and resolves only at readiness; the
-declaration object and mutable runtime are never the same object.
+admission, execution scopes, infrastructure instances, readiness, draining, shutdown, and disposal.
+`Canopy.boot(Application)` produces that runtime and resolves only at readiness; the declaration
+object and mutable runtime are never the same object.
 
 ## Declaration-only Feature classes
 
@@ -79,19 +79,18 @@ declarative fields, but neither the compiler nor runtime constructs the Feature 
 application code to discover its contents.
 
 Feature classes must not define constructors, `register()` methods, `boot()` methods, dynamic
-registration, environment-dependent branching, or arbitrary executable configuration. A Feature
-body is limited to the declarative fields and binding expressions recognized by the Canopy
-compiler.
+registration, environment-dependent branching, or arbitrary executable configuration. A Feature body
+is limited to the declarative fields and binding expressions recognized by the Canopy compiler.
 
 Startup, readiness, draining, shutdown, and disposal behavior belongs to explicitly declared
 provider or adapter classes. Their dependencies and lifecycle phases must appear in the manifest.
-This preserves Laravel-like organization without allowing service-provider hooks to create a
-second application graph during boot.
+This preserves Laravel-like organization without allowing service-provider hooks to create a second
+application graph during boot.
 
 ## Feature boundaries
 
-Features are ownership and composition boundaries, not Nest-style module namespaces. Canopy will
-not create chains of module imports and exports that indirectly control provider visibility.
+Features are ownership and composition boundaries, not Nest-style module namespaces. Canopy will not
+create chains of module imports and exports that indirectly control provider visibility.
 
 Injectable classes and tokens remain private to their Feature by default. A Feature exposes an
 intentional cross-Feature API through `provides`, which accepts concrete classes, abstract-class
@@ -113,9 +112,7 @@ infrastructure boundary—not merely because a dependency crosses a Feature. Whe
 
 ```ts
 export class BillingFeature extends Feature {
-  bindings = [
-    bind(PaymentGateway).to(StripePaymentGateway),
-  ]
+  bindings = [bind(PaymentGateway).to(StripePaymentGateway)]
 
   provides = [PaymentGateway]
 }
@@ -138,9 +135,9 @@ behavior. Folder names do not determine Feature ownership or class role. Registr
 depend on runtime reflection, legacy decorator metadata, filesystem scanning during boot, or
 importing every application module for side effects.
 
-Build-time diagnostics must report ambiguous ownership, duplicate identifiers, invalid class
-roles, missing bindings, dependency cycles, and declarations that cannot be reached from the
-application root.
+Build-time diagnostics must report ambiguous ownership, duplicate identifiers, invalid class roles,
+missing bindings, dependency cycles, and declarations that cannot be reached from the application
+root.
 
 ## Fail-closed static compilation
 
@@ -151,17 +148,17 @@ arbitrary function execution, mutable global state, or other values the compiler
 
 Environment-specific values belong in validated runtime configuration. Environment-specific
 infrastructure implementations may be selected through explicit, statically represented binding
-contracts, but the existence and identity of application capabilities must not change through
-hidden runtime branching.
+contracts, but the existence and identity of application capabilities must not change through hidden
+runtime branching.
 
-Unsupported or ambiguous expressions receive source-aware diagnostics. Canopy must not fall back
-to boot-time reflection, filesystem scanning, opportunistic registration, or a partial best-effort
+Unsupported or ambiguous expressions receive source-aware diagnostics. Canopy must not fall back to
+boot-time reflection, filesystem scanning, opportunistic registration, or a partial best-effort
 manifest.
 
 ## Semantic TypeScript compilation
 
-Canonical artifact emission requires a semantically valid strict TypeScript application project.
-The Canopy compiler uses TypeScript's Program, symbol graph, module resolution, and type checker to
+Canonical artifact emission requires a semantically valid strict TypeScript application project. The
+Canopy compiler uses TypeScript's Program, symbol graph, module resolution, and type checker to
 resolve class identity, inheritance, constructor dependencies, abstract ports, capability
 interfaces, listener handler parameters, Feature role arrays, generic public types, and package
 ownership.
@@ -176,8 +173,8 @@ must not boot them as though they describe the current source. TypeScript projec
 isolate unrelated workspace packages from the application compilation while preserving complete
 semantic checking of the application graph.
 
-The TypeScript version is pinned by the Canopy release compatibility contract. Compiler behavior
-is not supported against arbitrary application-selected TypeScript versions.
+The TypeScript version is pinned by the Canopy release compatibility contract. Compiler behavior is
+not supported against arbitrary application-selected TypeScript versions.
 
 ## One application manifest
 
@@ -190,8 +187,8 @@ must be versioned and must include, where applicable:
 - Role and lifecycle phase.
 - Constructor dependencies, bindings, and scopes.
 - Input and output schemas.
-- Relationships among routes, operations, policies, models, events, observers, listeners, jobs,
-  and schedules.
+- Relationships among routes, operations, policies, models, events, observers, listeners, jobs, and
+  schedules.
 - Required infrastructure capabilities and adapter provenance.
 - Sensitivity, mutability, and diagnostic metadata.
 
@@ -207,11 +204,11 @@ bindings, routes, policies, events, listeners, observers, jobs, schedules, or ot
 capabilities.
 
 The runtime exposes no dynamic container rebinding, listener registration, route registration,
-plugin activation, or Feature mutation API. Test overrides produce a separate validated graph
-before boot and do not weaken production immutability.
+plugin activation, or Feature mutation API. Test overrides produce a separate validated graph before
+boot and do not weaken production immutability.
 
-Configuration values, database records, tenant state, feature-flag values, schedule state, and
-other business data may change normally. They may influence behavior through declared policies and
+Configuration values, database records, tenant state, feature-flag values, schedule state, and other
+business data may change normally. They may influence behavior through declared policies and
 services but cannot secretly redefine which application capabilities exist.
 
 Development hot reload compiles a new graph and boots a replacement runtime. It does not patch the
@@ -220,8 +217,8 @@ replacement.
 
 ## Stable manifest identity
 
-Every framework-facing declaration must provide an explicit stable local ID. Feature IDs scope
-their declarations, and the compiler adds the role to produce a canonical manifest ID:
+Every framework-facing declaration must provide an explicit stable local ID. Feature IDs scope their
+declarations, and the compiler adds the role to produce a canonical manifest ID:
 
 ```ts
 export class OrdersFeature extends Feature {
@@ -238,9 +235,8 @@ event:orders/order-shipped
 ```
 
 Canonical identity must not derive from a filename, directory, source location, class name, array
-position, or discovery order. Moving or renaming source changes provenance only; it must not
-change queued payloads, journal references, outbox records, traces, diagnostics, or other durable
-links.
+position, or discovery order. Moving or renaming source changes provenance only; it must not change
+queued payloads, journal references, outbox records, traces, diagnostics, or other durable links.
 
 Feature IDs and local declaration IDs are mandatory. Generators create them automatically. The
 compiler must reject missing IDs, duplicate canonical IDs, invalid role prefixes, and unstable or
@@ -294,9 +290,9 @@ Canopy tooling owns compilation before runtime:
 analyzes TypeScript, repairs stale output, or emits a manifest. Production runtime images do not
 require compiler or TypeScript packages.
 
-Missing, incompatible, or mismatched artifacts fail boot with a normalized diagnostic that names
-the tooling command required to regenerate them. Custom hosts must include compilation in their
-build pipeline.
+Missing, incompatible, or mismatched artifacts fail boot with a normalized diagnostic that names the
+tooling command required to regenerate them. Custom hosts must include compilation in their build
+pipeline.
 
 ## Manifest format compatibility
 
@@ -313,9 +309,9 @@ identify at least:
 }
 ```
 
-`formatVersion` governs interpretation of the canonical JSON contract. Framework, compiler,
-plugin, adapter, and application package versions provide provenance but do not substitute for
-format compatibility.
+`formatVersion` governs interpretation of the canonical JSON contract. Framework, compiler, plugin,
+adapter, and application package versions provide provenance but do not substitute for format
+compatibility.
 
 Runtime, CLI, tests, diagnostics, and Cultivate must explicitly declare the format versions they
 support and reject unknown newer or otherwise incompatible manifests. Consumers must not guess,
@@ -323,8 +319,8 @@ partially interpret, or silently downgrade an unsupported application graph.
 
 Breaking manifest changes increment `formatVersion`. Additive optional fields may remain within a
 format version only when existing consumers can safely ignore them without changing the meaning of
-known fields. Compatibility migrations must be deliberate, testable framework tooling rather than
-ad hoc runtime coercion.
+known fields. Compatibility migrations must be deliberate, testable framework tooling rather than ad
+hoc runtime coercion.
 
 ## Consequences
 
@@ -333,14 +329,13 @@ ad hoc runtime coercion.
 - Constructor-reachable concrete services require no provider registration boilerplate.
 - Generators and compiler conventions become part of the supported programming contract.
 - Build failures replace many late boot-time discovery failures.
-- Manifest compatibility and source provenance require deliberate versioning and conformance
-  tests.
+- Manifest compatibility and source provenance require deliberate versioning and conformance tests.
 - Highly dynamic runtime registration is not part of the primary MVP programming model.
 
 ## Alternatives rejected for the MVP
 
-- **Manual provider registration for every dependency:** explicit but too repetitive and hostile
-  to the intended Laravel-like developer experience.
+- **Manual provider registration for every dependency:** explicit but too repetitive and hostile to
+  the intended Laravel-like developer experience.
 - **Unrestricted whole-project discovery:** convenient initially, but obscures ownership and makes
   composition depend on incidental filesystem contents.
 - **Runtime reflection or decorator metadata:** conflicts with deterministic, reflection-free boot
@@ -362,20 +357,20 @@ The MVP must prove:
    can update safely.
 5. Feature constructors, methods, and executable configuration are rejected with source-aware
    diagnostics.
-6. Concrete dependencies beneath those declarations are autowired without provider arrays or
-   runtime reflection.
+6. Concrete dependencies beneath those declarations are autowired without provider arrays or runtime
+   reflection.
 7. Explicit bindings override autowiring predictably and remain inspectable.
 8. Duplicate, unreachable, ambiguously owned, and cyclic declarations fail at build time with
    source-aware diagnostics.
 9. Dynamic, environment-dependent, or otherwise unprovable declaration expressions fail with
    source-aware diagnostics and never trigger runtime discovery.
 10. Syntax, resolution, and semantic TypeScript errors prevent canonical artifact emission.
-11. Listener, capability, constructor, and ownership relationships resolve through TypeScript
-    symbol identity rather than textual names.
+11. Listener, capability, constructor, and ownership relationships resolve through TypeScript symbol
+    identity rather than textual names.
 12. Moving or renaming a declaration preserves its canonical manifest ID while updating source
-   provenance.
+    provenance.
 13. Runtime boot, CLI inspection, tests, diagnostics, and Cultivate-compatible inspection report
-   facts from the same versioned manifest.
+    facts from the same versioned manifest.
 14. Runtime attempts to register or rebind graph capabilities fail with an immutable-graph
     diagnostic.
 15. Development reload produces a newly compiled graph and replacement runtime.
@@ -397,8 +392,7 @@ The MVP must prove:
 
 - TypeScript source analysis cannot reliably validate role arrays or follow constructor
   dependencies.
-- Automatic dependency wiring creates surprising behavior that explicit diagnostics cannot
-  explain.
+- Automatic dependency wiring creates surprising behavior that explicit diagnostics cannot explain.
 - Manifest generation becomes dependent on executing untrusted application code.
 - A required deployment or plugin model cannot compose into one deterministic application graph.
 

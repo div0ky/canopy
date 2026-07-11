@@ -21,10 +21,10 @@ cryptography, asynchronous execution context, process signals, diagnostics, work
 Canopy should not weaken its initial programming model to claim portability across runtimes that
 have different process, networking, cryptographic, or lifecycle behavior.
 
-Node.js 24 supplies the stable server runtime Canopy needs while preserving Web Standards
-`Request` and `Response` at the HTTP boundary. Node.js 24.7 adds built-in Argon2 support, allowing
-the first-party authentication subsystem to use a platform cryptographic primitive rather than
-making an authentication framework or native password-hashing package foundational.
+Node.js 24 supplies the stable server runtime Canopy needs while preserving Web Standards `Request`
+and `Response` at the HTTP boundary. Node.js 24.7 adds built-in Argon2 support, allowing the
+first-party authentication subsystem to use a platform cryptographic primitive rather than making an
+authentication framework or native password-hashing package foundational.
 
 ## Boundary
 

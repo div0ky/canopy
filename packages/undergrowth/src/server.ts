@@ -13,18 +13,29 @@ export interface UndergrowthHost {
   readonly shutdown: () => Promise<void>
 }
 
-export async function listenUndergrowth(options: UndergrowthServerOptions): Promise<UndergrowthHost> {
+export async function listenUndergrowth(
+  options: UndergrowthServerOptions,
+): Promise<UndergrowthHost> {
   const host = options.host ?? '127.0.0.1'
   if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') {
-    throw new Error('Undergrowth binds to loopback only. Use a local tunnel deliberately if remote access is required.')
+    throw new Error(
+      'Undergrowth binds to loopback only. Use a local tunnel deliberately if remote access is required.',
+    )
   }
   const port = options.port ?? 4_400
-  if (!Number.isInteger(port) || port < 0 || port > 65_535) throw new TypeError('Undergrowth port must be between 0 and 65535.')
+  if (!Number.isInteger(port) || port < 0 || port > 65_535)
+    throw new TypeError('Undergrowth port must be between 0 and 65535.')
   const store = new UndergrowthStore(options.connectionString)
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? '/', `http://${host}`)
-      if (request.method !== 'GET') return json(response, 405, { ok: false, code: 'method_not_allowed', message: 'Undergrowth is read-only.', data: null })
+      if (request.method !== 'GET')
+        return json(response, 405, {
+          ok: false,
+          code: 'method_not_allowed',
+          message: 'Undergrowth is read-only.',
+          data: null,
+        })
       if (url.pathname === '/api/executions') {
         const data = await store.executions({
           ...(url.searchParams.get('kind') ? { kind: url.searchParams.get('kind')! } : {}),
@@ -35,7 +46,13 @@ export async function listenUndergrowth(options: UndergrowthServerOptions): Prom
       }
       if (url.pathname === '/api/entries') {
         const kind = url.searchParams.get('kind')
-        if (!kind) return json(response, 400, { ok: false, code: 'kind_required', message: 'An entry kind is required.', data: null })
+        if (!kind)
+          return json(response, 400, {
+            ok: false,
+            code: 'kind_required',
+            message: 'An entry kind is required.',
+            data: null,
+          })
         const data = await store.entries({
           kind,
           ...(url.searchParams.get('search') ? { search: url.searchParams.get('search')! } : {}),
@@ -44,40 +61,72 @@ export async function listenUndergrowth(options: UndergrowthServerOptions): Prom
       }
       if (url.pathname.startsWith('/api/timeline/')) {
         const id = decodeURIComponent(url.pathname.slice('/api/timeline/'.length))
-        if (!/^[0-9a-f-]{36}$/i.test(id)) return json(response, 400, { ok: false, code: 'invalid_execution', message: 'Execution ID is invalid.', data: null })
+        if (!/^[0-9a-f-]{36}$/i.test(id))
+          return json(response, 400, {
+            ok: false,
+            code: 'invalid_execution',
+            message: 'Execution ID is invalid.',
+            data: null,
+          })
         return json(response, 200, { ok: true, data: await store.timeline(id) })
       }
-      if (url.pathname === '/api/health') return json(response, 200, { ok: true, data: { service: 'undergrowth' } })
+      if (url.pathname === '/api/health')
+        return json(response, 200, { ok: true, data: { service: 'undergrowth' } })
       if (url.pathname === '/' || url.pathname === '/index.html') {
-        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+        response.writeHead(200, {
+          'content-type': 'text/html; charset=utf-8',
+          'cache-control': 'no-store',
+        })
         response.end(UNDERGROWTH_HTML)
         return
       }
-      return json(response, 404, { ok: false, code: 'not_found', message: 'Not found.', data: null })
+      return json(response, 404, {
+        ok: false,
+        code: 'not_found',
+        message: 'Not found.',
+        data: null,
+      })
     } catch (error) {
-      return json(response, 500, { ok: false, code: 'undergrowth_error', message: error instanceof Error ? error.message : 'Undergrowth failed.', data: null })
+      return json(response, 500, {
+        ok: false,
+        code: 'undergrowth_error',
+        message: error instanceof Error ? error.message : 'Undergrowth failed.',
+        data: null,
+      })
     }
   })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
-    server.listen(port, host, () => { server.off('error', reject); resolve() })
+    server.listen(port, host, () => {
+      server.off('error', reject)
+      resolve()
+    })
   })
   const address = server.address()
-  if (!address || typeof address === 'string') throw new Error('Undergrowth did not expose a TCP address.')
+  if (!address || typeof address === 'string')
+    throw new Error('Undergrowth did not expose a TCP address.')
   return {
     url: new URL(`http://${host === '::1' ? '[::1]' : host}:${address.port}/`),
-    shutdown: async () => { await closeServer(server); await store.close() },
+    shutdown: async () => {
+      await closeServer(server)
+      await store.close()
+    },
   }
 }
 
 function json(response: import('node:http').ServerResponse, status: number, body: unknown): void {
-  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+  response.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+  })
   response.end(JSON.stringify(body))
 }
 
 async function closeServer(server: Server): Promise<void> {
   if (!server.listening) return
-  await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+  await new Promise<void>((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  )
 }
 
 const UNDERGROWTH_HTML = String.raw`<!doctype html>

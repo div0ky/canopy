@@ -13,9 +13,9 @@ pnpm dev
 pnpm dev:field-guide
 ```
 
-Open `http://127.0.0.1:3001`. The Next server forwards `/api/canopy/*` to
-`CANOPY_API_URL`, which defaults to `http://127.0.0.1:3000`. Copy `.env.example` to `.env.local`
-only when that backend URL needs to change.
+Open `http://127.0.0.1:3001`. The Next server forwards `/api/canopy/*` to `CANOPY_API_URL`, which
+defaults to `http://127.0.0.1:3000`. Copy `.env.example` to `.env.local` only when that backend URL
+needs to change.
 
 ## What it proves
 

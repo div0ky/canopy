@@ -13,8 +13,8 @@ mechanics. Canopy's public HTTP contract will be framework-owned and grounded in
 ## Context
 
 Canopy needs a capable HTTP implementation without placing a second application framework beneath
-its own kernel. The engine must handle routing and middleware mechanics while allowing Canopy to
-own controllers, validation, authentication, authorization, execution context, errors, resources,
+its own kernel. The engine must handle routing and middleware mechanics while allowing Canopy to own
+controllers, validation, authentication, authorization, execution context, errors, resources,
 testing, lifecycle, and diagnostics.
 
 Hono is focused on HTTP and uses Web Standards across its supported runtimes. That makes it a good
@@ -35,7 +35,7 @@ engine contract remains:
 
 ```ts
 export interface HttpEngine {
-  fetch(request: Request): Promise<Response>;
+  fetch(request: Request): Promise<Response>
 }
 ```
 
@@ -77,8 +77,7 @@ not adopt Nitro's application model, routing, plugin lifecycle, or configuration
 - Canopy must design and maintain its own HTTP manifest and adapter conformance suite.
 - Hono upgrades are absorbed through Canopy releases rather than application code.
 - Application code remains portable across future HTTP engines that satisfy the contract.
-- Some useful Hono capabilities may require deliberate Canopy APIs before applications can use
-  them.
+- Some useful Hono capabilities may require deliberate Canopy APIs before applications can use them.
 - Node.js 24 is the initial hosting runtime, but the public HTTP model does not unnecessarily depend
   on Node.js.
 

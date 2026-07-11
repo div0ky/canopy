@@ -1,11 +1,4 @@
-import {
-  argon2,
-  createHash,
-  randomBytes,
-  randomUUID,
-  timingSafeEqual,
-  type Argon2Parameters,
-} from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 
 import {
   Auth,
@@ -20,7 +13,6 @@ import {
   AuthenticationError,
   AuthenticationRateLimitError,
   type Disposes,
-  HttpError,
   type LifecycleContext,
   type IssueAccessTokenInput,
   type LoginInput,
@@ -31,13 +23,7 @@ import {
   SecretString,
   type Starts,
 } from '@canopy/core'
-import {
-  and,
-  eq,
-  gt,
-  isNull,
-  or,
-} from 'drizzle-orm'
+import { and, eq, gt, isNull, or } from 'drizzle-orm'
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres'
 import { Pool, type PoolClient, type QueryResultRow } from 'pg'
 
@@ -50,27 +36,39 @@ import {
   authPasswords,
   authSchema,
   authSessions,
-  type PasswordParameters,
 } from './schema.js'
 
-const PASSWORD_VERSION = 1
-const PASSWORD_PARAMETERS: PasswordParameters = Object.freeze({
-  algorithm: 'argon2id',
-  memory: 19_456,
-  passes: 2,
-  parallelism: 2,
-  tagLength: 32,
-})
+import {
+  quoteIdentifier,
+  quoteQualified,
+  validIdentifier,
+  validQualifiedIdentifier,
+} from './database-identifiers.js'
+import {
+  assertPassword,
+  createPasswordRecord,
+  decodePasswordRecord,
+  dummyPasswordRecord,
+  encodePasswordRecord,
+  needsRehash,
+  verifyPassword,
+  type PasswordRecord,
+} from './passwords.js'
+import {
+  anonymousAuthentication,
+  assertTrustedOrigin,
+  cookieValue,
+  digest,
+  normalizeEmail,
+  normalizeEmailForLogin,
+  normalizeOrigin,
+  serializeCookie,
+} from './request-auth.js'
+
 const DEVELOPMENT_COOKIE_NAME = 'canopy_session'
 const PRODUCTION_COOKIE_NAME = '__Host-canopy_session'
 
 type Database = NodePgDatabase<typeof authSchema>
-interface PasswordRecord {
-  readonly version: number
-  readonly salt: string
-  readonly hash: string
-  readonly parameters: PasswordParameters
-}
 
 export interface PostgresAuthOptions {
   readonly connectionString: string
@@ -137,8 +135,14 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
   override storage(): AuthStorageDescription {
     return Object.freeze({
       kind: this.options.tables ? 'mapped' : 'canopy-owned',
-      identities: { table: this.options.tables?.identities.table ?? 'canopy_auth_identities', ownership: this.options.tables ? 'external' : 'canopy' },
-      passwords: { table: this.options.tables?.passwords.table ?? 'canopy_auth_passwords', ownership: this.options.tables ? 'external' : 'canopy' },
+      identities: {
+        table: this.options.tables?.identities.table ?? 'canopy_auth_identities',
+        ownership: this.options.tables ? 'external' : 'canopy',
+      },
+      passwords: {
+        table: this.options.tables?.passwords.table ?? 'canopy_auth_passwords',
+        ownership: this.options.tables ? 'external' : 'canopy',
+      },
       sessions: { table: 'canopy_auth_sessions', ownership: 'canopy' },
       accessTokens: { table: 'canopy_auth_access_tokens', ownership: 'canopy' },
       challenges: { table: 'canopy_auth_challenges', ownership: 'canopy' },
@@ -183,8 +187,19 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     try {
       if (this.options.tables) {
         await this.#mappedTransaction(async (transaction, client) => {
-          await insertMappedRegistration(client, this.options.tables!, { id, email, emailVerifiedAt: null, createdAt: now, updatedAt: now }, password)
-          await transaction.insert(authAuditEvents).values({ id: randomUUID(), eventType: 'identity.registered', identityId: id, metadata: {}, occurredAt: now })
+          await insertMappedRegistration(
+            client,
+            this.options.tables!,
+            { id, email, emailVerifiedAt: null, createdAt: now, updatedAt: now },
+            password,
+          )
+          await transaction.insert(authAuditEvents).values({
+            id: randomUUID(),
+            eventType: 'identity.registered',
+            identityId: id,
+            metadata: {},
+            occurredAt: now,
+          })
         })
         return Object.freeze({ id, email, emailVerified: false, createdAt: now })
       }
@@ -224,9 +239,18 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
   }
 
   async findIdentity(identityId: string): Promise<AuthIdentity | undefined> {
-    if (this.options.tables) return await findMappedIdentity(this.#requirePool(), this.options.tables.identities, 'id', identityId)
-    const [identity] = await this.#requireDatabase().select().from(authIdentities)
-      .where(eq(authIdentities.id, identityId)).limit(1)
+    if (this.options.tables)
+      return await findMappedIdentity(
+        this.#requirePool(),
+        this.options.tables.identities,
+        'id',
+        identityId,
+      )
+    const [identity] = await this.#requireDatabase()
+      .select()
+      .from(authIdentities)
+      .where(eq(authIdentities.id, identityId))
+      .limit(1)
     return identity ? identityFrom(identity) : undefined
   }
 
@@ -238,15 +262,17 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     const mappedRow = this.options.tables
       ? await findMappedLogin(this.#requirePool(), this.options.tables, email)
       : undefined
-    const [defaultRow] = this.options.tables ? [] : await database
-      .select({
-        identity: authIdentities,
-        password: authPasswords,
-      })
-      .from(authIdentities)
-      .innerJoin(authPasswords, eq(authPasswords.identityId, authIdentities.id))
-      .where(eq(authIdentities.email, email))
-      .limit(1)
+    const [defaultRow] = this.options.tables
+      ? []
+      : await database
+          .select({
+            identity: authIdentities,
+            password: authPasswords,
+          })
+          .from(authIdentities)
+          .innerJoin(authPasswords, eq(authPasswords.identityId, authIdentities.id))
+          .where(eq(authIdentities.email, email))
+          .limit(1)
     const row = mappedRow ?? defaultRow
     const candidate = row?.password ?? this.#dummyPassword
     if (!candidate) throw new Error('PostgresAuth is not started.')
@@ -264,14 +290,25 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
 
     if (needsRehash(row.password)) {
       const upgraded = await createPasswordRecord(input.password)
-      if (this.options.tables) await updateMappedPassword(this.#requirePool(), this.options.tables.passwords, row.identity.id, upgraded, new Date())
-      else await database.update(authPasswords).set({
-          version: upgraded.version,
-          salt: upgraded.salt,
-          hash: upgraded.hash,
-          parameters: upgraded.parameters,
-          updatedAt: new Date(),
-        }).where(eq(authPasswords.identityId, row.identity.id))
+      if (this.options.tables)
+        await updateMappedPassword(
+          this.#requirePool(),
+          this.options.tables.passwords,
+          row.identity.id,
+          upgraded,
+          new Date(),
+        )
+      else
+        await database
+          .update(authPasswords)
+          .set({
+            version: upgraded.version,
+            salt: upgraded.salt,
+            hash: upgraded.hash,
+            parameters: upgraded.parameters,
+            updatedAt: new Date(),
+          })
+          .where(eq(authPasswords.identityId, row.identity.id))
     }
 
     const token = randomBytes(32).toString('base64url')
@@ -310,38 +347,95 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
 
   async issueEmailVerification(identityId: string): Promise<AuthChallengeGrant> {
     const identity = await this.findIdentity(identityId)
-    if (!identity) throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
+    if (!identity)
+      throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
     return await this.#issueChallenge(identityId, 'email_verification')
   }
 
   async verifyEmail(token: string): Promise<AuthIdentity> {
     const now = new Date()
     const database = this.#requireDatabase()
-    const verify = async (transaction: Database, updateIdentity: (identityId: string) => Promise<void>): Promise<string> => {
-      const [challenge] = await transaction.update(authChallenges).set({ consumedAt: now }).where(and(
-        eq(authChallenges.tokenDigest, digest(token)),
-        eq(authChallenges.purpose, 'email_verification'),
-        isNull(authChallenges.consumedAt),
-        gt(authChallenges.expiresAt, now),
-      )).returning({ identityId: authChallenges.identityId })
-      if (!challenge) throw new AuthenticationError('invalid_token', 'The verification token is invalid or expired.')
+    const verify = async (
+      transaction: Database,
+      updateIdentity: (identityId: string) => Promise<void>,
+    ): Promise<string> => {
+      const [challenge] = await transaction
+        .update(authChallenges)
+        .set({ consumedAt: now })
+        .where(
+          and(
+            eq(authChallenges.tokenDigest, digest(token)),
+            eq(authChallenges.purpose, 'email_verification'),
+            isNull(authChallenges.consumedAt),
+            gt(authChallenges.expiresAt, now),
+          ),
+        )
+        .returning({ identityId: authChallenges.identityId })
+      if (!challenge)
+        throw new AuthenticationError(
+          'invalid_token',
+          'The verification token is invalid or expired.',
+        )
       await updateIdentity(challenge.identityId)
-      await transaction.insert(authAuditEvents).values({ id: randomUUID(), eventType: 'identity.email_verified', identityId: challenge.identityId, metadata: {}, occurredAt: now })
+      await transaction.insert(authAuditEvents).values({
+        id: randomUUID(),
+        eventType: 'identity.email_verified',
+        identityId: challenge.identityId,
+        metadata: {},
+        occurredAt: now,
+      })
       return challenge.identityId
     }
     const identityId = this.options.tables
-      ? await this.#mappedTransaction((transaction, client) => verify(transaction, (id) => updateMappedIdentityVerification(client, this.options.tables!.identities, id, now)))
-      : await database.transaction((transaction) => verify(transaction as unknown as Database, (id) => transaction.update(authIdentities).set({ emailVerifiedAt: now, updatedAt: now }).where(eq(authIdentities.id, id)).then(() => undefined)))
+      ? await this.#mappedTransaction((transaction, client) =>
+          verify(transaction, (id) =>
+            updateMappedIdentityVerification(client, this.options.tables!.identities, id, now),
+          ),
+        )
+      : await database.transaction((transaction) =>
+          verify(transaction as unknown as Database, (id) =>
+            transaction
+              .update(authIdentities)
+              .set({ emailVerifiedAt: now, updatedAt: now })
+              .where(eq(authIdentities.id, id))
+              .then(() => undefined),
+          ),
+        )
     return (await this.findIdentity(identityId))!
   }
 
-  async issuePasswordReset(emailInput: string, metadata: AuthRequestMetadata = {}): Promise<AuthChallengeGrant | undefined> {
+  async issuePasswordReset(
+    emailInput: string,
+    metadata: AuthRequestMetadata = {},
+  ): Promise<AuthChallengeGrant | undefined> {
     const email = normalizeEmailForLogin(emailInput)
-    await this.#rateLimit('password_reset', `${email}\0${metadata.ipAddress ?? ''}`, 3, 60 * 60, 60 * 60)
+    await this.#rateLimit(
+      'password_reset',
+      `${email}\0${metadata.ipAddress ?? ''}`,
+      3,
+      60 * 60,
+      60 * 60,
+    )
     const identity = this.options.tables
-      ? await findMappedIdentity(this.#requirePool(), this.options.tables.identities, 'email', email)
-      : (await this.#requireDatabase().select({ id: authIdentities.id, email: authIdentities.email, emailVerifiedAt: authIdentities.emailVerifiedAt, createdAt: authIdentities.createdAt, updatedAt: authIdentities.updatedAt }).from(authIdentities)
-        .where(eq(authIdentities.email, email)).limit(1))[0]
+      ? await findMappedIdentity(
+          this.#requirePool(),
+          this.options.tables.identities,
+          'email',
+          email,
+        )
+      : (
+          await this.#requireDatabase()
+            .select({
+              id: authIdentities.id,
+              email: authIdentities.email,
+              emailVerifiedAt: authIdentities.emailVerifiedAt,
+              createdAt: authIdentities.createdAt,
+              updatedAt: authIdentities.updatedAt,
+            })
+            .from(authIdentities)
+            .where(eq(authIdentities.email, email))
+            .limit(1)
+        )[0]
     return identity ? await this.#issueChallenge(identity.id, 'password_reset') : undefined
   }
 
@@ -349,50 +443,127 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     await this.#assertPassword(newPassword)
     const password = await createPasswordRecord(newPassword)
     const now = new Date()
-    const reset = async (transaction: Database, updatePassword: (identityId: string) => Promise<void>): Promise<void> => {
-      const [challenge] = await transaction.update(authChallenges).set({ consumedAt: now }).where(and(
-        eq(authChallenges.tokenDigest, digest(token)),
-        eq(authChallenges.purpose, 'password_reset'),
-        isNull(authChallenges.consumedAt),
-        gt(authChallenges.expiresAt, now),
-      )).returning({ identityId: authChallenges.identityId })
-      if (!challenge) throw new AuthenticationError('invalid_token', 'The password reset token is invalid or expired.')
+    const reset = async (
+      transaction: Database,
+      updatePassword: (identityId: string) => Promise<void>,
+    ): Promise<void> => {
+      const [challenge] = await transaction
+        .update(authChallenges)
+        .set({ consumedAt: now })
+        .where(
+          and(
+            eq(authChallenges.tokenDigest, digest(token)),
+            eq(authChallenges.purpose, 'password_reset'),
+            isNull(authChallenges.consumedAt),
+            gt(authChallenges.expiresAt, now),
+          ),
+        )
+        .returning({ identityId: authChallenges.identityId })
+      if (!challenge)
+        throw new AuthenticationError(
+          'invalid_token',
+          'The password reset token is invalid or expired.',
+        )
       await updatePassword(challenge.identityId)
-      await transaction.update(authSessions).set({ revokedAt: now }).where(and(eq(authSessions.identityId, challenge.identityId), isNull(authSessions.revokedAt)))
-      await transaction.insert(authAuditEvents).values({ id: randomUUID(), eventType: 'password.reset', identityId: challenge.identityId, metadata: {}, occurredAt: now })
+      await transaction
+        .update(authSessions)
+        .set({ revokedAt: now })
+        .where(
+          and(eq(authSessions.identityId, challenge.identityId), isNull(authSessions.revokedAt)),
+        )
+      await transaction.insert(authAuditEvents).values({
+        id: randomUUID(),
+        eventType: 'password.reset',
+        identityId: challenge.identityId,
+        metadata: {},
+        occurredAt: now,
+      })
     }
     if (this.options.tables) {
-      await this.#mappedTransaction((transaction, client) => reset(transaction, (id) => updateMappedPassword(client, this.options.tables!.passwords, id, password, now)))
+      await this.#mappedTransaction((transaction, client) =>
+        reset(transaction, (id) =>
+          updateMappedPassword(client, this.options.tables!.passwords, id, password, now),
+        ),
+      )
     } else {
-      await this.#requireDatabase().transaction((transaction) => reset(transaction as unknown as Database, (id) => transaction.update(authPasswords).set({ ...password, updatedAt: now }).where(eq(authPasswords.identityId, id)).then(() => undefined)))
+      await this.#requireDatabase().transaction((transaction) =>
+        reset(transaction as unknown as Database, (id) =>
+          transaction
+            .update(authPasswords)
+            .set({ ...password, updatedAt: now })
+            .where(eq(authPasswords.identityId, id))
+            .then(() => undefined),
+        ),
+      )
     }
   }
 
-  async changePassword(identityId: string, currentPassword: string, newPassword: string): Promise<void> {
+  async changePassword(
+    identityId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
     await this.#assertPassword(newPassword)
     const current = this.options.tables
       ? await findMappedPassword(this.#requirePool(), this.options.tables.passwords, identityId)
-      : (await this.#requireDatabase().select().from(authPasswords).where(eq(authPasswords.identityId, identityId)).limit(1))[0]
-    if (!current || !await verifyPassword(currentPassword, current)) throw new AuthenticationError('invalid_credentials', 'The current password is invalid.')
+      : (
+          await this.#requireDatabase()
+            .select()
+            .from(authPasswords)
+            .where(eq(authPasswords.identityId, identityId))
+            .limit(1)
+        )[0]
+    if (!current || !(await verifyPassword(currentPassword, current)))
+      throw new AuthenticationError('invalid_credentials', 'The current password is invalid.')
     const password = await createPasswordRecord(newPassword)
     const now = new Date()
-    const change = async (transaction: Database, updatePassword: () => Promise<void>): Promise<void> => {
+    const change = async (
+      transaction: Database,
+      updatePassword: () => Promise<void>,
+    ): Promise<void> => {
       await updatePassword()
-      await transaction.update(authSessions).set({ revokedAt: now }).where(and(eq(authSessions.identityId, identityId), isNull(authSessions.revokedAt)))
-      await transaction.insert(authAuditEvents).values({ id: randomUUID(), eventType: 'password.changed', identityId, metadata: {}, occurredAt: now })
+      await transaction
+        .update(authSessions)
+        .set({ revokedAt: now })
+        .where(and(eq(authSessions.identityId, identityId), isNull(authSessions.revokedAt)))
+      await transaction.insert(authAuditEvents).values({
+        id: randomUUID(),
+        eventType: 'password.changed',
+        identityId,
+        metadata: {},
+        occurredAt: now,
+      })
     }
-    if (this.options.tables) await this.#mappedTransaction((transaction, client) => change(transaction, () => updateMappedPassword(client, this.options.tables!.passwords, identityId, password, now)))
-    else await this.#requireDatabase().transaction((transaction) => change(transaction as unknown as Database, () => transaction.update(authPasswords).set({ ...password, updatedAt: now }).where(eq(authPasswords.identityId, identityId)).then(() => undefined)))
+    if (this.options.tables)
+      await this.#mappedTransaction((transaction, client) =>
+        change(transaction, () =>
+          updateMappedPassword(client, this.options.tables!.passwords, identityId, password, now),
+        ),
+      )
+    else
+      await this.#requireDatabase().transaction((transaction) =>
+        change(transaction as unknown as Database, () =>
+          transaction
+            .update(authPasswords)
+            .set({ ...password, updatedAt: now })
+            .where(eq(authPasswords.identityId, identityId))
+            .then(() => undefined),
+        ),
+      )
   }
 
   async revokeSession(sessionId: string): Promise<void> {
     const now = new Date()
     await this.#requireDatabase().transaction(async (transaction) => {
-      const [session] = await transaction.update(authSessions).set({
-        revokedAt: now,
-      }).where(and(eq(authSessions.id, sessionId), isNull(authSessions.revokedAt))).returning({
-        identityId: authSessions.identityId,
-      })
+      const [session] = await transaction
+        .update(authSessions)
+        .set({
+          revokedAt: now,
+        })
+        .where(and(eq(authSessions.id, sessionId), isNull(authSessions.revokedAt)))
+        .returning({
+          identityId: authSessions.identityId,
+        })
       if (!session) return
       await transaction.insert(authAuditEvents).values({
         id: randomUUID(),
@@ -406,27 +577,35 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
   }
 
   async listSessions(identityId: string): Promise<readonly AuthSession[]> {
-    const rows = await this.#requireDatabase().select().from(authSessions)
+    const rows = await this.#requireDatabase()
+      .select()
+      .from(authSessions)
       .where(eq(authSessions.identityId, identityId))
-    return rows.map((row) => Object.freeze({
-      id: row.id,
-      identityId: row.identityId,
-      createdAt: row.createdAt,
-      authenticatedAt: row.authenticatedAt,
-      expiresAt: row.expiresAt,
-      lastSeenAt: row.lastSeenAt,
-      ...(row.revokedAt ? { revokedAt: row.revokedAt } : {}),
-    }))
+    return rows.map((row) =>
+      Object.freeze({
+        id: row.id,
+        identityId: row.identityId,
+        createdAt: row.createdAt,
+        authenticatedAt: row.authenticatedAt,
+        expiresAt: row.expiresAt,
+        lastSeenAt: row.lastSeenAt,
+        ...(row.revokedAt ? { revokedAt: row.revokedAt } : {}),
+      }),
+    )
   }
 
   async revokeAllSessions(identityId: string): Promise<number> {
     const now = new Date()
     return await this.#requireDatabase().transaction(async (transaction) => {
-      const sessions = await transaction.update(authSessions).set({
-        revokedAt: now,
-      }).where(and(eq(authSessions.identityId, identityId), isNull(authSessions.revokedAt))).returning({
-        id: authSessions.id,
-      })
+      const sessions = await transaction
+        .update(authSessions)
+        .set({
+          revokedAt: now,
+        })
+        .where(and(eq(authSessions.identityId, identityId), isNull(authSessions.revokedAt)))
+        .returning({
+          id: authSessions.id,
+        })
       await transaction.insert(authAuditEvents).values({
         id: randomUUID(),
         eventType: 'sessions.revoked_all',
@@ -443,7 +622,8 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     input: IssueAccessTokenInput,
   ): Promise<AuthAccessTokenGrant> {
     const identity = await this.findIdentity(identityId)
-    if (!identity) throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
+    if (!identity)
+      throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
     const material = accessTokenMaterial(identityId, input)
     await this.#requireDatabase().transaction(async (transaction) => {
       await transaction.insert(authAccessTokens).values(material.row)
@@ -459,26 +639,37 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
   }
 
   async listAccessTokens(identityId: string): Promise<readonly AuthAccessToken[]> {
-    const rows = await this.#requireDatabase().select().from(authAccessTokens)
+    const rows = await this.#requireDatabase()
+      .select()
+      .from(authAccessTokens)
       .where(eq(authAccessTokens.identityId, identityId))
     return rows.map(accessTokenFrom)
   }
 
   async rotateAccessToken(identityId: string, tokenId: string): Promise<AuthAccessTokenGrant> {
     const database = this.#requireDatabase()
-    const [existing] = await database.select().from(authAccessTokens).where(and(
-      eq(authAccessTokens.id, tokenId),
-      eq(authAccessTokens.identityId, identityId),
-      isNull(authAccessTokens.revokedAt),
-    )).limit(1)
-    if (!existing) throw new AuthenticationError('invalid_credentials', 'Access token is unavailable.')
+    const [existing] = await database
+      .select()
+      .from(authAccessTokens)
+      .where(
+        and(
+          eq(authAccessTokens.id, tokenId),
+          eq(authAccessTokens.identityId, identityId),
+          isNull(authAccessTokens.revokedAt),
+        ),
+      )
+      .limit(1)
+    if (!existing)
+      throw new AuthenticationError('invalid_credentials', 'Access token is unavailable.')
     const material = accessTokenMaterial(identityId, {
       name: existing.name,
       constraints: existing.constraints,
       expiresAt: existing.expiresAt,
     })
     await database.transaction(async (transaction) => {
-      await transaction.update(authAccessTokens).set({ revokedAt: material.row.createdAt })
+      await transaction
+        .update(authAccessTokens)
+        .set({ revokedAt: material.row.createdAt })
         .where(eq(authAccessTokens.id, existing.id))
       await transaction.insert(authAccessTokens).values(material.row)
       await transaction.insert(authAuditEvents).values({
@@ -495,11 +686,17 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
   async revokeAccessToken(identityId: string, tokenId: string): Promise<void> {
     const now = new Date()
     await this.#requireDatabase().transaction(async (transaction) => {
-      const [revoked] = await transaction.update(authAccessTokens).set({ revokedAt: now }).where(and(
-        eq(authAccessTokens.id, tokenId),
-        eq(authAccessTokens.identityId, identityId),
-        isNull(authAccessTokens.revokedAt),
-      )).returning({ id: authAccessTokens.id })
+      const [revoked] = await transaction
+        .update(authAccessTokens)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            eq(authAccessTokens.id, tokenId),
+            eq(authAccessTokens.identityId, identityId),
+            isNull(authAccessTokens.revokedAt),
+          ),
+        )
+        .returning({ id: authAccessTokens.id })
       if (!revoked) return
       await transaction.insert(authAuditEvents).values({
         id: randomUUID(),
@@ -537,7 +734,10 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     const cookieToken = cookieValue(request.headers.get('cookie'), this.#cookieName())
     const authorization = request.headers.get('authorization')
     if (cookieToken && authorization) {
-      throw new AuthenticationError('ambiguous_credentials', 'Supply exactly one authentication method.')
+      throw new AuthenticationError(
+        'ambiguous_credentials',
+        'Supply exactly one authentication method.',
+      )
     }
     if (authorization) return await this.#resolveBearer(authorization)
     const token = cookieToken
@@ -546,18 +746,20 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     const [session] = await this.#requireDatabase()
       .select()
       .from(authSessions)
-      .where(and(
-        or(
-          eq(authSessions.tokenDigest, digest(token)),
-          and(
-            eq(authSessions.previousTokenDigest, digest(token)),
-            gt(authSessions.previousTokenExpiresAt, now),
+      .where(
+        and(
+          or(
+            eq(authSessions.tokenDigest, digest(token)),
+            and(
+              eq(authSessions.previousTokenDigest, digest(token)),
+              gt(authSessions.previousTokenExpiresAt, now),
+            ),
           ),
+          isNull(authSessions.revokedAt),
+          gt(authSessions.expiresAt, now),
+          gt(authSessions.idleExpiresAt, now),
         ),
-        isNull(authSessions.revokedAt),
-        gt(authSessions.expiresAt, now),
-        gt(authSessions.idleExpiresAt, now),
-      ))
+      )
       .limit(1)
     if (!session) return anonymousAuthentication()
     const identity = await this.findIdentity(session.identityId)
@@ -565,31 +767,44 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     assertTrustedOrigin(request, this.#trustedOrigins)
     const currentDigest = digest(token)
     const matchedCurrent = session.tokenDigest === currentDigest
-    const idleExpiresAt = new Date(Math.min(
-      session.expiresAt.getTime(),
-      now.getTime() + this.#idleSessionSeconds * 1_000,
-    ))
+    const idleExpiresAt = new Date(
+      Math.min(session.expiresAt.getTime(), now.getTime() + this.#idleSessionSeconds * 1_000),
+    )
     let responseHeaders: Readonly<Record<string, string>> | undefined
-    const renewalDue = matchedCurrent
-      && now.getTime() - session.lastSeenAt.getTime() >= this.#sessionRenewalSeconds * 1_000
+    const renewalDue =
+      matchedCurrent &&
+      now.getTime() - session.lastSeenAt.getTime() >= this.#sessionRenewalSeconds * 1_000
     if (renewalDue) {
       const replacement = randomBytes(32).toString('base64url')
-      const [rotated] = await this.#requireDatabase().update(authSessions).set({
-        tokenDigest: digest(replacement),
-        previousTokenDigest: session.tokenDigest,
-        previousTokenExpiresAt: new Date(now.getTime() + this.#sessionRotationGraceSeconds * 1_000),
-        lastSeenAt: now,
-        idleExpiresAt,
-      }).where(and(
-        eq(authSessions.id, session.id),
-        eq(authSessions.tokenDigest, session.tokenDigest),
-        isNull(authSessions.revokedAt),
-      )).returning({ id: authSessions.id })
-      if (rotated) responseHeaders = Object.freeze({
-        'set-cookie': serializeCookie(this.#cookieName(), replacement, { secure: this.options.secureCookies }),
-      })
+      const [rotated] = await this.#requireDatabase()
+        .update(authSessions)
+        .set({
+          tokenDigest: digest(replacement),
+          previousTokenDigest: session.tokenDigest,
+          previousTokenExpiresAt: new Date(
+            now.getTime() + this.#sessionRotationGraceSeconds * 1_000,
+          ),
+          lastSeenAt: now,
+          idleExpiresAt,
+        })
+        .where(
+          and(
+            eq(authSessions.id, session.id),
+            eq(authSessions.tokenDigest, session.tokenDigest),
+            isNull(authSessions.revokedAt),
+          ),
+        )
+        .returning({ id: authSessions.id })
+      if (rotated)
+        responseHeaders = Object.freeze({
+          'set-cookie': serializeCookie(this.#cookieName(), replacement, {
+            secure: this.options.secureCookies,
+          }),
+        })
     } else {
-      await this.#requireDatabase().update(authSessions).set({ lastSeenAt: now, idleExpiresAt })
+      await this.#requireDatabase()
+        .update(authSessions)
+        .set({ lastSeenAt: now, idleExpiresAt })
         .where(eq(authSessions.id, session.id))
     }
     return Object.freeze({
@@ -608,20 +823,30 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
 
   async #resolveBearer(authorization: string): Promise<ResolvedHttpAuthentication> {
     const match = /^Bearer (canopy_pat_([A-Za-z0-9_-]{16})_[A-Za-z0-9_-]{43})$/.exec(authorization)
-    if (!match) throw new AuthenticationError('invalid_credentials', 'The bearer credential is invalid.')
+    if (!match)
+      throw new AuthenticationError('invalid_credentials', 'The bearer credential is invalid.')
     const [, token, tokenId] = match
     const now = new Date()
-    const [accessToken] = await this.#requireDatabase().select().from(authAccessTokens)
-      .where(and(
-        eq(authAccessTokens.id, tokenId!),
-        eq(authAccessTokens.tokenDigest, digest(token!)),
-        isNull(authAccessTokens.revokedAt),
-        gt(authAccessTokens.expiresAt, now),
-      )).limit(1)
-    if (!accessToken) throw new AuthenticationError('invalid_credentials', 'The bearer credential is invalid.')
+    const [accessToken] = await this.#requireDatabase()
+      .select()
+      .from(authAccessTokens)
+      .where(
+        and(
+          eq(authAccessTokens.id, tokenId!),
+          eq(authAccessTokens.tokenDigest, digest(token!)),
+          isNull(authAccessTokens.revokedAt),
+          gt(authAccessTokens.expiresAt, now),
+        ),
+      )
+      .limit(1)
+    if (!accessToken)
+      throw new AuthenticationError('invalid_credentials', 'The bearer credential is invalid.')
     const identity = await this.findIdentity(accessToken.identityId)
-    if (!identity) throw new AuthenticationError('invalid_credentials', 'The bearer credential is invalid.')
-    await this.#requireDatabase().update(authAccessTokens).set({ lastUsedAt: now })
+    if (!identity)
+      throw new AuthenticationError('invalid_credentials', 'The bearer credential is invalid.')
+    await this.#requireDatabase()
+      .update(authAccessTokens)
+      .set({ lastUsedAt: now })
       .where(eq(authAccessTokens.id, accessToken.id))
     return Object.freeze({
       actor: Object.freeze({ kind: 'user' as const, id: identity.id }),
@@ -650,22 +875,41 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     })
   }
 
-  async #issueChallenge(identityId: string, purpose: 'email_verification' | 'password_reset'): Promise<AuthChallengeGrant> {
+  async #issueChallenge(
+    identityId: string,
+    purpose: 'email_verification' | 'password_reset',
+  ): Promise<AuthChallengeGrant> {
     const token = randomBytes(32).toString('base64url')
     const now = new Date()
     const expiresAt = new Date(now.getTime() + (this.options.challengeSeconds ?? 60 * 60) * 1_000)
     await this.#requireDatabase().transaction(async (transaction) => {
-      await transaction.update(authChallenges).set({ consumedAt: now }).where(and(
-        eq(authChallenges.identityId, identityId),
-        eq(authChallenges.purpose, purpose),
-        isNull(authChallenges.consumedAt),
-      ))
+      await transaction
+        .update(authChallenges)
+        .set({ consumedAt: now })
+        .where(
+          and(
+            eq(authChallenges.identityId, identityId),
+            eq(authChallenges.purpose, purpose),
+            isNull(authChallenges.consumedAt),
+          ),
+        )
       await transaction.insert(authChallenges).values({
-        id: randomUUID(), identityId, purpose, tokenDigest: digest(token), createdAt: now, expiresAt,
+        id: randomUUID(),
+        identityId,
+        purpose,
+        tokenDigest: digest(token),
+        createdAt: now,
+        expiresAt,
       })
       await transaction.insert(authAuditEvents).values({
-        id: randomUUID(), eventType: purpose === 'email_verification' ? 'identity.verification_issued' : 'password.reset_issued',
-        identityId, metadata: {}, occurredAt: now,
+        id: randomUUID(),
+        eventType:
+          purpose === 'email_verification'
+            ? 'identity.verification_issued'
+            : 'password.reset_issued',
+        identityId,
+        metadata: {},
+        occurredAt: now,
       })
     })
     return Object.freeze({ identityId, token: SecretString.from(token), expiresAt })
@@ -674,12 +918,25 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
   async #assertPassword(password: string): Promise<void> {
     assertPassword(password)
     if (await this.options.passwordCompromised?.(password)) {
-      throw new AuthenticationError('compromised_password', 'Choose a password that has not appeared in known breaches.')
+      throw new AuthenticationError(
+        'compromised_password',
+        'Choose a password that has not appeared in known breaches.',
+      )
     }
   }
 
-  async #rateLimit(action: string, value: string, limit: number, windowSeconds: number, blockSeconds: number): Promise<void> {
-    const result = await this.#requirePool().query<{ attempts: number; blocked_until: Date | null }>(`
+  async #rateLimit(
+    action: string,
+    value: string,
+    limit: number,
+    windowSeconds: number,
+    blockSeconds: number,
+  ): Promise<void> {
+    const result = await this.#requirePool().query<{
+      attempts: number
+      blocked_until: Date | null
+    }>(
+      `
       INSERT INTO canopy_auth_rate_limits (action, bucket_key, window_started_at, attempts, blocked_until)
       VALUES ($1, $2, now(), 1, NULL)
       ON CONFLICT (action, bucket_key) DO UPDATE SET
@@ -691,16 +948,22 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
           ELSE NULL
         END
       RETURNING attempts, blocked_until
-    `, [action, digest(value), limit, windowSeconds, blockSeconds])
+    `,
+      [action, digest(value), limit, windowSeconds, blockSeconds],
+    )
     const blockedUntil = result.rows[0]?.blocked_until
     if (blockedUntil && blockedUntil.getTime() > Date.now()) {
       await this.#audit('authentication.rate_limited', undefined, undefined, { action })
-      throw new AuthenticationRateLimitError(Math.max(1, Math.ceil((blockedUntil.getTime() - Date.now()) / 1_000)))
+      throw new AuthenticationRateLimitError(
+        Math.max(1, Math.ceil((blockedUntil.getTime() - Date.now()) / 1_000)),
+      )
     }
   }
 
   async #clearRateLimit(action: string, value: string): Promise<void> {
-    await this.#requireDatabase().delete(authRateLimits).where(and(eq(authRateLimits.action, action), eq(authRateLimits.bucketKey, digest(value))))
+    await this.#requireDatabase()
+      .delete(authRateLimits)
+      .where(and(eq(authRateLimits.action, action), eq(authRateLimits.bucketKey, digest(value))))
   }
 
   #cookieName(): string {
@@ -713,14 +976,16 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     sessionId: string | undefined,
     metadata: Record<string, string | number | boolean | null>,
   ): Promise<void> {
-    await this.#requireDatabase().insert(authAuditEvents).values({
-      id: randomUUID(),
-      eventType,
-      ...(identityId ? { identityId } : {}),
-      ...(sessionId ? { sessionId } : {}),
-      metadata,
-      occurredAt: new Date(),
-    })
+    await this.#requireDatabase()
+      .insert(authAuditEvents)
+      .values({
+        id: randomUUID(),
+        eventType,
+        ...(identityId ? { identityId } : {}),
+        ...(sessionId ? { sessionId } : {}),
+        metadata,
+        occurredAt: new Date(),
+      })
   }
 
   async #mappedTransaction<Output>(
@@ -761,9 +1026,11 @@ interface StoredIdentity {
 
 function validateAuthMappings(tables: NonNullable<PostgresAuthOptions['tables']>): void {
   for (const mapping of [tables.identities, tables.passwords]) {
-    if (!validQualifiedIdentifier(mapping.table)) throw new Error(`Invalid mapped auth table name ${mapping.table}.`)
+    if (!validQualifiedIdentifier(mapping.table))
+      throw new Error(`Invalid mapped auth table name ${mapping.table}.`)
     for (const [field, column] of Object.entries(mapping).filter(([field]) => field !== 'table')) {
-      if (typeof column !== 'string' || !validIdentifier(column)) throw new Error(`Invalid mapped auth column ${field}.`)
+      if (typeof column !== 'string' || !validIdentifier(column))
+        throw new Error(`Invalid mapped auth column ${field}.`)
     }
   }
 }
@@ -772,10 +1039,18 @@ async function validateMappedAuthTables(
   queryable: Queryable,
   tables: NonNullable<PostgresAuthOptions['tables']>,
 ): Promise<void> {
-  const identityColumns = Object.entries(tables.identities).filter(([field]) => field !== 'table').map(([, column]) => quoteIdentifier(column))
-  const passwordColumns = Object.entries(tables.passwords).filter(([field]) => field !== 'table').map(([, column]) => quoteIdentifier(column))
-  await queryable.query(`SELECT ${identityColumns.join(', ')} FROM ${quoteQualified(tables.identities.table)} LIMIT 0`)
-  await queryable.query(`SELECT ${passwordColumns.join(', ')} FROM ${quoteQualified(tables.passwords.table)} LIMIT 0`)
+  const identityColumns = Object.entries(tables.identities)
+    .filter(([field]) => field !== 'table')
+    .map(([, column]) => quoteIdentifier(column))
+  const passwordColumns = Object.entries(tables.passwords)
+    .filter(([field]) => field !== 'table')
+    .map(([, column]) => quoteIdentifier(column))
+  await queryable.query(
+    `SELECT ${identityColumns.join(', ')} FROM ${quoteQualified(tables.identities.table)} LIMIT 0`,
+  )
+  await queryable.query(
+    `SELECT ${passwordColumns.join(', ')} FROM ${quoteQualified(tables.passwords.table)} LIMIT 0`,
+  )
 }
 
 async function insertMappedRegistration(
@@ -799,18 +1074,29 @@ async function insertMappedRegistration(
     return
   }
   await insertMappedRow(queryable, tables.identities.table, identityValues)
-  await insertMappedRow(queryable, tables.passwords.table, new Map<string, unknown>([
-    [tables.passwords.identityId, identity.id],
-    [tables.passwords.password, encodePasswordRecord(password)],
-    [tables.passwords.updatedAt, identity.updatedAt],
-  ]))
+  await insertMappedRow(
+    queryable,
+    tables.passwords.table,
+    new Map<string, unknown>([
+      [tables.passwords.identityId, identity.id],
+      [tables.passwords.password, encodePasswordRecord(password)],
+      [tables.passwords.updatedAt, identity.updatedAt],
+    ]),
+  )
 }
 
-async function insertMappedRow(queryable: Queryable, table: string, values: ReadonlyMap<string, unknown>): Promise<void> {
+async function insertMappedRow(
+  queryable: Queryable,
+  table: string,
+  values: ReadonlyMap<string, unknown>,
+): Promise<void> {
   const entries = [...values]
   const columns = entries.map(([column]) => quoteIdentifier(column)).join(', ')
   const placeholders = entries.map((_, index) => `$${index + 1}`).join(', ')
-  await queryable.query(`INSERT INTO ${quoteQualified(table)} (${columns}) VALUES (${placeholders})`, entries.map(([, value]) => value))
+  await queryable.query(
+    `INSERT INTO ${quoteQualified(table)} (${columns}) VALUES (${placeholders})`,
+    entries.map(([, value]) => value),
+  )
 }
 
 async function findMappedIdentity(
@@ -819,7 +1105,8 @@ async function findMappedIdentity(
   by: 'id' | 'email',
   value: string,
 ): Promise<AuthIdentity | undefined> {
-  const rows = await queryable.query<MappedIdentityRow>(`
+  const rows = await queryable.query<MappedIdentityRow>(
+    `
     SELECT
       ${quoteIdentifier(mapping.id)}::text AS id,
       ${quoteIdentifier(mapping.email)} AS email,
@@ -829,7 +1116,9 @@ async function findMappedIdentity(
     FROM ${quoteQualified(mapping.table)}
     WHERE ${quoteIdentifier(mapping[by])} = $1
     LIMIT 1
-  `, [value])
+  `,
+    [value],
+  )
   const row = rows.rows[0]
   return row ? identityFrom(mappedIdentity(row)) : undefined
 }
@@ -843,7 +1132,13 @@ interface MappedIdentityRow extends QueryResultRow {
 }
 
 function mappedIdentity(row: MappedIdentityRow): StoredIdentity {
-  return { id: String(row.id), email: row.email, emailVerifiedAt: row.email_verified_at, createdAt: row.created_at, updatedAt: row.updated_at }
+  return {
+    id: String(row.id),
+    email: row.email,
+    emailVerifiedAt: row.email_verified_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
 }
 
 async function findMappedLogin(
@@ -853,7 +1148,8 @@ async function findMappedLogin(
 ): Promise<{ identity: StoredIdentity; password: PasswordRecord } | undefined> {
   const identity = tables.identities
   const password = tables.passwords
-  const rows = await queryable.query<MappedIdentityRow & { password_record: string }>(`
+  const rows = await queryable.query<MappedIdentityRow & { password_record: string }>(
+    `
     SELECT
       i.${quoteIdentifier(identity.id)}::text AS id,
       i.${quoteIdentifier(identity.email)} AS email,
@@ -866,9 +1162,13 @@ async function findMappedLogin(
       ON p.${quoteIdentifier(password.identityId)}::text = i.${quoteIdentifier(identity.id)}::text
     WHERE i.${quoteIdentifier(identity.email)} = $1
     LIMIT 1
-  `, [email])
+  `,
+    [email],
+  )
   const row = rows.rows[0]
-  return row ? { identity: mappedIdentity(row), password: decodePasswordRecord(row.password_record) } : undefined
+  return row
+    ? { identity: mappedIdentity(row), password: decodePasswordRecord(row.password_record) }
+    : undefined
 }
 
 async function findMappedPassword(
@@ -876,12 +1176,15 @@ async function findMappedPassword(
   mapping: AuthPasswordTableMapping,
   identityId: string,
 ): Promise<PasswordRecord | undefined> {
-  const result = await queryable.query<{ password_record: string } & QueryResultRow>(`
+  const result = await queryable.query<{ password_record: string } & QueryResultRow>(
+    `
     SELECT ${quoteIdentifier(mapping.password)} AS password_record
     FROM ${quoteQualified(mapping.table)}
     WHERE ${quoteIdentifier(mapping.identityId)}::text = $1
     LIMIT 1
-  `, [identityId])
+  `,
+    [identityId],
+  )
   const encoded = result.rows[0]?.password_record
   return encoded ? decodePasswordRecord(encoded) : undefined
 }
@@ -893,12 +1196,16 @@ async function updateMappedPassword(
   password: PasswordRecord,
   now: Date,
 ): Promise<void> {
-  const result = await queryable.query(`
+  const result = await queryable.query(
+    `
     UPDATE ${quoteQualified(mapping.table)}
     SET ${quoteIdentifier(mapping.password)} = $1, ${quoteIdentifier(mapping.updatedAt)} = $2
     WHERE ${quoteIdentifier(mapping.identityId)}::text = $3
-  `, [encodePasswordRecord(password), now, identityId])
-  if (result.rowCount !== 1) throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
+  `,
+    [encodePasswordRecord(password), now, identityId],
+  )
+  if (result.rowCount !== 1)
+    throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
 }
 
 async function updateMappedIdentityVerification(
@@ -907,169 +1214,16 @@ async function updateMappedIdentityVerification(
   identityId: string,
   now: Date,
 ): Promise<void> {
-  const result = await queryable.query(`
+  const result = await queryable.query(
+    `
     UPDATE ${quoteQualified(mapping.table)}
     SET ${quoteIdentifier(mapping.emailVerifiedAt)} = $1, ${quoteIdentifier(mapping.updatedAt)} = $1
     WHERE ${quoteIdentifier(mapping.id)}::text = $2
-  `, [now, identityId])
-  if (result.rowCount !== 1) throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
-}
-
-function encodePasswordRecord(record: PasswordRecord): string {
-  return `canopy-argon2id:${Buffer.from(JSON.stringify(record), 'utf8').toString('base64url')}`
-}
-
-function decodePasswordRecord(value: string): PasswordRecord {
-  try {
-    if (!value.startsWith('canopy-argon2id:')) throw new Error('unsupported format')
-    const parsed = JSON.parse(Buffer.from(value.slice('canopy-argon2id:'.length), 'base64url').toString('utf8')) as PasswordRecord
-    if (parsed.version < 1 || parsed.parameters.algorithm !== 'argon2id' || !parsed.salt || !parsed.hash) throw new Error('invalid record')
-    return parsed
-  } catch (error) {
-    throw new AuthenticationError('invalid_credentials', 'The stored password format is not supported by this Canopy Auth mapping.', { cause: error })
-  }
-}
-
-function validIdentifier(value: string): boolean { return /^[A-Za-z_][A-Za-z0-9_$]*$/.test(value) }
-function validQualifiedIdentifier(value: string): boolean {
-  const parts = value.split('.')
-  return parts.length > 0 && parts.length <= 2 && parts.every(validIdentifier)
-}
-function quoteIdentifier(value: string): string { return `"${value.replaceAll('"', '""')}"` }
-function quoteQualified(value: string): string { return value.split('.').map(quoteIdentifier).join('.') }
-
-let sharedDummyPassword: Promise<PasswordRecord> | undefined
-
-function dummyPasswordRecord(): Promise<PasswordRecord> {
-  sharedDummyPassword ??= createPasswordRecord('canopy-dummy-password-never-valid')
-  return sharedDummyPassword
-}
-
-async function createPasswordRecord(password: string): Promise<PasswordRecord> {
-  const salt = randomBytes(16)
-  const hash = await derivePassword(password, salt, PASSWORD_PARAMETERS)
-  return {
-    version: PASSWORD_VERSION,
-    salt: salt.toString('base64url'),
-    hash: hash.toString('base64url'),
-    parameters: PASSWORD_PARAMETERS,
-  }
-}
-
-async function verifyPassword(password: string, record: PasswordRecord): Promise<boolean> {
-  try {
-    const expected = Buffer.from(record.hash, 'base64url')
-    const candidate = await derivePassword(
-      password,
-      Buffer.from(record.salt, 'base64url'),
-      record.parameters,
-    )
-    return candidate.length === expected.length && timingSafeEqual(candidate, expected)
-  } catch {
-    return false
-  }
-}
-
-function derivePassword(
-  password: string,
-  salt: Buffer,
-  parameters: PasswordParameters,
-): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const options: Argon2Parameters = {
-      message: Buffer.from(password, 'utf8'),
-      nonce: salt,
-      parallelism: parameters.parallelism,
-      tagLength: parameters.tagLength,
-      memory: parameters.memory,
-      passes: parameters.passes,
-    }
-    argon2('argon2id', options, (error, key) => error ? reject(error) : resolve(key))
-  })
-}
-
-function needsRehash(record: PasswordRecord): boolean {
-  return record.version !== PASSWORD_VERSION
-    || JSON.stringify(record.parameters) !== JSON.stringify(PASSWORD_PARAMETERS)
-}
-
-function normalizeEmail(value: string): string {
-  const email = normalizeEmailForLogin(value)
-  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new AuthenticationError('invalid_registration', 'A valid email address is required.')
-  }
-  return email
-}
-
-function normalizeEmailForLogin(value: string): string {
-  return value.trim().normalize('NFC').toLowerCase()
-}
-
-function assertPassword(password: string): void {
-  const length = [...password].length
-  if (length < 8 || length > 64) {
-    throw new AuthenticationError(
-      'invalid_registration',
-      'Passwords must contain between 8 and 64 characters.',
-    )
-  }
-}
-
-function digest(value: string): string {
-  return createHash('sha256').update(value).digest('hex')
-}
-
-function normalizeOrigin(value: string): string {
-  return new URL(value).origin
-}
-
-function assertTrustedOrigin(request: Request, trustedOrigins: ReadonlySet<string>): void {
-  if (['GET', 'HEAD', 'OPTIONS'].includes(request.method.toUpperCase())) return
-  if (request.headers.get('sec-fetch-site') === 'cross-site') {
-    throw new HttpError(403, 'untrusted_origin', 'Cross-site cookie-authenticated requests are forbidden.')
-  }
-  const origin = request.headers.get('origin')
-  let normalized: string | undefined
-  try {
-    normalized = origin ? normalizeOrigin(origin) : undefined
-  } catch {
-    normalized = undefined
-  }
-  if (!normalized || !trustedOrigins.has(normalized)) {
-    throw new HttpError(403, 'untrusted_origin', 'Cookie-authenticated requests require a trusted Origin.')
-  }
-}
-
-function cookieValue(header: string | null, name: string): string | undefined {
-  for (const part of header?.split(';') ?? []) {
-    const separator = part.indexOf('=')
-    if (separator < 0 || part.slice(0, separator).trim() !== name) continue
-    const value = part.slice(separator + 1).trim()
-    return /^[A-Za-z0-9_-]{43}$/.test(value) ? value : undefined
-  }
-  return undefined
-}
-
-function serializeCookie(
-  name: string,
-  value: string,
-  options: { readonly maxAge?: number; readonly secure: boolean },
-): string {
-  return [
-    `${name}=${value}`,
-    'Path=/',
-    'HttpOnly',
-    'SameSite=Lax',
-    ...(options.maxAge === undefined ? [] : [`Max-Age=${options.maxAge}`]),
-    ...(options.secure ? ['Secure'] : []),
-  ].join('; ')
-}
-
-function anonymousAuthentication(): ResolvedHttpAuthentication {
-  return Object.freeze({
-    actor: Object.freeze({ kind: 'anonymous' as const }),
-    authentication: Object.freeze({ state: 'anonymous' as const }),
-  })
+  `,
+    [now, identityId],
+  )
+  if (result.rowCount !== 1)
+    throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
 }
 
 function identityFrom(row: typeof authIdentities.$inferSelect): AuthIdentity {
@@ -1090,16 +1244,25 @@ function accessTokenMaterial(
 } {
   const name = input.name.trim()
   if (name.length < 1 || name.length > 100) {
-    throw new AuthenticationError('invalid_registration', 'Access token names must contain 1 to 100 characters.')
+    throw new AuthenticationError(
+      'invalid_registration',
+      'Access token names must contain 1 to 100 characters.',
+    )
   }
   const constraints = [...new Set(input.constraints ?? [])].sort()
   if (constraints.some((constraint) => !/^[a-z][a-z0-9._:-]{0,127}$/.test(constraint))) {
-    throw new AuthenticationError('invalid_registration', 'Access token constraints contain an invalid value.')
+    throw new AuthenticationError(
+      'invalid_registration',
+      'Access token constraints contain an invalid value.',
+    )
   }
   const createdAt = new Date()
   const expiresAt = input.expiresAt ?? new Date(createdAt.getTime() + 30 * 24 * 60 * 60 * 1_000)
   if (expiresAt.getTime() <= createdAt.getTime()) {
-    throw new AuthenticationError('invalid_registration', 'Access token expiration must be in the future.')
+    throw new AuthenticationError(
+      'invalid_registration',
+      'Access token expiration must be in the future.',
+    )
   }
   const id = randomBytes(12).toString('base64url')
   const secret = randomBytes(32).toString('base64url')
@@ -1148,7 +1311,8 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 function uuidOrUndefined(value: string | undefined): string | undefined {
-  return value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  return value &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
     ? value
     : undefined
 }

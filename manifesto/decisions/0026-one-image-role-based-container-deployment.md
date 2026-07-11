@@ -10,11 +10,11 @@
 Canopy applications will ship one immutable production image. Deployments run that exact image as
 separate process roles rather than building role-specific images:
 
-| Role | Command | Scaling |
-| --- | --- | --- |
-| Web | `arbor serve` | Horizontally scalable |
-| Background | `arbor work` | Horizontally scalable; consumes queues and runs schedules |
-| Migration | `arbor migrate` | One-off release job |
+| Role       | Command         | Scaling                                                   |
+| ---------- | --------------- | --------------------------------------------------------- |
+| Web        | `arbor serve`   | Horizontally scalable                                     |
+| Background | `arbor work`    | Horizontally scalable; consumes queues and runs schedules |
+| Migration  | `arbor migrate` | One-off release job                                       |
 
 `arbor schedule` remains available when an advanced deployment deliberately isolates schedule
 admission from queue consumption. It is not the generated default.
@@ -26,8 +26,8 @@ admission from queue consumption. It is not the generated default.
 `arbor build` runs during the image build and produces `dist/` plus the canonical `.canopy/`
 manifest and registry. Production runtime commands consume those artifacts and must not compile
 TypeScript, inspect source files, mutate generated artifacts, or install dependencies during boot.
-Missing or incompatible artifacts fail closed with a diagnostic that tells the operator to build
-the application.
+Missing or incompatible artifacts fail closed with a diagnostic that tells the operator to build the
+application.
 
 `arbor dev` remains the source-watching, compiling, migrating, hot-reloading development command.
 The production boundary must not inherit those behaviors.
@@ -48,8 +48,8 @@ firings or requiring a process-local leader.
 ## Migration boundary
 
 Migrations use the same image as application roles but run as an explicit release job. Web and
-background startup never run migrations automatically. A failed migration prevents release
-promotion rather than racing multiple starting replicas.
+background startup never run migrations automatically. A failed migration prevents release promotion
+rather than racing multiple starting replicas.
 
 ## Generated artifacts
 
@@ -62,15 +62,15 @@ promotion rather than racing multiple starting replicas.
 - `compose.production.yaml`: one shared image with web, background, and release-profile migration
   services.
 
-The production Compose file is an executable topology example, not a claim that Compose is
-Canopy's only supported orchestrator.
+The production Compose file is an executable topology example, not a claim that Compose is Canopy's
+only supported orchestrator.
 
 ## Cultivate contract
 
 Cultivate describes the image strategy, build outputs, role commands, scaling posture, migration
-boundary, required environment, health expectations, scheduler distribution guarantee, and
-advanced isolation option. Agents must be able to deploy a Canopy application without inventing a
-process model or placing migrations in an entrypoint.
+boundary, required environment, health expectations, scheduler distribution guarantee, and advanced
+isolation option. Agents must be able to deploy a Canopy application without inventing a process
+model or placing migrations in an entrypoint.
 
 ## Safety invariants
 

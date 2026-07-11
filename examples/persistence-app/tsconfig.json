@@ -8,10 +8,10 @@
   "references": [
     { "path": "../../packages/core" },
     { "path": "../../packages/auth-postgres" },
-    { "path": "../../packages/postgres-drizzle" }
-    ,{ "path": "../../packages/sendgrid" }
-    ,{ "path": "../../packages/twilio-sms" }
-    ,{ "path": "../../packages/undergrowth" }
+    { "path": "../../packages/postgres-drizzle" },
+    { "path": "../../packages/sendgrid" },
+    { "path": "../../packages/twilio-sms" },
+    { "path": "../../packages/undergrowth" }
   ],
   "include": ["src/**/*.ts"]
 }

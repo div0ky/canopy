@@ -1,0 +1,30 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      canopy-tooling:
+        patterns:
+          [
+            '@types/*',
+            'typescript',
+            'typescript-eslint',
+            'eslint',
+            'prettier',
+            'vitest',
+            '@vitest/*',
+          ]
+      field-guide:
+        patterns:
+          ['next', 'react', 'react-dom', 'tailwindcss', '@tailwindcss/*', 'shadcn', '@base-ui/*']
+      infrastructure-adapters:
+        patterns: ['hono', '@hono/*', 'drizzle-*', 'pg', 'pg-boss']
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday

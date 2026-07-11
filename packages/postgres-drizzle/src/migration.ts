@@ -37,6 +37,9 @@ export async function installCacheSchema(connectionString: string): Promise<void
 
 export async function installCommunicationsSchema(connectionString: string): Promise<void> {
   const pool = new Pool({ connectionString })
-  try { await pool.query(await readFile(CANOPY_COMMUNICATIONS_MIGRATION_URL, 'utf8')) }
-  finally { await pool.end() }
+  try {
+    await pool.query(await readFile(CANOPY_COMMUNICATIONS_MIGRATION_URL, 'utf8'))
+  } finally {
+    await pool.end()
+  }
 }

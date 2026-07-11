@@ -1,10 +1,4 @@
-import {
-  Auth,
-  CurrentExecution,
-  Http,
-  type HttpRequest,
-  Route,
-} from '@canopy/core'
+import { Auth, CurrentExecution, Http, type HttpRequest, Route } from '@canopy/core'
 
 import { UserLoggedIn } from '../events/user-logged-in.js'
 import { credentials } from './credentials.js'
@@ -26,12 +20,16 @@ export class LoginRoute extends Route {
     const previousSessionId = this.execution.context.authentication.sessionId
     if (previousSessionId) await this.auth.revokeSession(previousSessionId)
     await UserLoggedIn.dispatch({ identityId: grant.identity.id, sessionId: grant.session.id })
-    return Http.json({
-      identity: {
-        id: grant.identity.id,
-        email: grant.identity.email,
-        emailVerified: grant.identity.emailVerified,
+    return Http.json(
+      {
+        identity: {
+          id: grant.identity.id,
+          email: grant.identity.email,
+          emailVerified: grant.identity.emailVerified,
+        },
       },
-    }, 200, { 'set-cookie': this.auth.sessionCookie(grant) })
+      200,
+      { 'set-cookie': this.auth.sessionCookie(grant) },
+    )
   }
 }

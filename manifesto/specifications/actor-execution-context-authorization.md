@@ -12,19 +12,19 @@ tenant, delegation, and impersonation evidence into an actor. Authorization poli
 actor. The execution context carries the resulting identity and causal metadata through the
 application.
 
-The same contract should govern HTTP requests, actions, queries, listeners, jobs, schedules,
-console commands, WebSockets, and future transports.
+The same contract should govern HTTP requests, actions, queries, listeners, jobs, schedules, console
+commands, WebSockets, and future transports.
 
-`Actor` should be the backbone of Canopy's authorization, observability, audit, journal, and
-testing models—not a user object attached to HTTP requests.
+`Actor` should be the backbone of Canopy's authorization, observability, audit, journal, and testing
+models—not a user object attached to HTTP requests.
 
 ## Vocabulary
 
 ### Identity
 
-An identity is a durable Canopy record representing a subject that has successfully presented one
-or more credentials. Authentication establishes identity. Identity does not by itself determine
-tenant, delegation, impersonation, or domain permission.
+An identity is a durable Canopy record representing a subject that has successfully presented one or
+more credentials. Authentication establishes identity. Identity does not by itself determine tenant,
+delegation, impersonation, or domain permission.
 
 ### Actor
 
@@ -42,8 +42,8 @@ Actor kinds are not roles. Roles, memberships, ownership, and permissions are ap
 evaluated by authorization policies.
 
 Canopy's first-party storage and management model for those facts is intentionally deferred by
-[Decision 0022](../decisions/0022-defer-first-party-permissions.md). Applications may load them
-from existing tables or services without bypassing the common policy decision and audit path.
+[Decision 0022](../decisions/0022-defer-first-party-permissions.md). Applications may load them from
+existing tables or services without bypassing the common policy decision and audit path.
 
 ### Initiator
 
@@ -65,8 +65,8 @@ Every hop must identify:
 
 ### Execution
 
-An execution is one admitted unit of work such as an HTTP request, dequeued job, schedule firing,
-or console invocation. Each execution has its own ID and resource scope.
+An execution is one admitted unit of work such as an HTTP request, dequeued job, schedule firing, or
+console invocation. Each execution has its own ID and resource scope.
 
 ### Correlation and causation
 
@@ -79,27 +79,27 @@ causation answers "what immediately led here?"
 The public contract should resemble:
 
 ```ts
-export type ActorKind = 'anonymous' | 'user' | 'service' | 'system';
+export type ActorKind = 'anonymous' | 'user' | 'service' | 'system'
 
 export interface ActorRef {
-  readonly kind: ActorKind;
-  readonly id?: ActorId;
+  readonly kind: ActorKind
+  readonly id?: ActorId
 }
 
 export interface DelegationHop {
-  readonly from: ActorRef;
-  readonly to: ActorRef;
-  readonly grantId: string;
-  readonly reason: string;
-  readonly expiresAt?: Date;
+  readonly from: ActorRef
+  readonly to: ActorRef
+  readonly grantId: string
+  readonly reason: string
+  readonly expiresAt?: Date
 }
 ```
 
 An anonymous actor has no durable ID by default. Canopy should not manufacture a pseudonymous user
 identifier merely to make anonymous traffic easier to correlate.
 
-Actor references must use opaque internal identifiers. Email addresses, usernames, provider
-claims, session tokens, and loaded user records do not belong in `ActorRef`.
+Actor references must use opaque internal identifiers. Email addresses, usernames, provider claims,
+session tokens, and loaded user records do not belong in `ActorRef`.
 
 ## Execution context contract
 
@@ -107,28 +107,28 @@ The public contract should resemble:
 
 ```ts
 export interface ExecutionContext {
-  readonly executionId: ExecutionId;
-  readonly correlationId: CorrelationId;
-  readonly causationId?: CausationId;
+  readonly executionId: ExecutionId
+  readonly correlationId: CorrelationId
+  readonly causationId?: CausationId
 
-  readonly actor: ActorRef;
-  readonly initiator: ActorRef;
-  readonly delegation: readonly DelegationHop[];
-  readonly tenant?: TenantRef;
+  readonly actor: ActorRef
+  readonly initiator: ActorRef
+  readonly delegation: readonly DelegationHop[]
+  readonly tenant?: TenantRef
 
-  readonly authentication: AuthenticationContext;
-  readonly transport: TransportContext;
-  readonly trace: TraceContext;
+  readonly authentication: AuthenticationContext
+  readonly transport: TransportContext
+  readonly trace: TraceContext
 
-  readonly locale?: string;
-  readonly timeZone?: string;
-  readonly deadline?: Date;
-  readonly cancellation: AbortSignal;
+  readonly locale?: string
+  readonly timeZone?: string
+  readonly deadline?: Date
+  readonly cancellation: AbortSignal
 }
 ```
 
-The context must be immutable. Deriving a child context creates a new value and validates any
-change to actor, tenant, delegation, deadline, or propagation policy.
+The context must be immutable. Deriving a child context creates a new value and validates any change
+to actor, tenant, delegation, deadline, or propagation policy.
 
 The context is not a general key-value bag. Features must not attach arbitrary mutable state to it.
 New cross-cutting fields require a framework contract and propagation rules.
@@ -140,12 +140,12 @@ credentials:
 
 ```ts
 export interface AuthenticationContext {
-  readonly state: 'anonymous' | 'authenticated';
-  readonly identityId?: IdentityId;
-  readonly method?: string;
-  readonly assurance?: 'single-factor' | 'multi-factor' | 'phishing-resistant';
-  readonly authenticatedAt?: Date;
-  readonly sessionId?: SessionId;
+  readonly state: 'anonymous' | 'authenticated'
+  readonly identityId?: IdentityId
+  readonly method?: string
+  readonly assurance?: 'single-factor' | 'multi-factor' | 'phishing-resistant'
+  readonly authenticatedAt?: Date
+  readonly sessionId?: SessionId
 }
 ```
 
@@ -232,17 +232,17 @@ Authorization should be default-deny and return a structured decision rather tha
 
 ```ts
 export interface PolicyRequest<Resource = unknown> {
-  readonly actor: ActorRef;
-  readonly ability: string;
-  readonly resource?: Resource;
-  readonly tenant?: TenantRef;
-  readonly context: ExecutionContext;
+  readonly actor: ActorRef
+  readonly ability: string
+  readonly resource?: Resource
+  readonly tenant?: TenantRef
+  readonly context: ExecutionContext
 }
 
 export interface PolicyDecision {
-  readonly effect: 'allow' | 'deny';
-  readonly policy: string;
-  readonly code: string;
+  readonly effect: 'allow' | 'deny'
+  readonly policy: string
+  readonly code: string
 }
 ```
 
@@ -278,8 +278,8 @@ canopy.policy.effect
 canopy.policy.code
 ```
 
-These fields should connect logs, spans, security audits, journal entries, outbox records, jobs,
-and domain-failure reports.
+These fields should connect logs, spans, security audits, journal entries, outbox records, jobs, and
+domain-failure reports.
 
 Actor and tenant IDs are high-cardinality and potentially linkable identifiers. They may appear in
 access-controlled logs, traces, and audit records according to policy, but must not become metric
@@ -308,12 +308,12 @@ not dynamically reinterpret history when a user, membership, or policy later cha
 ## Failure behavior
 
 - Missing required authentication produces a stable unauthenticated error.
-- Failed authorization produces a stable forbidden error externally and a structured policy
-  decision internally.
+- Failed authorization produces a stable forbidden error externally and a structured policy decision
+  internally.
 - Invalid propagated actor, delegation, tenant, or causal metadata rejects the execution before
   feature code runs.
-- Context loss inside an admitted execution is a framework fault and must be surfaced by
-  diagnostics rather than silently replaced with a system actor.
+- Context loss inside an admitted execution is a framework fault and must be surfaced by diagnostics
+  rather than silently replaced with a system actor.
 - A missing actor on a durable mutation is invalid; the system must always name the actor kind and
   initiator semantics explicitly.
 
@@ -322,16 +322,16 @@ not dynamically reinterpret history when a user, membership, or policy later cha
 The first-party test application should support:
 
 ```ts
-const app = await CanopyTest.create({ features: [Orders] }).boot();
+const app = await CanopyTest.create({ features: [Orders] }).boot()
 
-await app.actingAs(user).post('/orders', input);
-await app.asService(importer).dispatch(new ImportOrders());
-await app.impersonating(user, { as: admin, reason: 'support-case-42' });
+await app.actingAs(user).post('/orders', input)
+await app.asService(importer).dispatch(new ImportOrders())
+await app.impersonating(user, { as: admin, reason: 'support-case-42' })
 
-app.authorization.assertAllowed('orders.create');
-app.authorization.assertDenied('orders.delete', 'orders.owner_required');
-app.context.assertCorrelationPreserved();
-app.context.assertInitiatedBy(user);
+app.authorization.assertAllowed('orders.create')
+app.authorization.assertDenied('orders.delete', 'orders.owner_required')
+app.context.assertCorrelationPreserved()
+app.context.assertInitiatedBy(user)
 ```
 
 Tests must also be able to assert the durable actor, initiator, correlation, causation, delegation,
@@ -383,8 +383,8 @@ tenants, and authentication alone must not choose authority accidentally.
 
 ### Persist delegation grants
 
-Delegation and impersonation should use durable, revocable, scoped, expiring grant records. Only
-the opaque grant ID and actor references should cross a process boundary; the receiver reloads and
+Delegation and impersonation should use durable, revocable, scoped, expiring grant records. Only the
+opaque grant ID and actor references should cross a process boundary; the receiver reloads and
 revalidates the grant before accepting delegated authority.
 
 ### Separate audit identity from general telemetry identity

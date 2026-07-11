@@ -30,8 +30,8 @@ tests, and generated manifests contain no pg-boss types or queue-engine vocabula
 
 ## Application organization
 
-Before adding queue behavior, the integrated example was reorganized into the canonized
-enterprise default:
+Before adding queue behavior, the integrated example was reorganized into the canonized enterprise
+default:
 
 ```text
 src/
@@ -58,10 +58,9 @@ src/
     └── support/
 ```
 
-The move required imports and Feature ownership declarations only. No path configuration or
-runtime discovery changed. Manifest IDs moved from the former `persistence` owner to
-`infrastructure`, `counters`, and `system`, proving that Feature declarations—not directories—own
-framework behavior.
+The move required imports and Feature ownership declarations only. No path configuration or runtime
+discovery changed. Manifest IDs moved from the former `persistence` owner to `infrastructure`,
+`counters`, and `system`, proving that Feature declarations—not directories—own framework behavior.
 
 ## Job authoring
 
@@ -85,8 +84,8 @@ export class ProcessCounterJob extends Job<ProcessCounterInput> {
 ```
 
 The Feature declares `jobs = [ProcessCounterJob]`. The compiler verifies the stable ID, typed
-handler, role-injection graph, retry policy, timeout, and lifecycle restrictions. This proof recorded
-them in manifest format v3; scheduling later advanced the required artifact contract to v4.
+handler, role-injection graph, retry policy, timeout, and lifecycle restrictions. This proof
+recorded them in manifest format v3; scheduling later advanced the required artifact contract to v4.
 
 `Job.dispatch(input)` is inherited and uses the current application execution rather than a
 process-global queue. Optional delay and idempotency settings remain concise:
@@ -149,9 +148,9 @@ at-least-once delivery.
 
 ## Queued listeners
 
-`ShouldQueue` and `ShouldQueueAfterCommit` listeners now become normal Canopy queue envelopes.
-When an event is raised inside a transaction, queued listener intent is always outbox-backed and
-cannot become eligible before commit. This also remains true for an event implementing
+`ShouldQueue` and `ShouldQueueAfterCommit` listeners now become normal Canopy queue envelopes. When
+an event is raised inside a transaction, queued listener intent is always outbox-backed and cannot
+become eligible before commit. This also remains true for an event implementing
 `ShouldDispatchAfterCommit`: queued listener intent is staged before commit, while its local
 listeners remain delayed until durability.
 
@@ -173,8 +172,8 @@ explicit development/migration step rather than an application boot side effect.
 
 ## Executable evidence
 
-At implementation time the complete suite contained thirty-eight passing tests. Queue-specific PostgreSQL conformance
-proves:
+At implementation time the complete suite contained thirty-eight passing tests. Queue-specific
+PostgreSQL conformance proves:
 
 1. Stable jobs, policies, queue capability, and queued listener relationships in the manifest.
 2. Atomic committed outbox-to-pg-boss handoff.

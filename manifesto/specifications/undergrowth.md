@@ -41,6 +41,6 @@ other mutations remain explicit Arbor operator commands.
 ## Developer workflow
 
 `arbor add undergrowth` adds the package, generates the application provider, and registers it in
-the Infrastructure Feature. `arbor migrate` applies the namespaced table, `arbor undergrowth`
-opens the dedicated explorer, and `arbor undergrowth:prune` enforces retention. Cultivate reports
-whether the observation capability is installed, the stable vocabulary, and its safety posture.
+the Infrastructure Feature. `arbor migrate` applies the namespaced table, `arbor undergrowth` opens
+the dedicated explorer, and `arbor undergrowth:prune` enforces retention. Cultivate reports whether
+the observation capability is installed, the stable vocabulary, and its safety posture.

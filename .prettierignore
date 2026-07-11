@@ -1,0 +1,10 @@
+.canopy
+.changeset/pre.json
+.git
+.next
+coverage
+dist
+node_modules
+pnpm-lock.yaml
+examples/field-guide/docs/design
+examples/field-guide/next-env.d.ts

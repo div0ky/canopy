@@ -8,4 +8,3 @@ export class Application extends CanopyApplication {
   configs = [AppConfig]
   features = [OperationsFeature]
 }
-

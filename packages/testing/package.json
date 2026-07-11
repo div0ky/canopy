@@ -1,10 +1,46 @@
 {
   "name": "@canopy/testing",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.1.0-alpha.0",
+  "description": "First-party test harnesses, fakes, and assertions for Canopy applications.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/div0ky/canopy.git",
+    "directory": "packages/testing"
+  },
+  "homepage": "https://github.com/div0ky/canopy#readme",
+  "bugs": {
+    "url": "https://github.com/div0ky/canopy/issues"
+  },
+  "keywords": [
+    "canopy",
+    "framework",
+    "testing",
+    "vitest",
+    "typescript"
+  ],
   "type": "module",
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "files": ["dist"],
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "NOTICE"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/prepare-package.mjs",
+    "postpack": "node ../../scripts/prepare-package.mjs --clean"
+  },
   "dependencies": {
     "@canopy/core": "workspace:*",
     "@canopy/http-hono": "workspace:*",

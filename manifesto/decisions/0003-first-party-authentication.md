@@ -6,13 +6,13 @@
 
 ## Decision
 
-Canopy will own authentication as a first-party framework subsystem. Applications will not depend
-on Better Auth, Auth.js, Clerk, Auth0, WorkOS, or another authentication product for Canopy's
-ordinary identity, credential, and session behavior.
+Canopy will own authentication as a first-party framework subsystem. Applications will not depend on
+Better Auth, Auth.js, Clerk, Auth0, WorkOS, or another authentication product for Canopy's ordinary
+identity, credential, and session behavior.
 
 First-party ownership includes the public API, data model, lifecycle, security policy, HTTP flows,
-session behavior, errors, audit trail, diagnostics, testing support, migrations, documentation,
-and compatibility contract.
+session behavior, errors, audit trail, diagnostics, testing support, migrations, documentation, and
+compatibility contract.
 
 First-party does not mean inventing cryptographic algorithms or casually implementing security
 protocols. Canopy will use standards and narrowly scoped, audited primitives behind Canopy-owned
@@ -46,15 +46,13 @@ Canopy owns:
 - Default database tables, constraints, indexes, and migrations, plus the semantic contract used
   when an application explicitly maps auth onto existing tables.
 - Stable errors that do not disclose whether an account exists.
-- Test fakes and assertions such as `actingAs`, `assertAuthenticated`, and
-  `assertSessionRevoked`.
+- Test fakes and assertions such as `actingAs`, `assertAuthenticated`, and `assertSessionRevoked`.
 - Diagnostics for configuration, key rotation, session state, and authentication health.
 
 Canopy delegates:
 
 - Password hashing to a standards-compliant Argon2id primitive.
-- Randomness, hashing, authenticated encryption, and signature operations to platform
-  cryptography.
+- Randomness, hashing, authenticated encryption, and signature operations to platform cryptography.
 - Email transport to the Canopy mail subsystem.
 - OAuth, OpenID Connect, and WebAuthn wire-level primitives only where a focused implementation can
   be contained inside an optional Canopy auth plugin with a conformance suite.
@@ -63,9 +61,9 @@ Delegated code must not define Canopy's database schema, public types, routes, s
 model, or lifecycle.
 
 First-party ownership does not require duplicating an established application's identity and
-credential records. Canopy Auth may explicitly map its identity and credential semantics to
-existing tables while continuing to own validation, hashing policy, sessions, bearer tokens,
-challenges, abuse controls, audit, and lifecycle. Field mappings are explicit and fail closed;
+credential records. Canopy Auth may explicitly map its identity and credential semantics to existing
+tables while continuing to own validation, hashing policy, sessions, bearer tokens, challenges,
+abuse controls, audit, and lifecycle. Field mappings are explicit and fail closed;
 security-sensitive columns are never inferred. See
 [Decision 0023](0023-existing-table-model-auth-mapping.md).
 
@@ -124,8 +122,7 @@ canopy add auth:api-keys
 canopy add auth:machine
 ```
 
-Installing a plugin extends the accepted authentication model; it does not replace core Canopy
-Auth.
+Installing a plugin extends the accepted authentication model; it does not replace core Canopy Auth.
 
 ## Identities and actors
 
@@ -141,9 +138,9 @@ The separation must accommodate:
 - An anonymous request.
 - A queued job continuing work caused by an earlier actor.
 
-Authentication resolves evidence into an identity. A Canopy actor resolver establishes the actor
-and tenant placed in the execution context. Authorization evaluates that actor against an action
-and resource.
+Authentication resolves evidence into an identity. A Canopy actor resolver establishes the actor and
+tenant placed in the execution context. Authorization evaluates that actor against an action and
+resource.
 
 ## Session model
 
@@ -191,8 +188,8 @@ Canopy will use Argon2id with versioned parameters and per-password random salts
 carry enough metadata to verify old parameters and upgrade them after successful authentication.
 
 Password policy accepts 8–64 Unicode characters and favors breached-password defenses, rate
-limiting, and secure recovery over arbitrary composition rules. Raw passwords must never enter
-logs, events, traces, or durable diagnostics.
+limiting, and secure recovery over arbitrary composition rules. Raw passwords must never enter logs,
+events, traces, or durable diagnostics.
 
 The preferred implementation is the Argon2id primitive supplied by Node.js 24.7 and newer. Any
 fallback library must be isolated behind the same `PasswordHasher` contract, exactly pinned,
@@ -206,12 +203,12 @@ role, or claim exists.
 Canopy authorization policies own decisions such as:
 
 ```ts
-await policies.authorize(actor, 'orders.update', order);
+await policies.authorize(actor, 'orders.update', order)
 ```
 
-Authentication attributes may inform a policy, but roles embedded in credentials or sessions do
-not bypass the policy system. Authentication and authorization will have separate specifications
-and test vocabularies.
+Authentication attributes may inform a policy, but roles embedded in credentials or sessions do not
+bypass the policy system. Authentication and authorization will have separate specifications and
+test vocabularies.
 
 ## Dependency policy
 
@@ -278,11 +275,12 @@ Before the authentication subsystem is production-ready, it must demonstrate:
 
 ## Implementation evidence
 
-The [email and password authentication vertical slice](../implementation/email-password-auth-vertical-slice.md)
+The
+[email and password authentication vertical slice](../implementation/email-password-auth-vertical-slice.md)
 proves first-party identity and credential tables, Node Argon2id with versioned parameters,
 enumeration-equivalent login errors, opaque digest-backed sessions, runtime HTTP actor resolution,
-session rotation, explicit-origin CSRF enforcement, revocation, and security audit records.
-The [opaque bearer authentication vertical slice](../implementation/opaque-bearer-auth-vertical-slice.md)
+session rotation, explicit-origin CSRF enforcement, revocation, and security audit records. The
+[opaque bearer authentication vertical slice](../implementation/opaque-bearer-auth-vertical-slice.md)
 adds digest-backed API credentials, constraint propagation, ambiguity rejection, rotation,
 revocation, and the same identity-to-actor resolution.
 

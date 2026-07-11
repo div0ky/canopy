@@ -12,4 +12,3 @@ export function runWithModelSession<Output>(
 ): Output | Promise<Output> {
   return modelSessions.run(session, work)
 }
-

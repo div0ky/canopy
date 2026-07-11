@@ -2,14 +2,7 @@ import type { Model } from './model.js'
 import { CanopyRole } from './role.js'
 
 export type ModelObserverPhase =
-  | 'retrieved'
-  | 'saving'
-  | 'creating'
-  | 'updating'
-  | 'created'
-  | 'updated'
-  | 'saved'
-  | 'committed'
+  'retrieved' | 'saving' | 'creating' | 'updating' | 'created' | 'updated' | 'saved' | 'committed'
 
 export interface ModelObserverDispatcher {
   dispatch(phase: ModelObserverPhase, model: Model): void | Promise<void>

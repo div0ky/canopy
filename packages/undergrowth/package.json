@@ -1,15 +1,47 @@
 {
   "name": "@canopy/undergrowth",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.1.0-alpha.0",
+  "description": "The first-party causal execution debugger for Canopy development.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/div0ky/canopy.git",
+    "directory": "packages/undergrowth"
+  },
+  "homepage": "https://github.com/div0ky/canopy#readme",
+  "bugs": {
+    "url": "https://github.com/div0ky/canopy/issues"
+  },
+  "keywords": [
+    "canopy",
+    "framework",
+    "debugger",
+    "observability",
+    "postgresql"
+  ],
   "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "migrations"],
+  "files": [
+    "dist",
+    "migrations",
+    "NOTICE"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/prepare-package.mjs",
+    "postpack": "node ../../scripts/prepare-package.mjs --clean"
+  },
   "dependencies": {
     "@canopy/core": "workspace:*",
     "pg": "8.22.0"

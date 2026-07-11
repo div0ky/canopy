@@ -12,8 +12,7 @@ test-scoped application graph. Bindings become immutable when boot begins. Tests
 running container.
 
 ```ts
-const app = await CanopyTest
-  .create(Application)
+const app = await CanopyTest.create(Application)
   .override(PaymentGateway)
   .with(FakePaymentGateway)
   .boot()
@@ -22,13 +21,13 @@ const app = await CanopyTest
 ## Derived test graph
 
 An override does not mutate the canonical production manifest. `@canopy/testing` creates a derived
-test graph with provenance linking every replacement to its production binding and test source.
-The derived graph receives the same missing-binding, ambiguity, cycle, ownership, and scope-leak
+test graph with provenance linking every replacement to its production binding and test source. The
+derived graph receives the same missing-binding, ambiguity, cycle, ownership, and scope-leak
 validation as production.
 
 Each test application owns its derived graph, singleton instances, execution scopes, fakes, event
-records, clocks, and lifecycle. Concurrent test applications cannot observe or mutate one
-another's overrides.
+records, clocks, and lifecycle. Concurrent test applications cannot observe or mutate one another's
+overrides.
 
 ## Immutability
 
@@ -36,8 +35,8 @@ Override declaration closes when test boot begins. The running test application 
 `container.set()`, rebinding, monkey-patching, or global fake registration. A test that needs a
 different graph boots another lightweight test application.
 
-Focused services remain directly constructible with ordinary fakes and do not require a Canopy
-test application merely to exercise isolated business logic.
+Focused services remain directly constructible with ordinary fakes and do not require a Canopy test
+application merely to exercise isolated business logic.
 
 ## Consequences
 

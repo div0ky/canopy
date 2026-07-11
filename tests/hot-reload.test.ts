@@ -9,7 +9,9 @@ const directories: string[] = []
 
 describe('Canopy hot reload', () => {
   afterEach(async () => {
-    await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })))
+    await Promise.all(
+      directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
+    )
   })
 
   it('keeps the last good target alive after a failed build and replaces it after recovery', async () => {
@@ -27,7 +29,11 @@ describe('Canopy hot reload', () => {
       },
       start: () => {
         const id = ++starts
-        return { stop: () => { stopped.push(id) } }
+        return {
+          stop: () => {
+            stopped.push(id)
+          },
+        }
       },
       onError: (error, phase) => errors.push({ error, phase }),
     })
@@ -52,7 +58,9 @@ describe('Canopy hot reload', () => {
     const directory = await temporaryDirectory()
     let starts = 0
     let resolveReload!: () => void
-    const reloaded = new Promise<void>((resolve) => { resolveReload = resolve })
+    const reloaded = new Promise<void>((resolve) => {
+      resolveReload = resolve
+    })
     const supervisor = await HotReloadSupervisor.start({
       watchPaths: [directory],
       debounceMilliseconds: 20,
@@ -68,7 +76,9 @@ describe('Canopy hot reload', () => {
       await writeFile(path.join(directory, 'route.ts'), 'export class Route {}\n')
       await Promise.race([
         reloaded,
-        new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('watch timed out')), 2_000)),
+        new Promise<never>((_resolve, reject) =>
+          setTimeout(() => reject(new Error('watch timed out')), 2_000),
+        ),
       ])
       expect(starts).toBe(1)
     } finally {

@@ -16,7 +16,9 @@ export interface PostgresCacheOptions {
 export class PostgresCache extends Cache implements Starts, Disposes {
   #pool: Pool | undefined
 
-  constructor(private readonly options: PostgresCacheOptions) { super() }
+  constructor(private readonly options: PostgresCacheOptions) {
+    super()
+  }
 
   async start(context: LifecycleContext): Promise<void> {
     if (context.signal.aborted) throw context.signal.reason
@@ -29,27 +31,45 @@ export class PostgresCache extends Cache implements Starts, Disposes {
   }
 
   async get<Value extends JsonValue>(key: string): Promise<Value | undefined> {
-    const result = await this.pool().query<{ value: Value }>(`
+    const result = await this.pool().query<{ value: Value }>(
+      `
       DELETE FROM canopy_cache_entries
       WHERE key = $1 AND expires_at IS NOT NULL AND expires_at <= now()
-    `, [key])
+    `,
+      [key],
+    )
     void result
-    const found = await this.pool().query<{ value: Value }>(`
+    const found = await this.pool().query<{ value: Value }>(
+      `
       SELECT value FROM canopy_cache_entries WHERE key = $1
-    `, [key])
+    `,
+      [key],
+    )
     return found.rows[0]?.value
   }
 
-  async put<Value extends JsonValue>(key: string, value: Value, options?: CachePutOptions): Promise<void> {
-    await this.pool().query(`
+  async put<Value extends JsonValue>(
+    key: string,
+    value: Value,
+    options?: CachePutOptions,
+  ): Promise<void> {
+    await this.pool().query(
+      `
       INSERT INTO canopy_cache_entries (key, value, expires_at)
       VALUES ($1, $2::jsonb, $3)
       ON CONFLICT (key) DO UPDATE SET value = excluded.value, expires_at = excluded.expires_at
-    `, [key, JSON.stringify(value), expiresAt(options)])
+    `,
+      [key, JSON.stringify(value), expiresAt(options)],
+    )
   }
 
-  async add<Value extends JsonValue>(key: string, value: Value, options?: CachePutOptions): Promise<boolean> {
-    const result = await this.pool().query(`
+  async add<Value extends JsonValue>(
+    key: string,
+    value: Value,
+    options?: CachePutOptions,
+  ): Promise<boolean> {
+    const result = await this.pool().query(
+      `
       INSERT INTO canopy_cache_entries (key, value, expires_at)
       VALUES ($1, $2::jsonb, $3)
       ON CONFLICT (key) DO UPDATE SET
@@ -57,13 +77,16 @@ export class PostgresCache extends Cache implements Starts, Disposes {
         expires_at = excluded.expires_at
       WHERE canopy_cache_entries.expires_at IS NOT NULL
         AND canopy_cache_entries.expires_at <= now()
-    `, [key, JSON.stringify(value), expiresAt(options)])
+    `,
+      [key, JSON.stringify(value), expiresAt(options)],
+    )
     return result.rowCount === 1
   }
 
   async increment(key: string, amount = 1, options?: CachePutOptions): Promise<number> {
     if (!Number.isFinite(amount)) throw new TypeError('Cache increment amount must be finite.')
-    const result = await this.pool().query<{ value: JsonValue }>(`
+    const result = await this.pool().query<{ value: JsonValue }>(
+      `
       INSERT INTO canopy_cache_entries (key, value, expires_at)
       VALUES ($1, to_jsonb($2::double precision), $3)
       ON CONFLICT (key) DO UPDATE SET
@@ -80,7 +103,9 @@ export class PostgresCache extends Cache implements Starts, Disposes {
           ELSE canopy_cache_entries.expires_at
         END
       RETURNING value
-    `, [key, amount, expiresAt(options)])
+    `,
+      [key, amount, expiresAt(options)],
+    )
     const value = result.rows[0]?.value
     if (typeof value !== 'number') throw new TypeError(`Cache value ${key} is not numeric.`)
     return value

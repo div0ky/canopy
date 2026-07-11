@@ -9,13 +9,13 @@ export class BoobsRoute extends Route {
   readonly path = '/boobs'
 
   async handle(_request: HttpRequest): Promise<string> {
-    const message = "b00bs (.)(.)";
-    
+    const message = 'b00bs (.)(.)'
+
     for (let i = 0; i < 5; i++) {
-        await BoobJob.dispatch(message);
+      await BoobJob.dispatch(message)
     }
 
-    await BoobPinged.dispatch();
-    return message;
+    await BoobPinged.dispatch()
+    return message
   }
 }

@@ -25,9 +25,9 @@ The following application concepts should primarily be classes:
 Class-first Feature declarations and small declarative binding helpers compose these objects. They
 do not replace behavior-bearing classes with configuration or closure-based service graphs.
 
-Decorators are not supported as Canopy declaration syntax in the MVP. An optional decorator
-frontend is deferred and may be reconsidered only if it compiles into the identical manifest.
-Canopy does not depend on legacy decorator metadata or runtime type reflection.
+Decorators are not supported as Canopy declaration syntax in the MVP. An optional decorator frontend
+is deferred and may be reconsidered only if it compiles into the identical manifest. Canopy does not
+depend on legacy decorator metadata or runtime type reflection.
 
 ## Role classes and capability traits
 
@@ -35,14 +35,11 @@ A framework-facing class declares its primary role through a Canopy base class a
 role's intention-revealing handler. Jobs, actions, queries, listeners, observers, policies, and
 other roles should read as application concepts rather than container registrations.
 
-Orthogonal framework semantics may be declared through a small set of compiler-recognized
-TypeScript capability interfaces. For example:
+Orthogonal framework semantics may be declared through a small set of compiler-recognized TypeScript
+capability interfaces. For example:
 
 ```ts
-export class SendWelcomeEmail
-  extends Listener<UserRegistered>
-  implements ShouldQueue
-{
+export class SendWelcomeEmail extends Listener<UserRegistered> implements ShouldQueue {
   async handle(event: UserRegistered): Promise<void> {
     // ...
   }
@@ -53,10 +50,10 @@ The Canopy compiler resolves the explicit `implements` clause and records the ca
 application manifest. Runtime behavior follows the manifest; it does not require the TypeScript
 interface to survive JavaScript emission.
 
-Base classes define primary roles. Capability interfaces modify categorical execution semantics
-such as queued delivery, uniqueness, or future broadcasting. Values such as queue name, retry
-limit, timeout, and backoff belong in typed class configuration. Canopy must keep capability
-interfaces few, orthogonal, and semantically precise rather than creating marker-interface soup.
+Base classes define primary roles. Capability interfaces modify categorical execution semantics such
+as queued delivery, uniqueness, or future broadcasting. Values such as queue name, retry limit,
+timeout, and backoff belong in typed class configuration. Canopy must keep capability interfaces
+few, orthogonal, and semantically precise rather than creating marker-interface soup.
 
 Canopy will follow Laravel's established distinction for queueing and broadcasting vocabulary and
 semantics:
@@ -66,8 +63,8 @@ semantics:
   the active transaction commits. If no transaction is active, dispatch proceeds immediately.
 - `ShouldBroadcast` marks an event for queued broadcasting.
 - `ShouldBroadcastNow` marks an event for synchronous broadcasting in the current process.
-- `dispatch()` submits a job to the queue; `dispatchSync()` executes it synchronously in the
-  current process and does not enqueue it.
+- `dispatch()` submits a job to the queue; `dispatchSync()` executes it synchronously in the current
+  process and does not enqueue it.
 
 `ShouldQueueNow` is not part of the Canopy contract. Transaction timing is separate from execution
 mode. In an active Canopy unit of work, ordinary queued delivery remains outbox-backed and becomes
@@ -83,19 +80,19 @@ inherited, execution-scoped `this.inject()` API and do not declare constructors 
 authoring. This distinction is defined by
 [decision 0024](0024-role-injection-with-plain-services.md).
 
-The build-time compiler inspects both constructor parameters and statically declared role
-injections to generate dependency metadata. Abstract ports, values, aliases, and factories require
-explicit bindings because TypeScript interfaces do not exist at runtime and application intent
-should remain visible.
+The build-time compiler inspects both constructor parameters and statically declared role injections
+to generate dependency metadata. Abstract ports, values, aliases, and factories require explicit
+bindings because TypeScript interfaces do not exist at runtime and application intent should remain
+visible.
 
 The generated graph must be inspectable before boot and must identify missing bindings, ambiguous
 bindings, invalid scopes, and dependency cycles using application vocabulary.
 
 ## Injection identities
 
-Concrete classes are their own injection identities. Abstract classes are the preferred
-application and domain ports because they provide clean constructor types and survive JavaScript
-emission as runtime-representable identities:
+Concrete classes are their own injection identities. Abstract classes are the preferred application
+and domain ports because they provide clean constructor types and survive JavaScript emission as
+runtime-representable identities:
 
 ```ts
 export abstract class PaymentGateway {
@@ -108,9 +105,7 @@ export class CheckoutService {
 ```
 
 ```ts
-bindings = [
-  bind(PaymentGateway).to(StripePaymentGateway),
-]
+bindings = [bind(PaymentGateway).to(StripePaymentGateway)]
 ```
 
 When an abstract class is inappropriate, Canopy provides a branded typed token with an explicit
@@ -122,8 +117,8 @@ export const CheckoutTimeout = token<Duration>('checkout-timeout')
 
 Raw strings, raw symbols, constructor parameter names, and erased TypeScript interfaces are not
 valid injection identities. Compiler capability interfaces such as `ShouldQueue` describe class
-semantics and are never container tokens. Missing, duplicate, or competing bindings fail
-compilation with their source locations and dependency paths.
+semantics and are never container tokens. Missing, duplicate, or competing bindings fail compilation
+with their source locations and dependency paths.
 
 ## Optional dependencies
 
@@ -132,23 +127,21 @@ optional through native TypeScript syntax:
 
 ```ts
 export class CheckoutService {
-  constructor(
-    private readonly cache?: CheckoutCache,
-  ) {}
+  constructor(private readonly cache?: CheckoutCache) {}
 }
 ```
 
 The compiler records the dependency as optional in the manifest. If one valid, visible, scope-safe
-binding exists, Canopy injects it. If no binding exists, Canopy injects `undefined`. Optionality does
-not suppress competing-binding, private-visibility, invalid-scope, cycle, or construction failures;
-those remain errors.
+binding exists, Canopy injects it. If no binding exists, Canopy injects `undefined`. Optionality
+does not suppress competing-binding, private-visibility, invalid-scope, cycle, or construction
+failures; those remain errors.
 
 Required parameters still fail compilation when unresolved. Optionality applies only to the
 parameter that declares it and does not propagate through its dependency graph.
 
-A null-object implementation is appropriate only when disabled behavior is a meaningful
-polymorphic domain choice. Applications must not create null objects merely to satisfy the
-container when absence is the honest model.
+A null-object implementation is appropriate only when disabled behavior is a meaningful polymorphic
+domain choice. Applications must not create null objects merely to satisfy the container when
+absence is the honest model.
 
 ## Container scopes
 
@@ -159,14 +152,12 @@ The MVP container supports:
 - `transient` — a new instance for each resolution.
 
 Concrete constructor dependencies use `transient` scope by default. Actions, queries, listeners,
-jobs, and other handler roots receive a fresh instance for each dispatch. Longer-lived state must
-be explicit in the manifest:
+jobs, and other handler roots receive a fresh instance for each dispatch. Longer-lived state must be
+explicit in the manifest:
 
 - Unit of Work, Model Session, and similar contextual services are explicitly execution-scoped.
-- Database pools, infrastructure clients, and other application resources are explicitly
-  singleton.
-- Models are hydrated and attached by the Model Session; they are not container-resolved
-  services.
+- Database pools, infrastructure clients, and other application resources are explicitly singleton.
+- Models are hydrated and attached by the Model Session; they are not container-resolved services.
 
 The compiler must reject a singleton that directly or transitively depends on an execution-scoped
 service. Explicit scopes may not be inferred from mutable fields, naming conventions, or usage
@@ -176,14 +167,14 @@ HTTP requests, dequeued jobs, schedule firings, console commands, WebSocket mess
 admitted entry points each create a distinct execution scope. Those scopes have identical
 resolution, context, disposal, and diagnostic semantics.
 
-One admitted entry point owns exactly one execution scope. Actions, queries, model operations,
-Units of Work, policies, observers, local listeners, after-commit listeners, and their resolved
-services reuse that scope. An action may activate a Unit of Work inside the scope; the Unit of Work
-does not define a second dependency scope.
+One admitted entry point owns exactly one execution scope. Actions, queries, model operations, Units
+of Work, policies, observers, local listeners, after-commit listeners, and their resolved services
+reuse that scope. An action may activate a Unit of Work inside the scope; the Unit of Work does not
+define a second dependency scope.
 
 Durable asynchronous delivery creates a new execution scope when a worker consumes the work. Jobs
-and queued listeners receive serialized actor, initiator, tenant, correlation, causation, trace,
-and other permitted execution-context values. They never receive parent scoped instances.
+and queued listeners receive serialized actor, initiator, tenant, correlation, causation, trace, and
+other permitted execution-context values. They never receive parent scoped instances.
 
 Applications cannot create arbitrary nested dependency scopes. Every execution scope disposes its
 resources after success, failure, timeout, cancellation, or shutdown. Admission, context creation,
@@ -200,17 +191,17 @@ direction visible to tooling.
 
 ## Lifecycle and disposal
 
-The container owns deterministic construction and disposal ordering. Execution-scoped resources
-are disposed when their execution ends, including success, failure, timeout, cancellation, or
-shutdown. Singleton resources are disposed in reverse dependency order during application
-shutdown or partial-startup rollback.
+The container owns deterministic construction and disposal ordering. Execution-scoped resources are
+disposed when their execution ends, including success, failure, timeout, cancellation, or shutdown.
+Singleton resources are disposed in reverse dependency order during application shutdown or
+partial-startup rollback.
 
 Async factories and disposable resources must declare their lifecycle explicitly in the manifest.
 
 ## Side-effect-free construction
 
-All container-managed constructors must be synchronous and side-effect-free. A constructor may
-store dependencies, validate local arguments, and initialize in-memory state. It must not:
+All container-managed constructors must be synchronous and side-effect-free. A constructor may store
+dependencies, validate local arguments, and initialize in-memory state. It must not:
 
 - Perform database, network, filesystem, or remote-configuration I/O.
 - Start timers, workers, polling loops, or asynchronous tasks.
@@ -218,18 +209,18 @@ store dependencies, validate local arguments, and initialize in-memory state. It
 - Acquire resources that require asynchronous cleanup.
 - Mutate the application graph or resolve additional dependencies imperatively.
 
-Resource acquisition and active behavior belong to explicit, manifest-visible lifecycle phases.
-The compiler cannot prove every possible constructor side effect, so conformance tests, generated
-code, documentation, and framework diagnostics must reinforce this contract. Framework-owned
-providers and adapters must uphold it without exception.
+Resource acquisition and active behavior belong to explicit, manifest-visible lifecycle phases. The
+compiler cannot prove every possible constructor side effect, so conformance tests, generated code,
+documentation, and framework diagnostics must reinforce this contract. Framework-owned providers and
+adapters must uphold it without exception.
 
 When construction or startup fails, Canopy unwinds only lifecycle work it can identify. Hidden
 constructor effects are therefore contract violations even if they appear locally convenient.
 
 ## Consequences
 
-- Canopy provides Laravel-like scoped role injection and conventional service constructor
-  injection without PHP-style runtime reflection.
+- Canopy provides Laravel-like scoped role injection and conventional service constructor injection
+  without PHP-style runtime reflection.
 - Build-time manifest generation becomes part of the required framework toolchain.
 - Application boot validates a known graph rather than discovering dependencies opportunistically.
 - Interfaces used as ports need runtime-representable tokens or abstract classes and explicit

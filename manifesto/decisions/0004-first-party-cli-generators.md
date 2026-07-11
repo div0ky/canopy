@@ -18,15 +18,15 @@ Canopy-owned workflows.
 ## Context
 
 Canopy promises one obvious way to perform ordinary application work. Documentation and runtime
-conventions are insufficient if developers must manually reproduce file placement, exports,
-manifest registration, tests, migrations, and configuration for every feature.
+conventions are insufficient if developers must manually reproduce file placement, exports, manifest
+registration, tests, migrations, and configuration for every feature.
 
-Generators are also part of framework governance. They encode the architecture Canopy teaches,
-make the preferred path inexpensive, and give migrations a reliable way to update conventional
+Generators are also part of framework governance. They encode the architecture Canopy teaches, make
+the preferred path inexpensive, and give migrations a reliable way to update conventional
 application structure.
 
-Laravel demonstrates both halves of this experience: an installer creates a ready application,
-while Artisan `make:*` commands generate models, controllers, jobs, events, listeners, migrations,
+Laravel demonstrates both halves of this experience: an installer creates a ready application, while
+Artisan `make:*` commands generate models, controllers, jobs, events, listeners, migrations,
 policies, tests, and application commands from customizable stubs.
 
 ## Command families
@@ -70,8 +70,8 @@ The initial generators should include:
 - `canopy make:command`
 - `canopy make:test`
 
-Compound generation should be available where the generated artifacts form one coherent feature.
-For example:
+Compound generation should be available where the generated artifacts form one coherent feature. For
+example:
 
 ```text
 canopy make:model Order --migration --repository --factory
@@ -108,8 +108,8 @@ role arrays where the artifact is framework-facing. A generated ordinary service
 through constructor reachability and is not added to a Feature role array.
 
 Generated source follows Canopy's accepted defaults: kebab-case filenames, PascalCase classes, one
-primary framework-facing class per file, no required barrel files, colocated unit tests, and
-Feature or integration tests under `tests/` where appropriate.
+primary framework-facing class per file, no required barrel files, colocated unit tests, and Feature
+or integration tests under `tests/` where appropriate.
 
 Generators and structural edits must preserve valid custom layouts. Moving from role-first to
 domain-first, Feature-first, or package-based organization must not require Canopy runtime
@@ -119,8 +119,8 @@ configuration.
 
 Generated files fall into two categories:
 
-1. **Application-owned output** is created once and may be freely edited. Future generator runs
-   must treat it as user code.
+1. **Application-owned output** is created once and may be freely edited. Future generator runs must
+   treat it as user code.
 2. **Canopy-owned output** is reproducible from a manifest, clearly marked, and never manually
    edited.
 
@@ -129,15 +129,15 @@ codemods, migration guides, and reviewable diffs.
 
 ## Starters, recipes, and stubs
 
-A versioned starter defines the minimum complete application produced by `canopy new`. A recipe
-adds one coherent capability to an existing application. A stub defines an editable source
-artifact produced by a `make:*` command.
+A versioned starter defines the minimum complete application produced by `canopy new`. A recipe adds
+one coherent capability to an existing application. A stub defines an editable source artifact
+produced by a `make:*` command.
 
 Initially:
 
 - Canopy ships and supports first-party starters and recipes only.
-- Recipes declare prerequisites, package changes, schema changes, file operations, and
-  verification commands.
+- Recipes declare prerequisites, package changes, schema changes, file operations, and verification
+  commands.
 - Recipe execution is transactional where possible and reports an exact recovery plan otherwise.
 - Applications may publish and customize generator stubs through a command such as
   `canopy stubs:publish`.
@@ -149,13 +149,13 @@ supply-chain boundary.
 
 ## Package-manager boundary
 
-Canopy does not replace npm, pnpm, or another supported JavaScript package manager. The CLI owns
-the intent—create an application or install a capability—and delegates dependency resolution and
+Canopy does not replace npm, pnpm, or another supported JavaScript package manager. The CLI owns the
+intent—create an application or install a capability—and delegates dependency resolution and
 lockfile updates to the selected package manager.
 
 Package-manager invocation must be explicit in diagnostics, reproducible, and compatible with
-non-interactive environments. Canopy releases pin their curated dependency set even though a
-package manager performs the installation.
+non-interactive environments. Canopy releases pin their curated dependency set even though a package
+manager performs the installation.
 
 ## Operational commands
 
@@ -175,8 +175,8 @@ These commands must consume the same application manifest and lifecycle contract
 The CLI must not invent a second interpretation of the application.
 
 The canonical `.canopy/` manifest and registry are generated, gitignored build output. Development,
-build, test, inspection, and packaging commands generate or require current artifacts and never
-ask developers to edit or commit them. CI must be able to prove deterministic regeneration from
+build, test, inspection, and packaging commands generate or require current artifacts and never ask
+developers to edit or commit them. CI must be able to prove deterministic regeneration from
 committed source.
 
 Production runtime does not compile TypeScript or generate manifests. Official CLI workflows own

@@ -9,7 +9,7 @@ export class PongRoute extends Route {
   readonly path = '/pong'
 
   async handle(_request: HttpRequest): Promise<{ message: string }> {
-    const message = "ping";
+    const message = 'ping'
     await HttpPinged.dispatch({ message })
     return { message }
   }

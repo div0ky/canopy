@@ -8,13 +8,13 @@
   documentation agree.
 
 This ledger prevents a runnable demo from being mislabeled as a viable framework. Implementation
-proof means a risky seam works. MVP complete means an ordinary production-shaped application can
-use the entire promised model without assembling another framework beside Canopy.
+proof means a risky seam works. MVP complete means an ordinary production-shaped application can use
+the entire promised model without assembling another framework beside Canopy.
 
 ## Ecosystem name
 
-**Arbor** is the canonical name for Canopy's Artisan-like command suite and generator. The
-package is `@canopy/arbor` and the executable is `arbor`:
+**Arbor** is the canonical name for Canopy's Artisan-like command suite and generator. The package
+is `@canopy/arbor` and the executable is `arbor`:
 
 ```text
 arbor new
@@ -35,74 +35,74 @@ applications and tools do not depend on undocumented behavior.
 
 ## Foundation and operations
 
-| Capability | State | Remaining acceptance work |
-| --- | --- | --- |
-| Application and Feature declarations | Complete | Compiled declarations, generators, and diagnostics agree. |
-| Manifest and constructor registry | Complete | Versioned JSON, constructor registry, hashes, compatibility, and inspection fail closed. |
-| Container and scopes | Complete | Autowiring, ownership, provider overrides, scopes, lifecycle, and fakes are proven. |
-| Configuration and secrets | Complete | Declared-only environment loading, typed groups, secrets, diagnostics, and overrides are proven. |
-| Runtime lifecycle | Complete | Independent roles, bounded boot/readiness/drain/stop/dispose, unwind, and lifecycle telemetry are proven. |
-| Actions and queries | Complete | Transactions, read-only enforcement, authorization, resources, and operation rules are proven. |
+| Capability                             | State    | Remaining acceptance work                                                                                                                             |
+| -------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Application and Feature declarations   | Complete | Compiled declarations, generators, and diagnostics agree.                                                                                             |
+| Manifest and constructor registry      | Complete | Versioned JSON, constructor registry, hashes, compatibility, and inspection fail closed.                                                              |
+| Container and scopes                   | Complete | Autowiring, ownership, provider overrides, scopes, lifecycle, and fakes are proven.                                                                   |
+| Configuration and secrets              | Complete | Declared-only environment loading, typed groups, secrets, diagnostics, and overrides are proven.                                                      |
+| Runtime lifecycle                      | Complete | Independent roles, bounded boot/readiness/drain/stop/dispose, unwind, and lifecycle telemetry are proven.                                             |
+| Actions and queries                    | Complete | Transactions, read-only enforcement, authorization, resources, and operation rules are proven.                                                        |
 | HTTP envelopes, errors, and validation | Complete | Automatic payload wrapping, discriminated failures, validation details, trace headers, auth errors, raw exceptions, and shutdown behavior are proven. |
-| Eloquent-style models and persistence | Complete | Hydration, identity, dirty state, save/delete/refresh, observers, concurrency, and migrations are proven. |
-| Journal and outbox | Complete | Atomic writes, causal context, rollback, visibility, queue handoff, and inspection are proven. |
+| Eloquent-style models and persistence  | Complete | Hydration, identity, dirty state, save/delete/refresh, observers, concurrency, and migrations are proven.                                             |
+| Journal and outbox                     | Complete | Atomic writes, causal context, rollback, visibility, queue handoff, and inspection are proven.                                                        |
 
 ## Reactive and asynchronous model
 
-| Capability | State | Remaining acceptance work |
-| --- | --- | --- |
-| Class events and listeners | Complete | Local, after-commit, queued, and queued-after-commit semantics and fakes are proven. |
-| Signals | Complete | Immediate non-durable semantics, failure behavior, diagnostics, and test API are proven. |
-| Model observers | Complete | Persistence and committed phases, rollback behavior, diagnostics, and memory conformance are proven. |
-| Jobs and workers | Complete | Durability, delay, retry, backoff, timeout, idempotency, failure, recovery, causation, and drain are proven. |
-| Scheduling | Complete | Cron/interval reconciliation, overlap, misfire, enable/disable, manual fire, system causation, and test firing are proven. |
+| Capability                 | State    | Remaining acceptance work                                                                                                  |
+| -------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Class events and listeners | Complete | Local, after-commit, queued, and queued-after-commit semantics and fakes are proven.                                       |
+| Signals                    | Complete | Immediate non-durable semantics, failure behavior, diagnostics, and test API are proven.                                   |
+| Model observers            | Complete | Persistence and committed phases, rollback behavior, diagnostics, and memory conformance are proven.                       |
+| Jobs and workers           | Complete | Durability, delay, retry, backoff, timeout, idempotency, failure, recovery, causation, and drain are proven.               |
+| Scheduling                 | Complete | Cron/interval reconciliation, overlap, misfire, enable/disable, manual fire, system causation, and test firing are proven. |
 
 ## Security
 
-| Capability | State | Remaining acceptance work |
-| --- | --- | --- |
-| Email/password identities | Complete | Registration, verification, reset/change, single-use challenges, breached-password hook, and audit are proven. |
-| Browser sessions | Complete | Digest-only storage, CSRF, rotation, bounded grace, replay rejection, listing, revocation, and pruning are proven. |
-| Opaque bearer access tokens | Complete | Issuance, constraints, ambiguity rejection, rotation, revocation, audit, fakes, and CLI management are proven. |
-| Authentication abuse controls | Complete | Durable hashed buckets, stable 429/Retry-After, recovery privacy, dummy verification, and audit are proven. |
-| Authorization | Complete | Every entry role, resource decisions, default denial, bearer narrowing, audit, fakes, and diagnostics are proven. |
-| Auth testing | Complete | `actingAs`, HTTP identity override, stateful identity/session/token fakes, and revocation assertions are proven. |
-| Security readiness | Complete | Threat model, internal negative review, provenance/boundary audit, redaction, and a mandatory external pre-1.0 gate are documented. |
+| Capability                    | State    | Remaining acceptance work                                                                                                           |
+| ----------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Email/password identities     | Complete | Registration, verification, reset/change, single-use challenges, breached-password hook, and audit are proven.                      |
+| Browser sessions              | Complete | Digest-only storage, CSRF, rotation, bounded grace, replay rejection, listing, revocation, and pruning are proven.                  |
+| Opaque bearer access tokens   | Complete | Issuance, constraints, ambiguity rejection, rotation, revocation, audit, fakes, and CLI management are proven.                      |
+| Authentication abuse controls | Complete | Durable hashed buckets, stable 429/Retry-After, recovery privacy, dummy verification, and audit are proven.                         |
+| Authorization                 | Complete | Every entry role, resource decisions, default denial, bearer narrowing, audit, fakes, and diagnostics are proven.                   |
+| Auth testing                  | Complete | `actingAs`, HTTP identity override, stateful identity/session/token fakes, and revocation assertions are proven.                    |
+| Security readiness            | Complete | Threat model, internal negative review, provenance/boundary audit, redaction, and a mandatory external pre-1.0 gate are documented. |
 
 ## Communications and infrastructure
 
-| Capability | State | Remaining acceptance work |
-| --- | --- | --- |
-| Canopy mail contract | Complete | Transactional outbox delivery, normalized state, fakes, telemetry, inspection, and redrive are proven. |
-| SendGrid adapter | Complete | Request translation, failure classes, signed timestamp-bounded webhooks, deduplication, and conformance fixtures are proven. |
-| Canopy SMS contract | Complete | Transactional outbox delivery, normalized state, fakes, telemetry, inspection, and redrive are proven. |
-| Twilio adapter | Complete | Messaging Service translation, opt-out classification, signed callbacks, and conformance fixtures are proven. |
-| Cache | Complete | Canopy port, memory/PostgreSQL adapters, TTL, atomic operations, injection, inspection, forget, and prune are proven. |
+| Capability           | State    | Remaining acceptance work                                                                                                    |
+| -------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Canopy mail contract | Complete | Transactional outbox delivery, normalized state, fakes, telemetry, inspection, and redrive are proven.                       |
+| SendGrid adapter     | Complete | Request translation, failure classes, signed timestamp-bounded webhooks, deduplication, and conformance fixtures are proven. |
+| Canopy SMS contract  | Complete | Transactional outbox delivery, normalized state, fakes, telemetry, inspection, and redrive are proven.                       |
+| Twilio adapter       | Complete | Messaging Service translation, opt-out classification, signed callbacks, and conformance fixtures are proven.                |
+| Cache                | Complete | Canopy port, memory/PostgreSQL adapters, TTL, atomic operations, injection, inspection, forget, and prune are proven.        |
 
 ## Observability and operability
 
-| Capability | State | Remaining acceptance work |
-| --- | --- | --- |
-| Structured logs | Complete | Automatic role-bound loggers, ordinary-service constructor injection, recursive redaction, contextual framework channels, colored TTY output, NDJSON output, and in-memory assertions are proven. |
-| W3C trace context | Complete | HTTP validation/propagation plus durable queue, delivery, journal, and outbox correlation are proven. |
-| Metrics | Complete | Lifecycle, execution/HTTP, persistence, auth, authorization, queue/schedule, and communications instruments are proven. |
-| Diagnostics | Complete | Graph, routes, policies, observers, listeners, jobs, schedules, auth, delivery, journal, outbox, and cache are inspectable through Arbor; `db:studio` provides safe local database browsing. |
-| Development execution debugger | Complete | Optional Undergrowth capture, redaction, causal PostgreSQL timelines, bounded retention, loopback UI, Arbor workflow, Cultivate knowledge, and an automatic test fake are proven. |
-| Operator recovery | Complete | Queue, delivery, schedule, session, token, cache, and auth-pruning operations are proven through Arbor. |
-| Production topology | Complete | One immutable image boots independent web and combined background roles from prebuilt artifacts; explicit migration, horizontal scheduling safety, advanced scheduler isolation, and bounded shutdown are proven. |
+| Capability                     | State    | Remaining acceptance work                                                                                                                                                                                         |
+| ------------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Structured logs                | Complete | Automatic role-bound loggers, ordinary-service constructor injection, recursive redaction, contextual framework channels, colored TTY output, NDJSON output, and in-memory assertions are proven.                 |
+| W3C trace context              | Complete | HTTP validation/propagation plus durable queue, delivery, journal, and outbox correlation are proven.                                                                                                             |
+| Metrics                        | Complete | Lifecycle, execution/HTTP, persistence, auth, authorization, queue/schedule, and communications instruments are proven.                                                                                           |
+| Diagnostics                    | Complete | Graph, routes, policies, observers, listeners, jobs, schedules, auth, delivery, journal, outbox, and cache are inspectable through Arbor; `db:studio` provides safe local database browsing.                      |
+| Development execution debugger | Complete | Optional Undergrowth capture, redaction, causal PostgreSQL timelines, bounded retention, loopback UI, Arbor workflow, Cultivate knowledge, and an automatic test fake are proven.                                 |
+| Operator recovery              | Complete | Queue, delivery, schedule, session, token, cache, and auth-pruning operations are proven through Arbor.                                                                                                           |
+| Production topology            | Complete | One immutable image boots independent web and combined background roles from prebuilt artifacts; explicit migration, horizontal scheduling safety, advanced scheduler isolation, and bounded shutdown are proven. |
 
 ## Developer experience
 
-| Capability | State | Remaining acceptance work |
-| --- | --- | --- |
-| Arbor command kernel | Complete | One first-party executable owns generation, build, run, migration, inspection, recovery, and application commands. |
-| `new` application generator | Complete | A clean generated app compiles and boots auth, HTTP, persistence, policy, model, observer, event, signal, job, schedule, mail, SMS, telemetry, and tests. |
-| `make:*` generators | Complete | Every canonical role is generated, registered, overwrite-safe, and authorization-explicit. |
-| Database commands | Complete | Forward migration, status, batching, checksums, advisory lock, and drift refusal are proven; destructive rollback is intentionally excluded. |
-| Runtime commands | Complete | `serve`, default combined `work`, advanced isolated `work --without-scheduler`/`schedule`, combined dev, and fail-safe fresh-runtime hot reload are proven. |
-| Inspection commands | Complete | Graph, routes, reactive roles, policies, commands, queues, deliveries, infrastructure, auth, and schedules are proven. |
-| Testing package and fakes | Complete | HTTP/auth/persistence/queue/comms/cache/telemetry plus direct event, signal, job, and schedule APIs are proven against real manifests. |
-| Cultivate integration | Complete | Derived manifest knowledge, command discovery, conventions, principles, and safe mutation guidance are generated. |
+| Capability                  | State    | Remaining acceptance work                                                                                                                                   |
+| --------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Arbor command kernel        | Complete | One first-party executable owns generation, build, run, migration, inspection, recovery, and application commands.                                          |
+| `new` application generator | Complete | A clean generated app compiles and boots auth, HTTP, persistence, policy, model, observer, event, signal, job, schedule, mail, SMS, telemetry, and tests.   |
+| `make:*` generators         | Complete | Every canonical role is generated, registered, overwrite-safe, and authorization-explicit.                                                                  |
+| Database commands           | Complete | Forward migration, status, batching, checksums, advisory lock, and drift refusal are proven; destructive rollback is intentionally excluded.                |
+| Runtime commands            | Complete | `serve`, default combined `work`, advanced isolated `work --without-scheduler`/`schedule`, combined dev, and fail-safe fresh-runtime hot reload are proven. |
+| Inspection commands         | Complete | Graph, routes, reactive roles, policies, commands, queues, deliveries, infrastructure, auth, and schedules are proven.                                      |
+| Testing package and fakes   | Complete | HTTP/auth/persistence/queue/comms/cache/telemetry plus direct event, signal, job, and schedule APIs are proven against real manifests.                      |
+| Cultivate integration       | Complete | Derived manifest knowledge, command discovery, conventions, principles, and safe mutation guidance are generated.                                           |
 
 ## Reference application acceptance
 
@@ -137,8 +137,8 @@ Canopy may be called an MVP only when:
 
 ## Post-MVP compatibility commitments
 
-| Capability | State | Direction |
-| --- | --- | --- |
-| Existing-table model mapping | MVP common path complete | Laravel-like table/key/column/timestamp/version metadata; advanced multi-record mappers remain future work. |
-| Existing-table auth mapping | MVP common path complete | Explicit external identity/credential mapping with Canopy-owned session, token, challenge, abuse, and audit tables. |
-| First-party roles and permissions | Deferred | Stable abilities and policies remain core; storage and assignment wait for existing-table mapping and production evidence. |
+| Capability                        | State                    | Direction                                                                                                                  |
+| --------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| Existing-table model mapping      | MVP common path complete | Laravel-like table/key/column/timestamp/version metadata; advanced multi-record mappers remain future work.                |
+| Existing-table auth mapping       | MVP common path complete | Explicit external identity/credential mapping with Canopy-owned session, token, challenge, abuse, and audit tables.        |
+| First-party roles and permissions | Deferred                 | Stable abilities and policies remain core; storage and assignment wait for existing-table mapping and production evidence. |

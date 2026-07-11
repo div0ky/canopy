@@ -10,8 +10,8 @@ Canopy's public validation boundary will accept Standard Schema-compatible valid
 pin, document, generate, and teach Zod 4 as the default schema implementation.
 
 Canopy owns validation phases, input-source selection, coercion policy, stable issue codes, error
-documents, localization, diagnostics, OpenAPI or contract generation, and testing assertions.
-Zod supplies the default schema-definition and validation algorithms.
+documents, localization, diagnostics, OpenAPI or contract generation, and testing assertions. Zod
+supplies the default schema-definition and validation algorithms.
 
 ## Boundary
 

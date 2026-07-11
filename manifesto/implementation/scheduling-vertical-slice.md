@@ -59,8 +59,8 @@ The compiler requires:
 - A JSON-literal input, with no factories, spreads, or runtime evaluation.
 
 That last restriction is intentional. The complete firing contract is readable without executing
-application code, deterministic for deployment reconciliation, and trivial for Cultivate to
-inspect and generate.
+application code, deterministic for deployment reconciliation, and trivial for Cultivate to inspect
+and generate.
 
 ## Defaults and policies
 
@@ -79,12 +79,12 @@ The proof supports only `misfire = 'skip'`: downtime does not create an unbounde
 
 ## Reconciliation and distributed safety
 
-Cron declarations are upserted by stable schedule key. A schedule moved between overlap policies
-is removed from the old internal queue, and stale Canopy-owned cron records are removed. Running
-the same manifest from multiple processes converges on the same pg-boss records.
+Cron declarations are upserted by stable schedule key. A schedule moved between overlap policies is
+removed from the old internal queue, and stale Canopy-owned cron records are removed. Running the
+same manifest from multiple processes converges on the same pg-boss records.
 
-Intervals are aligned to deterministic Unix-time slots. Every process may attempt to admit the
-next slot, but the schedule ID and slot derive one stable UUID, so PostgreSQL admits at most one
+Intervals are aligned to deterministic Unix-time slots. Every process may attempt to admit the next
+slot, but the schedule ID and slot derive one stable UUID, so PostgreSQL admits at most one
 transport record. This gives interval scheduling distributed ownership without a process-local
 leader or a second coordination service. A stopped application skips elapsed slots by design.
 
@@ -134,4 +134,5 @@ This is the first scheduling proof, not the final production scheduler. Still re
 
 ## Next slice
 
-Completed next: [email and password authentication vertical slice](email-password-auth-vertical-slice.md).
+Completed next:
+[email and password authentication vertical slice](email-password-auth-vertical-slice.md).

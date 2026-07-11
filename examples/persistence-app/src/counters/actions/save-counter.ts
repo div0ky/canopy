@@ -27,8 +27,7 @@ export class SaveCounter extends Action<SaveCounterInput, SaveCounterResult> {
   static override readonly access = 'public'
 
   async handle(input: SaveCounterInput): Promise<SaveCounterResult> {
-    const counter = await Counter.find(input.id)
-      ?? Counter.make({ id: input.id, value: 0 })
+    const counter = (await Counter.find(input.id)) ?? Counter.make({ id: input.id, value: 0 })
     const originalValue = counter.getOriginal('value')
     if (input.delayAfterLoad) {
       await new Promise((resolve) => setTimeout(resolve, input.delayAfterLoad))

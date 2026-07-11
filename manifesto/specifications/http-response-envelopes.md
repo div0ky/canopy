@@ -49,9 +49,9 @@ successful domain data or private exception material.
 
 HTTP status codes retain their normal meaning. The envelope does not turn failures into `200`
 responses. Creation may use `201`, accepted work may use `202`, validation uses `422`, and so on.
-`Http.created(payload)`, `Http.accepted(payload)`, and `Http.json(payload, status, headers)` exist for
-the cases where a route must select status or headers; these helpers still construct the canonical
-success envelope automatically.
+`Http.created(payload)`, `Http.accepted(payload)`, and `Http.json(payload, status, headers)` exist
+for the cases where a route must select status or headers; these helpers still construct the
+canonical success envelope automatically.
 
 ## Automatic boundary behavior
 
@@ -65,7 +65,7 @@ success envelope automatically.
 - Returning an explicit `Response` is the visible escape hatch. Ordinary JSON endpoints should
   return payloads directly.
 
-Pagination and collection metadata belong inside successful `data`. Machine clients branch on
-`ok` and `code`, never parse `message`, and never need endpoint-specific error object locations.
-Generated routes, tests, the Field Guide client, and future Cultivate-generated clients must all
-use this contract.
+Pagination and collection metadata belong inside successful `data`. Machine clients branch on `ok`
+and `code`, never parse `message`, and never need endpoint-specific error object locations.
+Generated routes, tests, the Field Guide client, and future Cultivate-generated clients must all use
+this contract.

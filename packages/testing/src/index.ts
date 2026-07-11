@@ -52,7 +52,14 @@ import {
 import { HonoHttpEngine } from '@canopy/http-hono'
 import { Canopy, type BootOptions, type CanopyRuntime } from '@canopy/runtime'
 
-export { FakeMailTransport, FakeSmsTransport, MemoryCache, MemoryLogSink, MemoryObservationRecorder, MemoryTelemetry }
+export {
+  FakeMailTransport,
+  FakeSmsTransport,
+  MemoryCache,
+  MemoryLogSink,
+  MemoryObservationRecorder,
+  MemoryTelemetry,
+}
 
 export class TestObservationRecorder extends MemoryObservationRecorder {
   start(): void {}
@@ -90,10 +97,15 @@ export class CanopyTestHarness {
       ...(auth && options.authProviderId ? { [options.authProviderId]: auth } : {}),
     }
     const logs = new MemoryLogSink()
-    const logging = options.logging === false
-      ? false as const
-      : { level: 'debug' as const, ...options.logging, sink: logs }
-    const runtime = await Canopy.boot(application, { ...options, providerOverrides: overrides, logging })
+    const logging =
+      options.logging === false
+        ? (false as const)
+        : { level: 'debug' as const, ...options.logging, sink: logs }
+    const runtime = await Canopy.boot(application, {
+      ...options,
+      providerOverrides: overrides,
+      logging,
+    })
     return new CanopyTestHarness(runtime, logs, auth, observation?.recorder)
   }
 
@@ -104,11 +116,20 @@ export class CanopyTestHarness {
     return this
   }
 
-  actingAsUser(id: string = randomUUID()): this { return this.actingAs({ kind: 'user', id }) }
-  actingAsSystem(id: string = 'canopy:test'): this { return this.actingAs({ kind: 'system', id }) }
-  asAnonymous(): this { return this.actingAs({ kind: 'anonymous' }) }
+  actingAsUser(id: string = randomUUID()): this {
+    return this.actingAs({ kind: 'user', id })
+  }
+  actingAsSystem(id: string = 'canopy:test'): this {
+    return this.actingAs({ kind: 'system', id })
+  }
+  asAnonymous(): this {
+    return this.actingAs({ kind: 'anonymous' })
+  }
 
-  action<Input, Output>(action: ActionClass<Input, Output>, input: Input): Promise<Awaited<Output>> {
+  action<Input, Output>(
+    action: ActionClass<Input, Output>,
+    input: Input,
+  ): Promise<Awaited<Output>> {
     return this.admit(() => this.runtime.actions.execute(action, input), 'test:action')
   }
 
@@ -117,21 +138,29 @@ export class CanopyTestHarness {
   }
 
   event<Arguments extends readonly unknown[], Instance extends Event<unknown>>(
-    event: (new (...arguments_: Arguments) => Instance) & { readonly id: string; dispatch(...arguments_: Arguments): Promise<void> },
+    event: (new (...arguments_: Arguments) => Instance) & {
+      readonly id: string
+      dispatch(...arguments_: Arguments): Promise<void>
+    },
     ...arguments_: Arguments
   ): Promise<void> {
     return this.admit(() => event.dispatch(...arguments_), `test:event:${event.id}`)
   }
 
   signal<Arguments extends readonly unknown[], Instance extends Signal<unknown>>(
-    signal: (new (...arguments_: Arguments) => Instance) & { readonly id: string; dispatch(...arguments_: Arguments): Promise<void> },
+    signal: (new (...arguments_: Arguments) => Instance) & {
+      readonly id: string
+      dispatch(...arguments_: Arguments): Promise<void>
+    },
     ...arguments_: Arguments
   ): Promise<void> {
     return this.admit(() => signal.dispatch(...arguments_), `test:signal:${signal.id}`)
   }
 
   job<Input, Instance extends Job<Input>>(
-    job: JobConstructor<Instance, Input> & { dispatch(input: Input, options?: JobDispatchOptions): Promise<string> },
+    job: JobConstructor<Instance, Input> & {
+      dispatch(input: Input, options?: JobDispatchOptions): Promise<string>
+    },
     input: Input,
     options?: JobDispatchOptions,
   ): Promise<string> {
@@ -147,28 +176,41 @@ export class CanopyTestHarness {
     return this.http.fetch(request)
   }
 
-  shutdown(): Promise<void> { return this.runtime.shutdown() }
+  shutdown(): Promise<void> {
+    return this.runtime.shutdown()
+  }
 
   private admit<Output>(work: () => Promise<Output>, name: string): Promise<Output> {
-    return this.runtime.admit({
-      actor: this.#actor,
-      authentication: this.#authentication,
-      transport: { kind: 'test', name },
-    }, work)
+    return this.runtime.admit(
+      {
+        actor: this.#actor,
+        authentication: this.#authentication,
+        transport: { kind: 'test', name },
+      },
+      work,
+    )
   }
 }
 
 async function testObservationOverride(
   artifactsDirectory: string | undefined,
-): Promise<{ readonly providerId: string; readonly recorder: TestObservationRecorder } | undefined> {
+): Promise<
+  { readonly providerId: string; readonly recorder: TestObservationRecorder } | undefined
+> {
   const manifestPath = path.join(path.resolve(artifactsDirectory ?? '.canopy'), 'manifest.json')
   try {
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
       providers?: Array<{ id: string; capabilities?: readonly string[] }>
     }
-    const provider = manifest.providers?.find((entry) => entry.capabilities?.includes('observations'))
-    return provider ? { providerId: provider.id, recorder: new TestObservationRecorder() } : undefined
-  } catch { return undefined }
+    const provider = manifest.providers?.find((entry) =>
+      entry.capabilities?.includes('observations'),
+    )
+    return provider
+      ? { providerId: provider.id, recorder: new TestObservationRecorder() }
+      : undefined
+  } catch {
+    return undefined
+  }
 }
 
 export class TestAuth extends Auth {
@@ -176,77 +218,175 @@ export class TestAuth extends Auth {
   readonly #identities = new Map<string, AuthIdentity>()
   readonly #sessions = new Map<string, AuthSession>()
   readonly #accessTokens = new Map<string, AuthAccessToken>()
-  #resolved: ResolvedHttpAuthentication = { actor: { kind: 'anonymous' }, authentication: { state: 'anonymous' } }
+  #resolved: ResolvedHttpAuthentication = {
+    actor: { kind: 'anonymous' },
+    authentication: { state: 'anonymous' },
+  }
 
   actingAs(actor: ActorRef, authentication?: AuthenticationContext): void {
     if (actor.kind === 'user' && actor.id && !this.#identities.has(actor.id)) {
-      this.#identities.set(actor.id, { id: actor.id, email: `${actor.id}@canopy.test`, emailVerified: true, createdAt: new Date() })
+      this.#identities.set(actor.id, {
+        id: actor.id,
+        email: `${actor.id}@canopy.test`,
+        emailVerified: true,
+        createdAt: new Date(),
+      })
     }
-    this.#resolved = { actor: { ...actor }, authentication: authentication ?? authenticationFor(actor) }
+    this.#resolved = {
+      actor: { ...actor },
+      authentication: authentication ?? authenticationFor(actor),
+    }
   }
   async register(input: RegistrationInput): Promise<AuthIdentity> {
-    const identity = { id: randomUUID(), email: input.email.toLowerCase(), emailVerified: true, createdAt: new Date() }
-    this.#identities.set(identity.id, identity); return identity
+    const identity = {
+      id: randomUUID(),
+      email: input.email.toLowerCase(),
+      emailVerified: true,
+      createdAt: new Date(),
+    }
+    this.#identities.set(identity.id, identity)
+    return identity
   }
-  async findIdentity(id: string): Promise<AuthIdentity | undefined> { return this.#identities.get(id) }
+  async findIdentity(id: string): Promise<AuthIdentity | undefined> {
+    return this.#identities.get(id)
+  }
   async login(input: LoginInput, _metadata?: AuthRequestMetadata): Promise<AuthSessionGrant> {
-    const identity = [...this.#identities.values()].find((value) => value.email === input.email.toLowerCase()) ?? await this.register({ ...input })
-    const now = new Date(); const session = { id: randomUUID(), identityId: identity.id, createdAt: now, authenticatedAt: now, expiresAt: new Date(now.getTime() + 3_600_000) }
+    const identity =
+      [...this.#identities.values()].find((value) => value.email === input.email.toLowerCase()) ??
+      (await this.register({ ...input }))
+    const now = new Date()
+    const session = {
+      id: randomUUID(),
+      identityId: identity.id,
+      createdAt: now,
+      authenticatedAt: now,
+      expiresAt: new Date(now.getTime() + 3_600_000),
+    }
     this.#sessions.set(session.id, session)
     return { identity, session, token: SecretString.from(`test-session-${session.id}`) }
   }
-  async issueEmailVerification(identityId: string): Promise<AuthChallengeGrant> { return { identityId, token: SecretString.from(`test-verify-${identityId}`), expiresAt: new Date(Date.now() + 3_600_000) } }
+  async issueEmailVerification(identityId: string): Promise<AuthChallengeGrant> {
+    return {
+      identityId,
+      token: SecretString.from(`test-verify-${identityId}`),
+      expiresAt: new Date(Date.now() + 3_600_000),
+    }
+  }
   async verifyEmail(token: string): Promise<AuthIdentity> {
-    const id = token.replace(/^test-verify-/, ''); const identity = this.#identities.get(id)
+    const id = token.replace(/^test-verify-/, '')
+    const identity = this.#identities.get(id)
     if (!identity) throw new Error('Invalid test verification token.')
-    const verified = { ...identity, emailVerified: true }; this.#identities.set(id, verified); return verified
+    const verified = { ...identity, emailVerified: true }
+    this.#identities.set(id, verified)
+    return verified
   }
   async issuePasswordReset(email: string): Promise<AuthChallengeGrant | undefined> {
-    const identity = [...this.#identities.values()].find((value) => value.email === email.toLowerCase())
-    return identity ? { identityId: identity.id, token: SecretString.from(`test-reset-${identity.id}`), expiresAt: new Date(Date.now() + 3_600_000) } : undefined
+    const identity = [...this.#identities.values()].find(
+      (value) => value.email === email.toLowerCase(),
+    )
+    return identity
+      ? {
+          identityId: identity.id,
+          token: SecretString.from(`test-reset-${identity.id}`),
+          expiresAt: new Date(Date.now() + 3_600_000),
+        }
+      : undefined
   }
   async resetPassword(_token: string, _newPassword: string): Promise<void> {}
-  async changePassword(_identityId: string, _currentPassword: string, _newPassword: string): Promise<void> {}
-  async revokeSession(id: string): Promise<void> { const value = this.#sessions.get(id); if (value) this.#sessions.set(id, { ...value, revokedAt: new Date() }) }
-  async listSessions(id: string): Promise<readonly AuthSession[]> { return [...this.#sessions.values()].filter((value) => value.identityId === id) }
+  async changePassword(
+    _identityId: string,
+    _currentPassword: string,
+    _newPassword: string,
+  ): Promise<void> {}
+  async revokeSession(id: string): Promise<void> {
+    const value = this.#sessions.get(id)
+    if (value) this.#sessions.set(id, { ...value, revokedAt: new Date() })
+  }
+  async listSessions(id: string): Promise<readonly AuthSession[]> {
+    return [...this.#sessions.values()].filter((value) => value.identityId === id)
+  }
   async revokeAllSessions(id: string): Promise<number> {
-    const active = [...this.#sessions.values()].filter((value) => value.identityId === id && !value.revokedAt)
+    const active = [...this.#sessions.values()].filter(
+      (value) => value.identityId === id && !value.revokedAt,
+    )
     for (const value of active) this.#sessions.set(value.id, { ...value, revokedAt: new Date() })
     return active.length
   }
-  async issueAccessToken(identityId: string, input: IssueAccessTokenInput): Promise<AuthAccessTokenGrant> {
-    const now = new Date(); const id = randomUUID()
-    const accessToken = { id, identityId, name: input.name, displayPrefix: 'test', constraints: input.constraints ?? [], createdAt: now, expiresAt: input.expiresAt ?? new Date(now.getTime() + 3_600_000) }
+  async issueAccessToken(
+    identityId: string,
+    input: IssueAccessTokenInput,
+  ): Promise<AuthAccessTokenGrant> {
+    const now = new Date()
+    const id = randomUUID()
+    const accessToken = {
+      id,
+      identityId,
+      name: input.name,
+      displayPrefix: 'test',
+      constraints: input.constraints ?? [],
+      createdAt: now,
+      expiresAt: input.expiresAt ?? new Date(now.getTime() + 3_600_000),
+    }
     this.#accessTokens.set(id, accessToken)
     return { accessToken, token: SecretString.from(`test-token-${id}`) }
   }
-  async listAccessTokens(id: string): Promise<readonly AuthAccessToken[]> { return [...this.#accessTokens.values()].filter((value) => value.identityId === id) }
-  rotateAccessToken(identityId: string, id: string): Promise<AuthAccessTokenGrant> { return this.issueAccessToken(identityId, { name: id }) }
+  async listAccessTokens(id: string): Promise<readonly AuthAccessToken[]> {
+    return [...this.#accessTokens.values()].filter((value) => value.identityId === id)
+  }
+  rotateAccessToken(identityId: string, id: string): Promise<AuthAccessTokenGrant> {
+    return this.issueAccessToken(identityId, { name: id })
+  }
   async revokeAccessToken(identityId: string, tokenId: string): Promise<void> {
     const value = this.#accessTokens.get(tokenId)
-    if (value?.identityId === identityId) this.#accessTokens.set(tokenId, { ...value, revokedAt: new Date() })
+    if (value?.identityId === identityId)
+      this.#accessTokens.set(tokenId, { ...value, revokedAt: new Date() })
   }
-  isSessionRevoked(id: string): boolean { return Boolean(this.#sessions.get(id)?.revokedAt) }
-  isAccessTokenRevoked(id: string): boolean { return Boolean(this.#accessTokens.get(id)?.revokedAt) }
-  async recordAuthorization(ability: string, decision: PolicyDecision, _context: ExecutionContext): Promise<void> { this.authorizationDecisions.push({ ability, decision }) }
-  async resolveHttp(_request: Request): Promise<ResolvedHttpAuthentication> { return this.#resolved }
-  sessionCookie(grant: AuthSessionGrant): string { return `canopy_session=${grant.token.reveal()}; HttpOnly; SameSite=Lax; Path=/` }
-  expiredSessionCookie(): string { return 'canopy_session=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/' }
+  isSessionRevoked(id: string): boolean {
+    return Boolean(this.#sessions.get(id)?.revokedAt)
+  }
+  isAccessTokenRevoked(id: string): boolean {
+    return Boolean(this.#accessTokens.get(id)?.revokedAt)
+  }
+  async recordAuthorization(
+    ability: string,
+    decision: PolicyDecision,
+    _context: ExecutionContext,
+  ): Promise<void> {
+    this.authorizationDecisions.push({ ability, decision })
+  }
+  async resolveHttp(_request: Request): Promise<ResolvedHttpAuthentication> {
+    return this.#resolved
+  }
+  sessionCookie(grant: AuthSessionGrant): string {
+    return `canopy_session=${grant.token.reveal()}; HttpOnly; SameSite=Lax; Path=/`
+  }
+  expiredSessionCookie(): string {
+    return 'canopy_session=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/'
+  }
 }
 
 export class FakeQueueManager extends QueueManager {
   readonly queued: QueueEnvelope[] = []
   readonly schedules = new Map<string, ScheduleDefinition>()
   #handler?: QueueDeliveryHandler
-  bind(handler: QueueDeliveryHandler): void { this.#handler = handler }
+  bind(handler: QueueDeliveryHandler): void {
+    this.#handler = handler
+  }
   reconcileSchedules(schedules: readonly ScheduleDefinition[]): void {
     this.schedules.clear()
     for (const schedule of schedules) this.schedules.set(schedule.id, structuredClone(schedule))
   }
-  async enqueue(envelope: QueueEnvelope): Promise<string> { this.queued.push(structuredClone(envelope)); return envelope.id }
-  async flushOutbox(): Promise<number> { return 0 }
+  async enqueue(envelope: QueueEnvelope): Promise<string> {
+    this.queued.push(structuredClone(envelope))
+    return envelope.id
+  }
+  async flushOutbox(): Promise<number> {
+    return 0
+  }
   async findJob(id: string): Promise<QueueJobRecord | undefined> {
-    return this.queued.some((job) => job.id === id) ? { id, state: 'created', retryCount: 0, retryLimit: 0 } : undefined
+    return this.queued.some((job) => job.id === id)
+      ? { id, state: 'created', retryCount: 0, retryLimit: 0 }
+      : undefined
   }
   async runNext(attempt = 1): Promise<void> {
     const envelope = this.queued.shift()
@@ -274,7 +414,11 @@ export class FakeQueueManager extends QueueManager {
           actor: { kind: 'system', id: 'canopy:test-scheduler' },
           initiator: { kind: 'system', id: 'canopy:test-scheduler' },
           delegation: [],
-          authentication: { state: 'authenticated', identityId: 'canopy:test-scheduler', method: 'schedule' },
+          authentication: {
+            state: 'authenticated',
+            identityId: 'canopy:test-scheduler',
+            method: 'schedule',
+          },
           trace: {},
           timeZone: schedule.timeZone,
         },
@@ -285,7 +429,9 @@ export class FakeQueueManager extends QueueManager {
   }
   hasQueued(target: string | { readonly id: string }): boolean {
     const id = typeof target === 'string' ? target : target.id
-    return this.queued.some((envelope) => envelope.targetId === id || envelope.targetId.endsWith(`/${id}`))
+    return this.queued.some(
+      (envelope) => envelope.targetId === id || envelope.targetId.endsWith(`/${id}`),
+    )
   }
 }
 
@@ -297,9 +443,19 @@ interface MemoryState {
 }
 
 export class MemoryTransactionManager extends TransactionManager {
-  readonly state: MemoryState = { entities: new Map(), journal: [], outbox: [], deliveries: new Map() }
-  constructor(private readonly queue?: QueueManager) { super() }
-  async transaction<Output>(_context: ExecutionContext, work: (unitOfWork: UnitOfWork) => Promise<Output>): Promise<Output> {
+  readonly state: MemoryState = {
+    entities: new Map(),
+    journal: [],
+    outbox: [],
+    deliveries: new Map(),
+  }
+  constructor(private readonly queue?: QueueManager) {
+    super()
+  }
+  async transaction<Output>(
+    _context: ExecutionContext,
+    work: (unitOfWork: UnitOfWork) => Promise<Output>,
+  ): Promise<Output> {
     const draft = cloneState(this.state)
     const outboxStart = draft.outbox.length
     const unit = new MemoryUnitOfWork(draft)
@@ -308,7 +464,8 @@ export class MemoryTransactionManager extends TransactionManager {
     await unit.commit()
     if (this.queue) {
       for (const message of draft.outbox.slice(outboxStart)) {
-        if (message.type === 'canopy.queue') await this.queue.enqueue(message.payload as unknown as QueueEnvelope)
+        if (message.type === 'canopy.queue')
+          await this.queue.enqueue(message.payload as unknown as QueueEnvelope)
       }
     }
     return output
@@ -317,33 +474,74 @@ export class MemoryTransactionManager extends TransactionManager {
 
 class MemoryUnitOfWork extends UnitOfWork {
   readonly #afterCommit: Array<() => void | Promise<void>> = []
-  constructor(private readonly state: MemoryState) { super() }
-  async findEntity<State extends JsonValue>(type: string, id: string): Promise<PersistedEntity<State> | undefined> { return this.state.entities.get(`${type}/${id}`) as PersistedEntity<State> | undefined }
+  constructor(private readonly state: MemoryState) {
+    super()
+  }
+  async findEntity<State extends JsonValue>(
+    type: string,
+    id: string,
+  ): Promise<PersistedEntity<State> | undefined> {
+    return this.state.entities.get(`${type}/${id}`) as PersistedEntity<State> | undefined
+  }
   async saveEntity<State extends JsonValue>(entity: SaveEntity<State>): Promise<number> {
-    const key = `${entity.type}/${entity.id}`; const current = this.state.entities.get(key)
-    if ((current?.version) !== entity.expectedVersion) throw new Error(`Optimistic concurrency conflict for ${key}.`)
+    const key = `${entity.type}/${entity.id}`
+    const current = this.state.entities.get(key)
+    if (current?.version !== entity.expectedVersion)
+      throw new Error(`Optimistic concurrency conflict for ${key}.`)
     const version = (current?.version ?? 0) + 1
-    this.state.entities.set(key, { type: entity.type, id: entity.id, version, state: structuredClone(entity.state) }); return version
+    this.state.entities.set(key, {
+      type: entity.type,
+      id: entity.id,
+      version,
+      state: structuredClone(entity.state),
+    })
+    return version
   }
   async deleteEntity(type: string, id: string, expectedVersion: number): Promise<void> {
-    const key = `${type}/${id}`; if (this.state.entities.get(key)?.version !== expectedVersion) throw new Error(`Optimistic concurrency conflict for ${key}.`); this.state.entities.delete(key)
+    const key = `${type}/${id}`
+    if (this.state.entities.get(key)?.version !== expectedVersion)
+      throw new Error(`Optimistic concurrency conflict for ${key}.`)
+    this.state.entities.delete(key)
   }
-  async record<Payload extends JsonValue>(fact: JournalFact<Payload>): Promise<string> { this.state.journal.push(structuredClone(fact)); return randomUUID() }
-  async enqueue<Payload extends JsonValue>(message: OutboxMessage<Payload>): Promise<string> { this.state.outbox.push(structuredClone(message)); return randomUUID() }
-  async stageDelivery(delivery: StagedDelivery): Promise<void> { this.state.deliveries.set(delivery.id, { ...structuredClone(delivery), state: 'pending' }) }
-  async transitionDelivery(transition: DeliveryTransition): Promise<void> { const value = this.state.deliveries.get(transition.messageId); if (value) this.state.deliveries.set(transition.messageId, { ...value, state: transition.state }) }
-  afterCommit(callback: () => void | Promise<void>): void { this.#afterCommit.push(callback) }
-  async commit(): Promise<void> { for (const callback of this.#afterCommit) await callback() }
+  async record<Payload extends JsonValue>(fact: JournalFact<Payload>): Promise<string> {
+    this.state.journal.push(structuredClone(fact))
+    return randomUUID()
+  }
+  async enqueue<Payload extends JsonValue>(message: OutboxMessage<Payload>): Promise<string> {
+    this.state.outbox.push(structuredClone(message))
+    return randomUUID()
+  }
+  async stageDelivery(delivery: StagedDelivery): Promise<void> {
+    this.state.deliveries.set(delivery.id, { ...structuredClone(delivery), state: 'pending' })
+  }
+  async transitionDelivery(transition: DeliveryTransition): Promise<void> {
+    const value = this.state.deliveries.get(transition.messageId)
+    if (value)
+      this.state.deliveries.set(transition.messageId, { ...value, state: transition.state })
+  }
+  afterCommit(callback: () => void | Promise<void>): void {
+    this.#afterCommit.push(callback)
+  }
+  async commit(): Promise<void> {
+    for (const callback of this.#afterCommit) await callback()
+  }
 }
 
 function cloneState(state: MemoryState): MemoryState {
-  return { entities: new Map(structuredClone([...state.entities])), journal: structuredClone(state.journal), outbox: structuredClone(state.outbox), deliveries: new Map(structuredClone([...state.deliveries])) }
+  return {
+    entities: new Map(structuredClone([...state.entities])),
+    journal: structuredClone(state.journal),
+    outbox: structuredClone(state.outbox),
+    deliveries: new Map(structuredClone([...state.deliveries])),
+  }
 }
 function replaceState(target: MemoryState, source: MemoryState): void {
-  target.entities.clear(); for (const [key, value] of source.entities) target.entities.set(key, value)
+  target.entities.clear()
+  for (const [key, value] of source.entities) target.entities.set(key, value)
   target.journal.splice(0, target.journal.length, ...source.journal)
   target.outbox.splice(0, target.outbox.length, ...source.outbox)
-  target.deliveries.clear(); for (const [key, value] of source.deliveries) target.deliveries.set(key, value)
+  target.deliveries.clear()
+  for (const [key, value] of source.deliveries) target.deliveries.set(key, value)
 }
 
 function authenticationFor(actor: ActorRef): AuthenticationContext {

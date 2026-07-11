@@ -12,14 +12,3 @@ export {
   CANOPY_AUTH_EXTERNAL_IDENTITIES_MIGRATION_URL,
   installAuthSchema,
 } from './migration.js'
-export {
-  authAuditEvents,
-  authChallenges,
-  authRateLimits,
-  authAccessTokens,
-  authIdentities,
-  authPasswords,
-  authSchema,
-  authSessions,
-  type PasswordParameters,
-} from './schema.js'

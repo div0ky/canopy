@@ -1,3 +1,5 @@
 import { FakeSmsTransport } from '@canopy/core'
 
-export class ReferenceSms extends FakeSmsTransport { static id = 'sms' }
+export class ReferenceSms extends FakeSmsTransport {
+  static id = 'sms'
+}

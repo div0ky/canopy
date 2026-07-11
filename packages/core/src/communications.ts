@@ -1,8 +1,14 @@
 import type { JsonValue } from './index.js'
 
 export type DeliveryState =
-  | 'pending' | 'accepted' | 'sent' | 'delivered' | 'undelivered'
-  | 'failed' | 'suppressed' | 'cancelled'
+  | 'pending'
+  | 'accepted'
+  | 'sent'
+  | 'delivered'
+  | 'undelivered'
+  | 'failed'
+  | 'suppressed'
+  | 'cancelled'
 
 export type DeliveryFailureKind = 'transient' | 'permanent' | 'suppressed' | 'opt-out'
 
@@ -58,7 +64,9 @@ export class DeliveryError extends Error {
     readonly kind: DeliveryFailureKind,
     readonly code: string,
     options?: ErrorOptions,
-  ) { super(message, options) }
+  ) {
+    super(message, options)
+  }
 }
 
 export abstract class MailTransport {
@@ -88,7 +96,11 @@ export class FakeMailTransport extends MailTransport {
   readonly sent: MailMessage[] = []
   async send(message: MailMessage): Promise<DeliveryAcceptance> {
     this.sent.push(structuredClone(message))
-    return { messageId: message.id, providerMessageId: `fake-mail:${message.id}`, state: 'accepted' }
+    return {
+      messageId: message.id,
+      providerMessageId: `fake-mail:${message.id}`,
+      state: 'accepted',
+    }
   }
 }
 

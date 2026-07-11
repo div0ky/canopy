@@ -1,8 +1,8 @@
 # Container Deployment
 
-Canopy's default deployment unit is one precompiled immutable image. The image is run as a web
-role, a combined background role, or a one-off migration job. The normative contract is accepted
-in [decision 0026](../decisions/0026-one-image-role-based-container-deployment.md).
+Canopy's default deployment unit is one precompiled immutable image. The image is run as a web role,
+a combined background role, or a one-off migration job. The normative contract is accepted in
+[decision 0026](../decisions/0026-one-image-role-based-container-deployment.md).
 
 ## Canonical workflow
 
@@ -23,9 +23,9 @@ artifacts. `arbor dev` is never a production entrypoint.
   horizontally because schedule identity and reconciliation are distributed-safe.
 - **Migration** applies forward-only migrations as a release step and exits.
 
-Standalone `arbor schedule` is an advanced topology for deployments that need independent
-resource allocation or fault isolation. When used, worker containers must disable schedule
-admission by using the isolated command semantics defined by Arbor.
+Standalone `arbor schedule` is an advanced topology for deployments that need independent resource
+allocation or fault isolation. When used, worker containers must disable schedule admission by using
+the isolated command semantics defined by Arbor.
 
 ## Runtime environment
 

@@ -18,8 +18,12 @@ export class LegacyCustomer extends Model<LegacyCustomerAttributes> {
     active: 'enabled',
   } as const
 
-  get displayName(): string { return this.attributes.displayName }
-  get active(): boolean { return this.attributes.active }
+  get displayName(): string {
+    return this.attributes.displayName
+  }
+  get active(): boolean {
+    return this.attributes.active
+  }
 
   rename(displayName: string): void {
     this.attributes.displayName = displayName

@@ -1,18 +1,48 @@
 {
   "name": "@canopy/runtime",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.1.0-alpha.0",
+  "description": "Artifact-only dependency injection, execution, dispatch, and lifecycle runtime for Canopy.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/div0ky/canopy.git",
+    "directory": "packages/runtime"
+  },
+  "homepage": "https://github.com/div0ky/canopy#readme",
+  "bugs": {
+    "url": "https://github.com/div0ky/canopy/issues"
+  },
+  "keywords": [
+    "canopy",
+    "framework",
+    "runtime",
+    "dependency-injection",
+    "typescript"
+  ],
   "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "NOTICE"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/prepare-package.mjs",
+    "postpack": "node ../../scripts/prepare-package.mjs --clean"
+  },
   "dependencies": {
     "@canopy/core": "workspace:*",
     "@canopy/manifest": "workspace:*"
   }
 }
-

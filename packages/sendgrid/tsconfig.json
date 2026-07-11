@@ -1,1 +1,10 @@
-{"extends":"../../tsconfig.base.json","compilerOptions":{"rootDir":"src","outDir":"dist","tsBuildInfoFile":"dist/.tsbuildinfo"},"references":[{"path":"../core"}],"include":["src/**/*.ts"]}
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "../../.cache/tsbuildinfo/sendgrid.tsbuildinfo"
+  },
+  "references": [{ "path": "../core" }],
+  "include": ["src/**/*.ts"]
+}

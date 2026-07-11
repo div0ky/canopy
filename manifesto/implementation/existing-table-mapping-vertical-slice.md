@@ -3,7 +3,8 @@
 - **Status:** Implemented MVP common path
 - **Implemented:** 2026-07-10
 - **Manifest format:** 10
-- **Decision:** [Map models and authentication to existing tables](../decisions/0023-existing-table-model-auth-mapping.md)
+- **Decision:**
+  [Map models and authentication to existing tables](../decisions/0023-existing-table-model-auth-mapping.md)
 
 ## Outcome
 
@@ -66,9 +67,9 @@ new PostgresAuth({
 ```
 
 Identity IDs are opaque text rather than assumed UUIDs. Identity and password data may share one
-external table or use separate external tables. Browser sessions, bearer tokens, challenges,
-abuse controls, and audit records remain in Canopy-owned tables, preserving secure framework
-semantics without forcing an established application to replace its users table.
+external table or use separate external tables. Browser sessions, bearer tokens, challenges, abuse
+controls, and audit records remain in Canopy-owned tables, preserving secure framework semantics
+without forcing an established application to replace its users table.
 
 Mapped columns are checked during lifecycle readiness. Identifiers are validated before any SQL is
 issued, missing columns prevent readiness, unknown password record formats fail closed, and

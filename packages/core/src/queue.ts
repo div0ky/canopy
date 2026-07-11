@@ -1,21 +1,13 @@
 import { currentJobDispatcher } from './queue-context.js'
 import { CanopyRole } from './role.js'
-import type {
-  ActorRef,
-  JsonValue,
-  TenantRef,
-  TraceContext,
-} from './index.js'
+import type { ActorRef, JsonValue, TenantRef, TraceContext } from './index.js'
 
 export interface JobDispatchOptions {
   readonly delaySeconds?: number
   readonly idempotencyKey?: string
 }
 
-export type JobConstructor<
-  Instance extends Job<Input>,
-  Input,
-> = {
+export type JobConstructor<Instance extends Job<Input>, Input> = {
   new (...dependencies: never[]): Instance
   readonly id: string
 }

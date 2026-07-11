@@ -43,10 +43,7 @@ export interface PostgresTransactionOptions {
 type Database = NodePgDatabase<typeof persistenceSchema>
 type DatabaseSession = Pick<Database, 'select' | 'insert' | 'update' | 'delete' | 'execute'>
 
-export class PostgresTransactionManager
-  extends TransactionManager
-  implements Starts, Disposes
-{
+export class PostgresTransactionManager extends TransactionManager implements Starts, Disposes {
   #pool: Pool | undefined
   #database: Database | undefined
   #connectionString: string
@@ -64,12 +61,8 @@ export class PostgresTransactionManager
     if (context.signal.aborted) throw context.signal.reason
     const pool = new Pool({
       connectionString: this.#connectionString,
-      ...(this.#maximumConnections
-        ? { max: this.#maximumConnections }
-        : {}),
-      ...(this.#applicationName
-        ? { application_name: this.#applicationName }
-        : {}),
+      ...(this.#maximumConnections ? { max: this.#maximumConnections } : {}),
+      ...(this.#applicationName ? { application_name: this.#applicationName } : {}),
     })
     try {
       await pool.query('select 1')
@@ -151,14 +144,18 @@ class PostgresUnitOfWork extends UnitOfWork {
     const now = new Date()
     if (entity.expectedVersion === undefined) {
       try {
-        const [created] = await this.session.insert(entityStates).values({
-          entityType: entity.type,
-          entityId: entity.id,
-          version: 1,
-          state: entity.state,
-          updatedAt: now,
-        }).returning({ version: entityStates.version })
-        if (!created) throw new PersistenceError('PostgreSQL did not return the inserted entity version.')
+        const [created] = await this.session
+          .insert(entityStates)
+          .values({
+            entityType: entity.type,
+            entityId: entity.id,
+            version: 1,
+            state: entity.state,
+            updatedAt: now,
+          })
+          .returning({ version: entityStates.version })
+        if (!created)
+          throw new PersistenceError('PostgreSQL did not return the inserted entity version.')
         return created.version
       } catch (error) {
         if (postgresCode(error) === '23505') {
@@ -168,32 +165,48 @@ class PostgresUnitOfWork extends UnitOfWork {
       }
     }
 
-    const [updated] = await this.session.update(entityStates).set({
-      version: entity.expectedVersion + 1,
-      state: entity.state,
-      updatedAt: now,
-    }).where(and(
-      eq(entityStates.entityType, entity.type),
-      eq(entityStates.entityId, entity.id),
-      eq(entityStates.version, entity.expectedVersion),
-    )).returning({ version: entityStates.version })
+    const [updated] = await this.session
+      .update(entityStates)
+      .set({
+        version: entity.expectedVersion + 1,
+        state: entity.state,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(entityStates.entityType, entity.type),
+          eq(entityStates.entityId, entity.id),
+          eq(entityStates.version, entity.expectedVersion),
+        ),
+      )
+      .returning({ version: entityStates.version })
     if (!updated) {
       throw new OptimisticConcurrencyError(entity.type, entity.id, entity.expectedVersion)
     }
     return updated.version
   }
 
-  async deleteEntity(type: string, id: string, expectedVersion: number, storage: ModelStorage = { kind: 'entity-state' }): Promise<void> {
+  async deleteEntity(
+    type: string,
+    id: string,
+    expectedVersion: number,
+    storage: ModelStorage = { kind: 'entity-state' },
+  ): Promise<void> {
     this.assertActive()
     if (storage.kind === 'table') {
       await this.deleteMappedEntity(type, id, expectedVersion, storage)
       return
     }
-    const [deleted] = await this.session.delete(entityStates).where(and(
-      eq(entityStates.entityType, type),
-      eq(entityStates.entityId, id),
-      eq(entityStates.version, expectedVersion),
-    )).returning({ id: entityStates.entityId })
+    const [deleted] = await this.session
+      .delete(entityStates)
+      .where(
+        and(
+          eq(entityStates.entityType, type),
+          eq(entityStates.entityId, id),
+          eq(entityStates.version, expectedVersion),
+        ),
+      )
+      .returning({ id: entityStates.entityId })
     if (!deleted) throw new OptimisticConcurrencyError(type, id, expectedVersion)
   }
 
@@ -212,7 +225,12 @@ class PostgresUnitOfWork extends UnitOfWork {
     const row = result.rows[0] as Record<string, unknown> | undefined
     if (!row) return undefined
     const state = hydrateMappedState(row, storage)
-    return { type, id: String(state.id), version: numberVersion(row.__canopy_version, type, id), state: state as State }
+    return {
+      type,
+      id: String(state.id),
+      version: numberVersion(row.__canopy_version, type, id),
+      state: state as State,
+    }
   }
 
   private async saveMappedEntity<State extends JsonValue>(
@@ -225,10 +243,15 @@ class PostgresUnitOfWork extends UnitOfWork {
     const values = dehydrateMappedState(entity.state as Record<string, JsonValue>, storage)
     const now = new Date()
     if (storage.timestamps) {
-      if (entity.expectedVersion === undefined && !values.has(storage.timestamps.createdAt)) values.set(storage.timestamps.createdAt, now)
+      if (entity.expectedVersion === undefined && !values.has(storage.timestamps.createdAt))
+        values.set(storage.timestamps.createdAt, now)
       if (!values.has(storage.timestamps.updatedAt)) values.set(storage.timestamps.updatedAt, now)
     }
-    if (storage.versionColumn) values.set(storage.versionColumn, entity.expectedVersion === undefined ? 1 : entity.expectedVersion + 1)
+    if (storage.versionColumn)
+      values.set(
+        storage.versionColumn,
+        entity.expectedVersion === undefined ? 1 : entity.expectedVersion + 1,
+      )
     if (entity.expectedVersion === undefined) {
       try {
         const columns = [...values.keys()].map((column) => sql.identifier(column))
@@ -239,15 +262,19 @@ class PostgresUnitOfWork extends UnitOfWork {
           RETURNING ${versionExpression(storage)} AS ${sql.identifier('__canopy_version')}
         `)
         const row = result.rows[0] as Record<string, unknown> | undefined
-        if (!row) throw new PersistenceError('PostgreSQL did not return the inserted mapped model version.')
+        if (!row)
+          throw new PersistenceError('PostgreSQL did not return the inserted mapped model version.')
         return numberVersion(row.__canopy_version, entity.type, entity.id)
       } catch (error) {
-        if (postgresCode(error) === '23505') throw new OptimisticConcurrencyError(entity.type, entity.id, entity.expectedVersion)
+        if (postgresCode(error) === '23505')
+          throw new OptimisticConcurrencyError(entity.type, entity.id, entity.expectedVersion)
         throw translatePersistenceError(error)
       }
     }
     values.delete(storage.primaryKey)
-    const assignments = [...values.entries()].map(([column, value]) => sql`${sql.identifier(column)} = ${value}`)
+    const assignments = [...values.entries()].map(
+      ([column, value]) => sql`${sql.identifier(column)} = ${value}`,
+    )
     if (assignments.length === 0) return entity.expectedVersion
     const result = await this.session.execute(sql`
       UPDATE ${qualifiedIdentifier(storage.table)}
@@ -325,21 +352,30 @@ class PostgresUnitOfWork extends UnitOfWork {
   async transitionDelivery(transition: DeliveryTransition): Promise<void> {
     this.assertActive()
     if (transition.eventId) {
-      const inserted = await this.session.insert(deliveryEvents).values({
-        eventId: transition.eventId,
-        messageId: transition.messageId,
-        state: transition.state,
-        occurredAt: new Date(),
-      }).onConflictDoNothing().returning({ eventId: deliveryEvents.eventId })
+      const inserted = await this.session
+        .insert(deliveryEvents)
+        .values({
+          eventId: transition.eventId,
+          messageId: transition.messageId,
+          state: transition.state,
+          occurredAt: new Date(),
+        })
+        .onConflictDoNothing()
+        .returning({ eventId: deliveryEvents.eventId })
       if (inserted.length === 0) return
     }
-    await this.session.update(deliveryMessages).set({
-      state: transition.state,
-      ...(transition.providerMessageId ? { providerMessageId: transition.providerMessageId } : {}),
-      ...(transition.failureKind ? { failureKind: transition.failureKind } : {}),
-      ...(transition.code ? { failureCode: transition.code } : {}),
-      updatedAt: new Date(),
-    }).where(eq(deliveryMessages.id, transition.messageId))
+    await this.session
+      .update(deliveryMessages)
+      .set({
+        state: transition.state,
+        ...(transition.providerMessageId
+          ? { providerMessageId: transition.providerMessageId }
+          : {}),
+        ...(transition.failureKind ? { failureKind: transition.failureKind } : {}),
+        ...(transition.code ? { failureCode: transition.code } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(deliveryMessages.id, transition.messageId))
   }
 
   afterCommit(callback: () => void | Promise<void>): void {
@@ -370,7 +406,10 @@ class PostgresUnitOfWork extends UnitOfWork {
 }
 
 function qualifiedIdentifier(value: string): SQL {
-  return sql.join(value.split('.').map((part) => sql.identifier(part)), sql`.`)
+  return sql.join(
+    value.split('.').map((part) => sql.identifier(part)),
+    sql`.`,
+  )
 }
 
 function versionExpression(storage: Extract<ModelStorage, { readonly kind: 'table' }>): SQL {
@@ -392,12 +431,20 @@ function hydrateMappedState(
   row: Readonly<Record<string, unknown>>,
   storage: Extract<ModelStorage, { readonly kind: 'table' }>,
 ): Record<string, JsonValue> {
-  const inverse = new Map(Object.entries(storage.columns).map(([attribute, column]) => [column, attribute]))
+  const inverse = new Map(
+    Object.entries(storage.columns).map(([attribute, column]) => [column, attribute]),
+  )
   const explicitlyMapped = new Set(Object.values(storage.columns))
   const infrastructure = new Set<string>([
     '__canopy_version',
-    ...(storage.versionColumn && !explicitlyMapped.has(storage.versionColumn) ? [storage.versionColumn] : []),
-    ...(storage.timestamps ? [storage.timestamps.createdAt, storage.timestamps.updatedAt].filter((column) => !explicitlyMapped.has(column)) : []),
+    ...(storage.versionColumn && !explicitlyMapped.has(storage.versionColumn)
+      ? [storage.versionColumn]
+      : []),
+    ...(storage.timestamps
+      ? [storage.timestamps.createdAt, storage.timestamps.updatedAt].filter(
+          (column) => !explicitlyMapped.has(column),
+        )
+      : []),
   ])
   const state: Record<string, JsonValue> = {}
   for (const [column, value] of Object.entries(row)) {
@@ -414,7 +461,8 @@ function dehydrateMappedState(
 ): Map<string, unknown> {
   const values = new Map<string, unknown>()
   for (const [attribute, value] of Object.entries(state)) {
-    const column = attribute === 'id' ? storage.primaryKey : storage.columns[attribute] ?? attribute
+    const column =
+      attribute === 'id' ? storage.primaryKey : (storage.columns[attribute] ?? attribute)
     values.set(column, value)
   }
   return values
@@ -423,16 +471,29 @@ function dehydrateMappedState(
 function databaseJsonValue(value: unknown): JsonValue {
   if (value instanceof Date) return value.toISOString()
   if (typeof value === 'bigint') return value.toString()
-  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value
+  if (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  )
+    return value
   if (Array.isArray(value)) return value.map(databaseJsonValue)
-  if (typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, databaseJsonValue(nested)]))
-  throw new PersistenceError(`Mapped PostgreSQL value of type ${typeof value} is not JSON-compatible.`)
+  if (typeof value === 'object')
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) => [key, databaseJsonValue(nested)]),
+    )
+  throw new PersistenceError(
+    `Mapped PostgreSQL value of type ${typeof value} is not JSON-compatible.`,
+  )
 }
 
 function numberVersion(value: unknown, type: string, id: string): number {
   const version = Number(value)
   if (!Number.isSafeInteger(version) || version < 0) {
-    throw new PersistenceError(`Mapped model ${type}/${id} returned an invalid optimistic-concurrency version.`)
+    throw new PersistenceError(
+      `Mapped model ${type}/${id} returned an invalid optimistic-concurrency version.`,
+    )
   }
   return version
 }
@@ -445,15 +506,17 @@ function durableContext(context: ExecutionContext): DurableExecutionEnvelope {
     actor: { ...context.actor },
     initiator: { ...context.initiator },
     ...(context.tenant ? { tenant: { ...context.tenant } } : {}),
-    ...(context.delegation.length > 0 ? {
-      delegation: context.delegation.map((hop) => ({
-        from: { ...hop.from },
-        to: { ...hop.to },
-        grantId: hop.grantId,
-        reason: hop.reason,
-        ...(hop.expiresAt ? { expiresAt: hop.expiresAt.toISOString() } : {}),
-      })),
-    } : {}),
+    ...(context.delegation.length > 0
+      ? {
+          delegation: context.delegation.map((hop) => ({
+            from: { ...hop.from },
+            to: { ...hop.to },
+            grantId: hop.grantId,
+            reason: hop.reason,
+            ...(hop.expiresAt ? { expiresAt: hop.expiresAt.toISOString() } : {}),
+          })),
+        }
+      : {}),
     ...(context.trace.traceId || context.trace.spanId ? { trace: { ...context.trace } } : {}),
   }
 }
@@ -470,12 +533,20 @@ function deliveryContext(context: ExecutionContext): DurableExecutionEnvelope {
     })),
     authentication: {
       state: context.authentication.state,
-      ...(context.authentication.identityId ? { identityId: context.authentication.identityId } : {}),
+      ...(context.authentication.identityId
+        ? { identityId: context.authentication.identityId }
+        : {}),
       ...(context.authentication.method ? { method: context.authentication.method } : {}),
       ...(context.authentication.assurance ? { assurance: context.authentication.assurance } : {}),
-      ...(context.authentication.authenticatedAt ? { authenticatedAt: context.authentication.authenticatedAt.toISOString() } : {}),
-      ...(context.authentication.credentialId ? { credentialId: context.authentication.credentialId } : {}),
-      ...(context.authentication.constraints ? { constraints: [...context.authentication.constraints] } : {}),
+      ...(context.authentication.authenticatedAt
+        ? { authenticatedAt: context.authentication.authenticatedAt.toISOString() }
+        : {}),
+      ...(context.authentication.credentialId
+        ? { credentialId: context.authentication.credentialId }
+        : {}),
+      ...(context.authentication.constraints
+        ? { constraints: [...context.authentication.constraints] }
+        : {}),
     },
     trace: { ...context.trace },
   }

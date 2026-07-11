@@ -8,13 +8,13 @@
 is `arbor`, exposed in this workspace through `pnpm arbor`.
 
 Arbor implements application creation; every canonical `make:*` role; compilation; migrations;
-serve, worker, scheduler, combined development, and test processes; application commands; graph
-and role inspection; Cultivate metadata; and queue, delivery, auth, journal, outbox, cache, and
-schedule operations. `arbor db:studio` launches the framework-pinned Drizzle Studio using the
-declared `.env` database without placing credentials in command arguments. Generators use the
-canonical Feature declaration, add imports and role-array
-entries automatically, reject overwrites, and require every generated entry point to choose
-`--public` or `--ability=...`. That safety choice makes the beautiful path the secure path.
+serve, worker, scheduler, combined development, and test processes; application commands; graph and
+role inspection; Cultivate metadata; and queue, delivery, auth, journal, outbox, cache, and schedule
+operations. `arbor db:studio` launches the framework-pinned Drizzle Studio using the declared `.env`
+database without placing credentials in command arguments. Generators use the canonical Feature
+declaration, add imports and role-array entries automatically, reject overwrites, and require every
+generated entry point to choose `--public` or `--ability=...`. That safety choice makes the
+beautiful path the secure path.
 
 Manual schedule firing uses the transactional outbox instead of starting an incidental scheduler
 inside the command. It is therefore durable even when workers are offline. Schedule enablement is

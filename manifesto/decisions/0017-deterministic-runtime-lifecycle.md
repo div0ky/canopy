@@ -13,9 +13,9 @@ Canopy's runtime owns one deterministic lifecycle:
 start → ready → drain → stop → dispose
 ```
 
-Providers and adapters may participate through exactly four optional lifecycle hooks:
-`start()`, `drain()`, `stop()`, and `dispose()`. Readiness is a runtime-controlled state reached
-only after validation, construction, startup, and readiness checks succeed.
+Providers and adapters may participate through exactly four optional lifecycle hooks: `start()`,
+`drain()`, `stop()`, and `dispose()`. Readiness is a runtime-controlled state reached only after
+validation, construction, startup, and readiness checks succeed.
 
 Feature and Application declarations have no lifecycle hooks and are never constructed.
 
@@ -45,8 +45,8 @@ state.
 ## Process host integration
 
 `Canopy.boot()` does not install `SIGTERM`, `SIGINT`, uncaught-error, rejection, or other
-process-global handlers. Booting a runtime must not mutate global process behavior or interfere
-with another runtime or concurrent test.
+process-global handlers. Booting a runtime must not mutate global process behavior or interfere with
+another runtime or concurrent test.
 
 Official Node host adapters and commands such as `canopy serve` and `canopy worker` own process
 signal integration. The first termination signal initiates idempotent `runtime.shutdown()` with the
@@ -76,9 +76,9 @@ must unwind every lifecycle participant that successfully started.
 
 ## Dependency-derived ordering
 
-Dependency relationships are the only semantic source of lifecycle ordering. If `Worker` depends
-on `DatabasePool`, startup orders `DatabasePool` before `Worker`, while drain, stop, and disposal
-order `Worker` before `DatabasePool`.
+Dependency relationships are the only semantic source of lifecycle ordering. If `Worker` depends on
+`DatabasePool`, startup orders `DatabasePool` before `Worker`, while drain, stop, and disposal order
+`Worker` before `DatabasePool`.
 
 Feature-array position, provider-array position, file order, import order, source location, and
 canonical ID sorting have no lifecycle meaning. Diagnostics may display unrelated peers in stable
@@ -100,9 +100,9 @@ transition and its failure are observable through structured diagnostics and hea
 
 ## Drain
 
-Drain stops admission before shutdown proceeds. `drain()` allows HTTP servers, workers,
-schedulers, consumers, and other active providers to stop accepting new work and finish or hand
-off work already accepted according to their contract.
+Drain stops admission before shutdown proceeds. `drain()` allows HTTP servers, workers, schedulers,
+consumers, and other active providers to stop accepting new work and finish or hand off work already
+accepted according to their contract.
 
 The runtime remains not-ready while draining. New framework executions must be rejected or routed
 away through the entry point's documented behavior.
@@ -116,8 +116,8 @@ on acquired resources during shutdown.
 ## Dispose
 
 `dispose()` releases acquired resources. Disposal runs after active behavior stops and unwinds
-participants in reverse dependency order. Execution-scoped resources use the same disposal
-contract when their execution ends.
+participants in reverse dependency order. Execution-scoped resources use the same disposal contract
+when their execution ends.
 
 `stop()` and `dispose()` must be safe during partial startup and repeated shutdown attempts.
 Implementations must not assume every other provider reached `start()` or `ready`.
@@ -134,14 +134,14 @@ interface LifecycleContext {
 ```
 
 Runtime configuration owns startup, drain, stop, disposal, and total-shutdown deadlines. Hooks must
-observe cancellation and settle promptly after their signal is aborted. Deadline exhaustion
-produces a normalized lifecycle timeout containing the participant, phase, start time, deadline,
-and elapsed duration.
+observe cancellation and settle promptly after their signal is aborted. Deadline exhaustion produces
+a normalized lifecycle timeout containing the participant, phase, start time, deadline, and elapsed
+duration.
 
 A drain timeout advances shutdown into forced stop. Later phase behavior must preserve the global
-shutdown deadline and report participants that do not cooperate with cancellation. The Canopy
-kernel never calls `process.exit()`; the runtime host decides how to terminate a process that
-cannot settle.
+shutdown deadline and report participants that do not cooperate with cancellation. The Canopy kernel
+never calls `process.exit()`; the runtime host decides how to terminate a process that cannot
+settle.
 
 ## Failure and observability
 
@@ -149,17 +149,17 @@ Every lifecycle transition must expose its phase, participant ID, source provena
 outcome, and normalized failure. Cleanup failures must be reported without hiding the original
 startup or runtime failure that caused the unwind.
 
-Startup and readiness failure trigger a full unwind of every participant that successfully
-started. The runtime waits for already-starting lifecycle work to settle, then stops and disposes
-successful participants in reverse dependency order. The runtime never transitions to `ready`.
+Startup and readiness failure trigger a full unwind of every participant that successfully started.
+The runtime waits for already-starting lifecycle work to settle, then stops and disposes successful
+participants in reverse dependency order. The runtime never transitions to `ready`.
 
 The initiating startup or readiness failure remains the primary error returned by boot. Stop and
 dispose failures are preserved as ordered secondary cleanup errors and emitted individually through
 diagnostics; they must not replace, mask, or rewrite the initiating cause.
 
 Boot rejects only after unwind completes or reaches its cleanup deadline. A deadline failure adds
-the participants and phases that did not settle to the cleanup errors while preserving the
-original failure as primary.
+the participants and phases that did not settle to the cleanup errors while preserving the original
+failure as primary.
 
 The exact timeout, cancellation, and process-signal policies remain specification work. They must
 preserve this primary-error and cleanup-error model.

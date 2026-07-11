@@ -13,7 +13,8 @@ export abstract class CanopyRole {
 
   constructor() {
     const construction = currentRoleConstruction()
-    this.logger = construction?.logger ?? new Logger({ channel: roleChannel(this.constructor.name) })
+    this.logger =
+      construction?.logger ?? new Logger({ channel: roleChannel(this.constructor.name) })
     const resolve = <Value extends object>(
       token: RoleInjectionToken<Value>,
       optional: boolean,
@@ -29,13 +30,14 @@ export abstract class CanopyRole {
     const inject = (<Value extends object>(token: RoleInjectionToken<Value>): Value => {
       const value = resolve(token, false)
       if (value === undefined) {
-        throw new RoleInjectionError(`${this.constructor.name} has an unavailable required role dependency.`)
+        throw new RoleInjectionError(
+          `${this.constructor.name} has an unavailable required role dependency.`,
+        )
       }
       return value
     }) as RoleInjector
-    inject.optional = <Value extends object>(token: RoleInjectionToken<Value>): Value | undefined => (
+    inject.optional = <Value extends object>(token: RoleInjectionToken<Value>): Value | undefined =>
       resolve(token, true)
-    )
     this.inject = inject
   }
 }

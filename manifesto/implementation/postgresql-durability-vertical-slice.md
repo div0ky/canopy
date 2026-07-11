@@ -63,17 +63,17 @@ The initial low-level `UnitOfWork` contract can:
 - Append a pending outbox message.
 - Register work that cannot run until commit succeeds.
 
-The runtime activates exactly one Unit of Work inside each top-level action transaction and makes
-it constructor-injectable through the current execution scope. It does not create a second
-container scope. The object becomes stale as soon as the transaction callback ends, and later use
-fails with `StaleUnitOfWorkError`.
+The runtime activates exactly one Unit of Work inside each top-level action transaction and makes it
+constructor-injectable through the current execution scope. It does not create a second container
+scope. The object becomes stale as soon as the transaction callback ends, and later use fails with
+`StaleUnitOfWorkError`.
 
 This low-level API is framework plumbing and a vertical-proof seam. It is not the desired ordinary
 application persistence experience. The completed
 [Eloquent-style model vertical slice](eloquent-model-vertical-slice.md) now places hydrated models,
 `save()`, and dirty tracking above it so normal actions do not hand-author entity-state records,
-journal facts, and outbox messages. Custom mapper registration and lifecycle observers remain
-future model-runtime work.
+journal facts, and outbox messages. Custom mapper registration and lifecycle observers remain future
+model-runtime work.
 
 ## PostgreSQL and Drizzle adapter
 
@@ -116,14 +116,14 @@ Every journal and outbox record receives a durable envelope containing:
 - Delegation hops when present.
 - Trace linkage when present.
 
-Credentials, session tokens, loaded permissions, arbitrary baggage, and cancellation objects are
-not persisted.
+Credentials, session tokens, loaded permissions, arbitrary baggage, and cancellation objects are not
+persisted.
 
 ## After commit
 
 Callbacks registered through `unitOfWork.afterCommit()` remain private until PostgreSQL confirms
-commit. A conformance callback queries through another pool connection and observes the durable
-row, proving it did not execute inside the transaction.
+commit. A conformance callback queries through another pool connection and observes the durable row,
+proving it did not execute inside the transaction.
 
 If an after-commit callback fails, Canopy throws `AfterCommitError` while retaining the committed
 state. It does not claim rollback after durability has already been established.

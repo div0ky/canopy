@@ -16,7 +16,11 @@ export class RegisterRoute extends Route {
   async handle(request: HttpRequest): Promise<Response> {
     const identity = await this.auth.register(await credentials(request))
     const verification = await this.auth.issueEmailVerification(identity.id)
-    await this.actions.execute(SendAuthEmail, { kind: 'verification', to: identity.email, token: verification.token.reveal() })
+    await this.actions.execute(SendAuthEmail, {
+      kind: 'verification',
+      to: identity.email,
+      token: verification.token.reveal(),
+    })
     await UserRegistered.dispatch({ identityId: identity.id })
     return Http.created({ identity: publicIdentity(identity) })
   }

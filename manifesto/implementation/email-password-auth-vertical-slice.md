@@ -21,8 +21,8 @@ email + password registration
   → session rotation, CSRF origin enforcement, and server-side logout
 ```
 
-No authentication framework owns Canopy's schema, session semantics, HTTP context, actor, errors,
-or upgrade path. Node supplies the Argon2id and random primitives; PostgreSQL and Drizzle remain
+No authentication framework owns Canopy's schema, session semantics, HTTP context, actor, errors, or
+upgrade path. Node supplies the Argon2id and random primitives; PostgreSQL and Drizzle remain
 private storage mechanics.
 
 ## Provider boundary
@@ -82,8 +82,8 @@ Registration normalizes email, atomically creates identity and credential record
 security audit event. Email uniqueness is enforced by PostgreSQL.
 
 Login always creates a new 256-bit opaque token. Only its SHA-256 digest is stored; the bearer token
-exists only in the one `Set-Cookie` response. The database session carries absolute and sliding
-idle expiry, authentication time, optional client metadata, and revocation state.
+exists only in the one `Set-Cookie` response. The database session carries absolute and sliding idle
+expiry, authentication time, optional client metadata, and revocation state.
 
 The production cookie is host-only and named `__Host-canopy_session`, with `Secure`, `HttpOnly`,
 `SameSite=Lax`, and `Path=/`. It is non-persistent in the browser; server-side absolute and idle
@@ -121,8 +121,8 @@ GET  /auth/me
 POST /auth/logout
 ```
 
-Registration and login dispatch password-free application events. `/auth/me` demonstrates that
-the framework-wide execution context—not a Hono-local variable—contains the user actor and session
+Registration and login dispatch password-free application events. `/auth/me` demonstrates that the
+framework-wide execution context—not a Hono-local variable—contains the user actor and session
 evidence.
 
 ## Lifecycle and migrations
@@ -156,7 +156,8 @@ The suite contains forty passing tests. Authentication-specific integration prov
 This proof is not production-complete authentication. Still required:
 
 - Opaque bearer access-token issuance, resolution, rotation, and revocation for APIs, CLIs, and
-  automation. Completed in the [opaque bearer authentication slice](opaque-bearer-auth-vertical-slice.md).
+  automation. Completed in the
+  [opaque bearer authentication slice](opaque-bearer-auth-vertical-slice.md).
 - Email verification and adapter-driven delivery.
 - Single-use password-reset challenges and password-change session policy.
 - Breached-password checks.

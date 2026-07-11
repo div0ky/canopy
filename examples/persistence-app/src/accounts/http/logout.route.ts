@@ -1,11 +1,4 @@
-import {
-  Auth,
-  CurrentExecution,
-  Http,
-  HttpError,
-  type HttpRequest,
-  Route,
-} from '@canopy/core'
+import { Auth, CurrentExecution, Http, HttpError, type HttpRequest, Route } from '@canopy/core'
 
 export class LogoutRoute extends Route {
   static override readonly id = 'logout'
@@ -18,7 +11,8 @@ export class LogoutRoute extends Route {
 
   async handle(_request: HttpRequest): Promise<Response> {
     const sessionId = this.execution.context.authentication.sessionId
-    if (!sessionId) throw new HttpError(401, 'authentication_required', 'Authentication is required.')
+    if (!sessionId)
+      throw new HttpError(401, 'authentication_required', 'Authentication is required.')
     await this.auth.revokeSession(sessionId)
     return Http.noContent({ 'set-cookie': this.auth.expiredSessionCookie() })
   }

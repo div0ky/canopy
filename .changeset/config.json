@@ -1,0 +1,26 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.1.2/schema.json",
+  "changelog": false,
+  "commit": false,
+  "fixed": [
+    [
+      "@canopy/arbor",
+      "@canopy/auth-postgres",
+      "@canopy/compiler",
+      "@canopy/core",
+      "@canopy/http-hono",
+      "@canopy/manifest",
+      "@canopy/postgres-drizzle",
+      "@canopy/queue-pg-boss",
+      "@canopy/runtime",
+      "@canopy/sendgrid",
+      "@canopy/testing",
+      "@canopy/twilio-sms",
+      "@canopy/undergrowth"
+    ]
+  ],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": ["@canopy/field-guide", "@canopy/persistence-reference-app", "@canopy/reference-app"]
+}

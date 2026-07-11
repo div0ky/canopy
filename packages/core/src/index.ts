@@ -11,11 +11,7 @@ export {
 } from './authorization.js'
 
 export { Signal, SignalDispatchError, SignalHandler } from './signal.js'
-export {
-  Cache,
-  MemoryCache,
-  type CachePutOptions,
-} from './cache.js'
+export { Cache, MemoryCache, type CachePutOptions } from './cache.js'
 export { Command } from './command.js'
 export { MemoryTelemetry, NoopTelemetry, Telemetry, type TelemetryRecord } from './telemetry.js'
 export {
@@ -192,11 +188,7 @@ export {
   type ModelJournalFact,
   type ModelOutboxMessage,
 } from './model.js'
-export {
-  Observer,
-  type ModelObserverDispatcher,
-  type ModelObserverPhase,
-} from './observer.js'
+export { Observer, type ModelObserverDispatcher, type ModelObserverPhase } from './observer.js'
 import type { Model, ModelAttributes, ModelConstructor } from './model.js'
 
 /**
@@ -409,7 +401,12 @@ export abstract class UnitOfWork {
   ): Promise<PersistedEntity<State> | undefined>
 
   abstract saveEntity<State extends JsonValue>(entity: SaveEntity<State>): Promise<number>
-  abstract deleteEntity(type: string, id: string, expectedVersion: number, storage?: ModelStorage): Promise<void>
+  abstract deleteEntity(
+    type: string,
+    id: string,
+    expectedVersion: number,
+    storage?: ModelStorage,
+  ): Promise<void>
   abstract record<Payload extends JsonValue>(fact: JournalFact<Payload>): Promise<string>
   abstract enqueue<Payload extends JsonValue>(message: OutboxMessage<Payload>): Promise<string>
   abstract stageDelivery(delivery: StagedDelivery): Promise<void>
@@ -429,7 +426,9 @@ export class OptimisticConcurrencyError extends PersistenceError {
     readonly entityId: string,
     readonly expectedVersion: number | undefined,
   ) {
-    super(`Entity ${entityType}/${entityId} does not match expected version ${String(expectedVersion)}.`)
+    super(
+      `Entity ${entityType}/${entityId} does not match expected version ${String(expectedVersion)}.`,
+    )
   }
 }
 
@@ -445,7 +444,9 @@ export class AfterCommitError extends PersistenceError {
   override readonly name = 'AfterCommitError'
 
   constructor(readonly errors: readonly unknown[]) {
-    super(`After-commit processing failed ${errors.length} time(s) after durability was established.`)
+    super(
+      `After-commit processing failed ${errors.length} time(s) after durability was established.`,
+    )
   }
 }
 

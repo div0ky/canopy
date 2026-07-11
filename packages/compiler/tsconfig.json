@@ -3,9 +3,8 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "tsBuildInfoFile": "dist/.tsbuildinfo"
+    "tsBuildInfoFile": "../../.cache/tsbuildinfo/compiler.tsbuildinfo"
   },
   "references": [{ "path": "../manifest" }],
   "include": ["src/**/*.ts"]
 }
-

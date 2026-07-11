@@ -17,7 +17,16 @@ import { ApplicationUndergrowth } from './undergrowth/application-undergrowth.js
 export class InfrastructureFeature extends Feature {
   id = 'infrastructure'
   configs = [DatabaseConfig, CommunicationsConfig]
-  providers = [PersistenceTransactions, CanopyQueues, CanopyAuth, CanopyCache, ReferenceMail, ReferenceSms, ReferenceTelemetry, ApplicationUndergrowth]
+  providers = [
+    PersistenceTransactions,
+    CanopyQueues,
+    CanopyAuth,
+    CanopyCache,
+    ReferenceMail,
+    ReferenceSms,
+    ReferenceTelemetry,
+    ApplicationUndergrowth,
+  ]
   actions = [RecordDeliveryUpdates]
   routes = [SendGridWebhookRoute, TwilioSmsWebhookRoute]
 }

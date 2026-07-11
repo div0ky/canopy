@@ -101,30 +101,30 @@ The official Node host resolves configuration in this precedence order, highest 
 3. An optional `.env` file at the exact application workspace root.
 4. Declared property defaults.
 
-The host does not walk arbitrary parent directories looking for `.env`. It reports the exact path
-it checked. Loading `.env` does not mutate `process.env`; Canopy parses it into a private source map
+The host does not walk arbitrary parent directories looking for `.env`. It reports the exact path it
+checked. Loading `.env` does not mutate `process.env`; Canopy parses it into a private source map
 and resolves only environment keys belonging to declared configuration groups.
 
 ## Validation and runtime materialization
 
 Configuration resolution occurs after manifest and graph validation but before construction of the
 application singleton graph. Canopy reports all configuration errors together with the group,
-property, environment key, declaration source, and value source. Sensitive values are never
-included in errors or diagnostics.
+property, environment key, declaration source, and value source. Sensitive values are never included
+in errors or diagnostics.
 
-The runtime materializes one frozen instance of each declared configuration class without
-executing application configuration code. The class itself is the injection identity. Changing a
-source value requires a new runtime; configuration does not mutate in place or alter the immutable
-application graph.
+The runtime materializes one frozen instance of each declared configuration class without executing
+application configuration code. The class itself is the injection identity. Changing a source value
+requires a new runtime; configuration does not mutate in place or alter the immutable application
+graph.
 
 The manifest records declarations, types, defaults, source mappings, optionality, and sensitivity
 classifications. It never records resolved secret values.
 
 ## Testing
 
-Test applications provide typed configuration overrides before boot. Overrides pass through the
-same parsers, schemas, redaction, and immutability rules as environment values and remain isolated
-to the derived test application.
+Test applications provide typed configuration overrides before boot. Overrides pass through the same
+parsers, schemas, redaction, and immutability rules as environment values and remain isolated to the
+derived test application.
 
 ## Consequences
 

@@ -14,9 +14,10 @@ with a completely new ESM module graph. This makes role additions and dependency
 reliable as ordinary handler edits.
 
 Builds occur while the last good child remains available. A syntax, type, compiler, or manifest
-error is printed on the `[hmr]` channel and does not stop that child. Once the source is valid again,
-the next filesystem change performs the replacement. Recursive filesystem events are debounced and
-source-fingerprinted so delayed or duplicate platform notifications cannot cause reload loops.
+error is printed on the `[hmr]` channel and does not stop that child. Once the source is valid
+again, the next filesystem change performs the replacement. Recursive filesystem events are
+debounced and source-fingerprinted so delayed or duplicate platform notifications cannot cause
+reload loops.
 
 The executable proof covers:
 

@@ -24,7 +24,7 @@ Ordinary actions no longer inject `UnitOfWork` or construct persistence records.
 action is deliberately small:
 
 ```ts
-const counter = await Counter.find(id) ?? Counter.make({ id, value: 0 })
+const counter = (await Counter.find(id)) ?? Counter.make({ id, value: 0 })
 
 counter.increment(amount)
 await counter.save()
@@ -45,10 +45,10 @@ export class PersistenceFeature extends Feature {
 }
 ```
 
-The semantic compiler verifies that every entry is a concrete Canopy `Model` with a stable local
-ID. It emits a stable identity such as `model:persistence/counter` into both generated artifacts.
-Model constructors are not injectable services; the compiler reports direct constructor injection
-and directs application code to the static model API instead.
+The semantic compiler verifies that every entry is a concrete Canopy `Model` with a stable local ID.
+It emits a stable identity such as `model:persistence/counter` into both generated artifacts. Model
+constructors are not injectable services; the compiler reports direct constructor injection and
+directs application code to the static model API instead.
 
 Folder names remain semantically irrelevant. Only imports and the Feature declaration establish
 ownership.
@@ -63,7 +63,8 @@ existing execution scope and Unit of Work rather than creating another container
 Within that execution:
 
 - Repeated retrieval of the same model identity returns the same object instance.
-- `find`, `findOrFail`, `make`, and `create` resolve the active session without application plumbing.
+- `find`, `findOrFail`, `make`, and `create` resolve the active session without application
+  plumbing.
 - Hydrated models know their original persisted attributes and version.
 - New models begin detached from persistence but attached to the active session.
 - The session becomes unusable when the action transaction ends.

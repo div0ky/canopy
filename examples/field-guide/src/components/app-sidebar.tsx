@@ -1,6 +1,13 @@
-"use client";
+'use client'
 
-import { BookOpenIcon, Globe2Icon, HouseIcon, KeyRoundIcon, LeafIcon, UserRoundIcon } from "lucide-react";
+import {
+  BookOpenIcon,
+  Globe2Icon,
+  HouseIcon,
+  KeyRoundIcon,
+  LeafIcon,
+  UserRoundIcon,
+} from 'lucide-react'
 
 import {
   Sidebar,
@@ -13,14 +20,14 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
-} from "@/components/ui/sidebar";
+} from '@/components/ui/sidebar'
 
 const navigation = [
-  { label: "Overview", href: "#overview", icon: HouseIcon },
-  { label: "HTTP", href: "#http", icon: Globe2Icon },
-  { label: "Identity", href: "#identity", icon: UserRoundIcon },
-  { label: "Tokens", href: "#tokens", icon: KeyRoundIcon },
-] as const;
+  { label: 'Overview', href: '#overview', icon: HouseIcon },
+  { label: 'HTTP', href: '#http', icon: Globe2Icon },
+  { label: 'Identity', href: '#identity', icon: UserRoundIcon },
+  { label: 'Tokens', href: '#tokens', icon: KeyRoundIcon },
+] as const
 
 export function AppSidebar() {
   return (
@@ -37,7 +44,12 @@ export function AppSidebar() {
             <SidebarMenu className="gap-2">
               {navigation.map((item, index) => (
                 <SidebarMenuItem key={item.label}>
-                  <SidebarMenuButton render={<a href={item.href} />} isActive={index === 0} size="lg" tooltip={item.label}>
+                  <SidebarMenuButton
+                    render={<a href={item.href} />}
+                    isActive={index === 0}
+                    size="lg"
+                    tooltip={item.label}
+                  >
                     <item.icon aria-hidden="true" />
                     <span>{item.label}</span>
                   </SidebarMenuButton>
@@ -55,5 +67,5 @@ export function AppSidebar() {
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
-  );
+  )
 }

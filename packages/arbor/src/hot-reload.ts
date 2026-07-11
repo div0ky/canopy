@@ -53,7 +53,9 @@ export class HotReloadSupervisor implements HotReloadTarget {
     this.#reloadRequested = true
     this.#forceReloadRequested ||= force
     if (!this.#reloadPromise) {
-      this.#reloadPromise = this.#drainReloads().finally(() => { this.#reloadPromise = undefined })
+      this.#reloadPromise = this.#drainReloads().finally(() => {
+        this.#reloadPromise = undefined
+      })
     }
     return this.#reloadPromise
   }
@@ -124,7 +126,8 @@ export class HotReloadSupervisor implements HotReloadTarget {
 
 async function fingerprint(watchPaths: readonly string[]): Promise<string> {
   const entries: string[] = []
-  for (const watchPath of [...watchPaths].sort()) await fingerprintEntry(watchPath, watchPath, entries)
+  for (const watchPath of [...watchPaths].sort())
+    await fingerprintEntry(watchPath, watchPath, entries)
   return createHash('sha256').update(entries.join('\n')).digest('hex')
 }
 

@@ -1,7 +1,4 @@
-import {
-  recordedEvents,
-  type RecordedEvent,
-} from '../../support/recorded-events.js'
+import { recordedEvents, type RecordedEvent } from '../../support/recorded-events.js'
 
 export class CounterEventRecorder {
   static id = 'counter-event-recorder'

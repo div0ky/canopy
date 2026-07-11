@@ -11,8 +11,8 @@ import { installUndergrowthSchema } from '@canopy/undergrowth'
 
 const workspace = process.cwd()
 const applicationRoot = path.join(workspace, 'examples/persistence-app')
-const connectionString = process.env.DATABASE_CONNECTION_STRING
-  ?? 'postgresql://canopy:canopy@127.0.0.1:54329/canopy'
+const connectionString =
+  process.env.DATABASE_CONNECTION_STRING ?? 'postgresql://canopy:canopy@127.0.0.1:54329/canopy'
 const logger = new Logger({
   sink: new ConsoleLogSink({ format: 'pretty', color: process.env.NO_COLOR === undefined }),
   level: process.env.CANOPY_LOG_LEVEL ?? 'info',
@@ -36,12 +36,16 @@ const supervisor = await HotReloadSupervisor.start({
   build: buildDevelopmentApplication,
   start: startDevelopmentServer,
   onWatching: () => logger.info('Watching for application changes'),
-  onChange: (changedPath, event) => logger.debug('Source change detected', { path: changedPath, event }),
+  onChange: (changedPath, event) =>
+    logger.debug('Source change detected', { path: changedPath, event }),
   onReloaded: () => logger.info('Hot reload complete'),
-  onError: (error, phase) => logger.error(
-    phase === 'build' ? 'Hot reload build failed; the last good server remains active' : `Hot reload ${phase} failed`,
-    error,
-  ),
+  onError: (error, phase) =>
+    logger.error(
+      phase === 'build'
+        ? 'Hot reload build failed; the last good server remains active'
+        : `Hot reload ${phase} failed`,
+      error,
+    ),
 })
 
 let stopping = false
@@ -56,7 +60,11 @@ process.once('SIGTERM', () => void stop('SIGTERM'))
 
 async function buildDevelopmentApplication() {
   const code = await run(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', [
-    'exec', 'tsc', '-b', '--pretty', 'false',
+    'exec',
+    'tsc',
+    '-b',
+    '--pretty',
+    'false',
   ])
   if (code !== 0) throw new Error(`TypeScript build failed with exit code ${code}.`)
   const compileCode = await run(process.execPath, [path.join(workspace, 'scripts/dev-build.mjs')])
@@ -72,12 +80,18 @@ async function startDevelopmentServer() {
     stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
   })
   await new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => finish(new Error('Development server readiness timed out.')), 30_000)
+    const timeout = setTimeout(
+      () => finish(new Error('Development server readiness timed out.')),
+      30_000,
+    )
     timeout.unref()
     const onMessage = (message) => {
       if (message?.type === 'ready') finish()
     }
-    const onExit = (code, signal) => finish(new Error(`Development server exited before readiness (${code ?? signal ?? 'unknown'}).`))
+    const onExit = (code, signal) =>
+      finish(
+        new Error(`Development server exited before readiness (${code ?? signal ?? 'unknown'}).`),
+      )
     const onError = (error) => finish(error)
     const finish = (error) => {
       clearTimeout(timeout)
@@ -98,7 +112,11 @@ async function startDevelopmentServer() {
       child.kill('SIGTERM')
       const timer = setTimeout(() => child.kill('SIGKILL'), 15_000)
       timer.unref()
-      try { await exited } finally { clearTimeout(timer) }
+      try {
+        await exited
+      } finally {
+        clearTimeout(timer)
+      }
     },
   }
 }

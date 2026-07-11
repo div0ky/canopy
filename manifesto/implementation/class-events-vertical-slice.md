@@ -21,8 +21,8 @@ await CounterIncremented.dispatch({ counterId, amount, value })
 ```
 
 The application does not inject an event dispatcher. `dispatch()` is inherited behavior available
-inside a Canopy-managed execution and is scoped to that runtime, so concurrently booted
-applications cannot share a process-global event registry accidentally.
+inside a Canopy-managed execution and is scoped to that runtime, so concurrently booted applications
+cannot share a process-global event registry accidentally.
 
 ## Authoring experience
 
@@ -78,15 +78,15 @@ These required graph sections advance the fail-closed artifact contract to manif
 ## Delivery semantics proved
 
 Local listeners run immediately and sequentially in the current execution. Their constructor
-dependencies, actor, correlation, and execution context are the same ones available to the code
-that dispatched the event. A local listener failure propagates to the caller and rolls back an
-active action transaction.
+dependencies, actor, correlation, and execution context are the same ones available to the code that
+dispatched the event. A local listener failure propagates to the caller and rolls back an active
+action transaction.
 
 `ShouldHandleEventsAfterCommit` delays one local listener when a Unit of Work is active. Without an
 active transaction it runs immediately.
 
-`ShouldDispatchAfterCommit` delays the entire event when a Unit of Work is active. Its listeners
-run only after PostgreSQL confirms commit. On rollback the event is discarded. Without an active
+`ShouldDispatchAfterCommit` delays the entire event when a Unit of Work is active. Its listeners run
+only after PostgreSQL confirms commit. On rollback the event is discarded. Without an active
 transaction it dispatches immediately, matching Laravel's semantics.
 
 After-commit callbacks retain the admitted execution and its injectable services, but the action's
@@ -94,8 +94,8 @@ closed `ModelSession` and Unit of Work are not reused. A first-party model/read 
 post-commit listeners remains part of the complete listener execution specification.
 
 The proof dispatches events from model behavior inside an action and directly from an HTTP route.
-Dispatch outside a managed execution fails with `EventDispatchError` rather than resolving a
-hidden global application.
+Dispatch outside a managed execution fails with `EventDispatchError` rather than resolving a hidden
+global application.
 
 ## Executable evidence
 
@@ -118,8 +118,8 @@ Still required:
 
 - `DomainEvent` journal semantics distinct from general `Event`.
 - Immediate framework `Signal` semantics.
-- Versioned queued payload schemas and model-reference serialization beyond the initial
-  JSON event envelope.
+- Versioned queued payload schemas and model-reference serialization beyond the initial JSON event
+  envelope.
 - Model-reference serialization and rehydration for queued payloads.
 - Event fakes and application-isolated assertions.
 - Event inspection tooling and finalized listener ordering policy.

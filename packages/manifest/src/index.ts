@@ -20,7 +20,8 @@ export interface FeatureManifestEntry {
   readonly source: SourceProvenance
 }
 
-export type ConfigurationValueKind = 'string' | 'number' | 'boolean' | 'literal-union' | 'secret-string'
+export type ConfigurationValueKind =
+  'string' | 'number' | 'boolean' | 'literal-union' | 'secret-string'
 
 export type ConfigurationDefault = string | number | boolean
 
@@ -68,7 +69,16 @@ export interface ProviderManifestEntry {
   readonly role: 'provider' | 'service'
   readonly scope: Scope
   readonly durableIdentity: boolean
-  readonly capabilities: readonly ('authentication' | 'queues' | 'transactions' | 'cache' | 'mail' | 'sms' | 'telemetry' | 'observations')[]
+  readonly capabilities: readonly (
+    | 'authentication'
+    | 'queues'
+    | 'transactions'
+    | 'cache'
+    | 'mail'
+    | 'sms'
+    | 'telemetry'
+    | 'observations'
+  )[]
   readonly source: SourceProvenance
   readonly dependencies: readonly DependencyManifestEntry[]
   readonly lifecycle: LifecycleManifestEntry
@@ -108,8 +118,7 @@ export interface ModelManifestEntry {
 }
 
 export type ModelObserverPhase =
-  | 'retrieved' | 'saving' | 'creating' | 'updating'
-  | 'created' | 'updated' | 'saved' | 'committed'
+  'retrieved' | 'saving' | 'creating' | 'updating' | 'created' | 'updated' | 'saved' | 'committed'
 
 export interface ObserverManifestEntry {
   readonly id: string
@@ -292,20 +301,38 @@ export function assertManifest(value: unknown): asserts value is CanopyManifest 
     )
   }
 
-  for (const field of ['applicationId', 'frameworkVersion', 'compilerVersion', 'buildHash'] as const) {
+  for (const field of [
+    'applicationId',
+    'frameworkVersion',
+    'compilerVersion',
+    'buildHash',
+  ] as const) {
     if (typeof value[field] !== 'string' || value[field].length === 0) {
-      throw new ManifestCompatibilityError(`Canopy manifest field ${field} must be a non-empty string.`)
+      throw new ManifestCompatibilityError(
+        `Canopy manifest field ${field} must be a non-empty string.`,
+      )
     }
   }
 
-  if (!isRecord(value.application) || !Array.isArray(value.features)
-    || !Array.isArray(value.configurations) || !Array.isArray(value.providers)
-    || !Array.isArray(value.actions) || !Array.isArray(value.queries)
-    || !Array.isArray(value.models) || !Array.isArray(value.observers) || !Array.isArray(value.routes)
-    || !Array.isArray(value.events) || !Array.isArray(value.listeners)
-    || !Array.isArray(value.jobs) || !Array.isArray(value.schedules)
-    || !Array.isArray(value.policies) || !Array.isArray(value.signals)
-    || !Array.isArray(value.signalHandlers) || !Array.isArray(value.commands)) {
+  if (
+    !isRecord(value.application) ||
+    !Array.isArray(value.features) ||
+    !Array.isArray(value.configurations) ||
+    !Array.isArray(value.providers) ||
+    !Array.isArray(value.actions) ||
+    !Array.isArray(value.queries) ||
+    !Array.isArray(value.models) ||
+    !Array.isArray(value.observers) ||
+    !Array.isArray(value.routes) ||
+    !Array.isArray(value.events) ||
+    !Array.isArray(value.listeners) ||
+    !Array.isArray(value.jobs) ||
+    !Array.isArray(value.schedules) ||
+    !Array.isArray(value.policies) ||
+    !Array.isArray(value.signals) ||
+    !Array.isArray(value.signalHandlers) ||
+    !Array.isArray(value.commands)
+  ) {
     throw new ManifestCompatibilityError('Canopy manifest is missing required graph sections.')
   }
 }

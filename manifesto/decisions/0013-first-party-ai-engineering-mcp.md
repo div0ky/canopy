@@ -13,9 +13,9 @@
 Canopy will provide a first-party AI-assisted engineering product named **Cultivate**, built around
 a local MCP server, version-aware documentation, generated guidelines, focused skills, application
 inspection, and safe engineering workflows. Canopy will design its manifest, diagnostics,
-documentation, CLI, and package metadata to power Cultivate. Implementation is deferred until
-those source contracts are stable enough that the MCP surface will not become a second,
-incompatible interpretation of the application.
+documentation, CLI, and package metadata to power Cultivate. Implementation is deferred until those
+source contracts are stable enough that the MCP surface will not become a second, incompatible
+interpretation of the application.
 
 Cultivate includes more than an MCP transport. It combines:
 
@@ -33,9 +33,8 @@ models, actions, queries, policies, observers, listeners, jobs, schedules, schem
 source provenance. The CLI and diagnostics consume the same representation.
 
 The MCP server can therefore adapt a stable Canopy introspection API rather than reconstructing the
-application through runtime reflection. This makes the protocol layer comparatively small and
-keeps agent behavior consistent with boot validation, generators, tests, and human-facing
-diagnostics.
+application through runtime reflection. This makes the protocol layer comparatively small and keeps
+agent behavior consistent with boot validation, generators, tests, and human-facing diagnostics.
 
 ## Why implementation is deferred
 
@@ -63,8 +62,8 @@ operation planner    ┘
 ```
 
 Every MCP capability should have a corresponding Canopy contract usable without MCP. Agent clients
-must not receive privileged framework APIs unavailable to tests, diagnostics, or the CLI without
-an explicit security reason.
+must not receive privileged framework APIs unavailable to tests, diagnostics, or the CLI without an
+explicit security reason.
 
 ## Initial transport
 
@@ -127,8 +126,8 @@ not create context bloat.
 
 ## Mutating tools
 
-Code generation, migrations, database access, job redrive, and arbitrary application evaluation
-are not part of the initial read-only surface.
+Code generation, migrations, database access, job redrive, and arbitrary application evaluation are
+not part of the initial read-only surface.
 
 When mutating tools are introduced, they must:
 
@@ -150,8 +149,8 @@ Canopy releases should ship versioned agent guidelines describing durable framew
 Focused skills should be installable on demand for areas such as models, actions, testing, jobs,
 authentication, and plugin development.
 
-First-party plugins may contribute versioned documentation, guidelines, and skills through signed
-or package-verifiable metadata. They may not inject executable MCP tools merely by being installed;
+First-party plugins may contribute versioned documentation, guidelines, and skills through signed or
+package-verifiable metadata. They may not inject executable MCP tools merely by being installed;
 tool contribution requires a separate trusted extension contract.
 
 The Canopy CLI should generate agent-specific configuration without making any one editor or coding
@@ -159,8 +158,8 @@ agent part of the framework contract.
 
 ## Documentation search
 
-The first implementation may use a local, version-filtered documentation index. Semantic search or
-a hosted embeddings service is an enhancement, not a prerequisite for the MCP server.
+The first implementation may use a local, version-filtered documentation index. Semantic search or a
+hosted embeddings service is an enhancement, not a prerequisite for the MCP server.
 
 Search results must identify the package, exact supported version, source document, and relevant
 section so agents do not combine incompatible framework releases.
@@ -172,8 +171,8 @@ The developer MCP server must:
 - Run as a development-only dependency and remain absent from production startup.
 - Use stdio and the current workspace by default.
 - Expose configuration keys and classifications without revealing secret values.
-- Redact credentials, session tokens, password hashes, personal data, and provider secrets from
-  logs and diagnostics.
+- Redact credentials, session tokens, password hashes, personal data, and provider secrets from logs
+  and diagnostics.
 - Treat database schemas as readable metadata but database contents as a separate privileged
   capability.
 - Keep read operations bounded by size, time, and result count.

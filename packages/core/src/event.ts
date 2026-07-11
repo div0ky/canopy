@@ -20,15 +20,15 @@ export abstract class Event<Payload = never> extends CanopyRole {
   ): Promise<void> {
     const dispatcher = currentEventDispatcher()
     if (!dispatcher) {
-      throw new EventDispatchError(
-        'Event dispatch requires an active Canopy-managed execution.',
-      )
+      throw new EventDispatchError('Event dispatch requires an active Canopy-managed execution.')
     }
     return dispatcher.dispatch(new this(...arguments_))
   }
 }
 
-export abstract class Listener<Instance extends Event<unknown> = Event<unknown>> extends CanopyRole {
+export abstract class Listener<
+  Instance extends Event<unknown> = Event<unknown>,
+> extends CanopyRole {
   static readonly access: string = ''
   abstract handle(event: Instance): void | Promise<void>
 }

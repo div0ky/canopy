@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: canopy
+      POSTGRES_PASSWORD: canopy
+      POSTGRES_DB: canopy
+    ports:
+      - '54329:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U canopy']
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    volumes:
+      - canopy-postgres:/var/lib/postgresql/data
+
+volumes:
+  canopy-postgres:

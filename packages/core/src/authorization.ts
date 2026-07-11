@@ -1,8 +1,4 @@
-import type {
-  ActorRef,
-  ExecutionContext,
-  TenantRef,
-} from './index.js'
+import type { ActorRef, ExecutionContext, TenantRef } from './index.js'
 import { CanopyRole } from './role.js'
 
 export interface PolicyRequest<Resource = unknown> {

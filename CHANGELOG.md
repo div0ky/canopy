@@ -2,7 +2,8 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project
+adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
@@ -15,11 +16,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Artifact-only runtime boot with injectable configuration classes, dependency ordering, startup
   unwind, readiness, and idempotent shutdown.
 - A reference application and compile-to-boot conformance suite.
-- Class-first actions and queries with scoped `this.inject()` dependencies and typed
-  `handle(input)` methods.
+- Class-first actions and queries with scoped `this.inject()` dependencies and typed `handle(input)`
+  methods.
 - Immutable actor-aware execution contexts carried privately through `AsyncLocalStorage`.
-- One dependency scope per admitted execution with explicit `implements ExecutionScoped` caching
-  and deterministic disposal.
+- One dependency scope per admitted execution with explicit `implements ExecutionScoped` caching and
+  deterministic disposal.
 - Transaction-wrapped action dispatch, non-transactional query dispatch, nested-action rejection,
   concurrent execution isolation, deadline cancellation, and shutdown draining.
 - A Canopy-owned Unit of Work contract with entity state, journal, outbox, and after-commit phases.
@@ -57,8 +58,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   validation, response helpers, and stable JSON error documents.
 - A private Hono 4 adapter and Node host with actor-aware admission, correlation propagation,
   idempotent shutdown, and no process-global signal handlers.
-- A distinct sanitized HTTP outcome for failures that occur after the action transaction has
-  already committed.
+- A distinct sanitized HTTP outcome for failures that occur after the action transaction has already
+  committed.
 - Manifest format v2, which adds required route, event, and listener graph sections and rejects
   stale v1 artifacts before runtime interpretation.
 - A domain-first integrated example organized into infrastructure, counters, and system Features

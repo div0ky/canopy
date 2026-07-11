@@ -7,8 +7,16 @@ export interface CachePutOptions {
 /** Application-owned cache contract. Implementations must honor TTL and atomic add/increment. */
 export abstract class Cache {
   abstract get<Value extends JsonValue>(key: string): Promise<Value | undefined>
-  abstract put<Value extends JsonValue>(key: string, value: Value, options?: CachePutOptions): Promise<void>
-  abstract add<Value extends JsonValue>(key: string, value: Value, options?: CachePutOptions): Promise<boolean>
+  abstract put<Value extends JsonValue>(
+    key: string,
+    value: Value,
+    options?: CachePutOptions,
+  ): Promise<void>
+  abstract add<Value extends JsonValue>(
+    key: string,
+    value: Value,
+    options?: CachePutOptions,
+  ): Promise<boolean>
   abstract increment(key: string, amount?: number, options?: CachePutOptions): Promise<number>
   abstract forget(key: string): Promise<boolean>
 
@@ -29,7 +37,9 @@ export abstract class Cache {
 export class MemoryCache extends Cache {
   readonly #entries = new Map<string, { value: JsonValue; expiresAt?: number }>()
 
-  constructor(private readonly now: () => number = Date.now) { super() }
+  constructor(private readonly now: () => number = Date.now) {
+    super()
+  }
 
   async get<Value extends JsonValue>(key: string): Promise<Value | undefined> {
     const entry = this.#entries.get(key)
@@ -41,12 +51,20 @@ export class MemoryCache extends Cache {
     return structuredClone(entry.value) as Value
   }
 
-  async put<Value extends JsonValue>(key: string, value: Value, options?: CachePutOptions): Promise<void> {
+  async put<Value extends JsonValue>(
+    key: string,
+    value: Value,
+    options?: CachePutOptions,
+  ): Promise<void> {
     this.#entries.set(key, { value: structuredClone(value), ...expiry(options, this.now()) })
   }
 
-  async add<Value extends JsonValue>(key: string, value: Value, options?: CachePutOptions): Promise<boolean> {
-    if (await this.get(key) !== undefined) return false
+  async add<Value extends JsonValue>(
+    key: string,
+    value: Value,
+    options?: CachePutOptions,
+  ): Promise<boolean> {
+    if ((await this.get(key)) !== undefined) return false
     await this.put(key, value, options)
     return true
   }
@@ -61,12 +79,17 @@ export class MemoryCache extends Cache {
       await this.put(key, value, options)
     } else {
       const entry = this.#entries.get(key)!
-      this.#entries.set(key, { value, ...(entry.expiresAt === undefined ? {} : { expiresAt: entry.expiresAt }) })
+      this.#entries.set(key, {
+        value,
+        ...(entry.expiresAt === undefined ? {} : { expiresAt: entry.expiresAt }),
+      })
     }
     return value
   }
 
-  async forget(key: string): Promise<boolean> { return this.#entries.delete(key) }
+  async forget(key: string): Promise<boolean> {
+    return this.#entries.delete(key)
+  }
 }
 
 function expiry(options: CachePutOptions | undefined, now: number): { expiresAt?: number } {

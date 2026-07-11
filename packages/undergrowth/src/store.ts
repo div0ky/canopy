@@ -45,18 +45,33 @@ export class UndergrowthStore {
     const limit = Math.min(Math.max(query.limit ?? 100, 1), 500)
     const values: unknown[] = []
     const conditions = ['candidate.execution_id IS NOT NULL']
-    if (query.kind) { values.push(query.kind); conditions.push(`candidate.kind = $${values.length}`) }
-    if (query.phase) { values.push(query.phase); conditions.push(`candidate.phase = $${values.length}`) }
+    if (query.kind) {
+      values.push(query.kind)
+      conditions.push(`candidate.kind = $${values.length}`)
+    }
+    if (query.phase) {
+      values.push(query.phase)
+      conditions.push(`candidate.phase = $${values.length}`)
+    }
     if (query.search) {
       values.push(`%${query.search}%`)
-      conditions.push(`(candidate.name ILIKE $${values.length} OR candidate.role_id ILIKE $${values.length} OR candidate.actor_id ILIKE $${values.length} OR candidate.execution_id::text ILIKE $${values.length} OR candidate.correlation_id::text ILIKE $${values.length})`)
+      conditions.push(
+        `(candidate.name ILIKE $${values.length} OR candidate.role_id ILIKE $${values.length} OR candidate.actor_id ILIKE $${values.length} OR candidate.execution_id::text ILIKE $${values.length} OR candidate.correlation_id::text ILIKE $${values.length})`,
+      )
     }
     values.push(limit)
     const result = await this.#pool.query<{
-      execution_id: string; correlation_id: string | null; source_execution_id: string | null
-      name: string; transport: string | null; phase: string; occurred_at: Date
-      duration_ms: number | null; observation_count: string
-    }>(`
+      execution_id: string
+      correlation_id: string | null
+      source_execution_id: string | null
+      name: string
+      transport: string | null
+      phase: string
+      occurred_at: Date
+      duration_ms: number | null
+      observation_count: string
+    }>(
+      `
       WITH eligible AS (
         SELECT DISTINCT candidate.execution_id
         FROM canopy_undergrowth_observations candidate
@@ -86,7 +101,9 @@ export class UndergrowthStore {
       FROM ranked WHERE position = 1
       ORDER BY occurred_at DESC, execution_id
       LIMIT $${values.length}
-    `, values)
+    `,
+      values,
+    )
     return result.rows.map((row) => ({
       executionId: row.execution_id,
       ...(row.correlation_id ? { correlationId: row.correlation_id } : {}),
@@ -111,21 +128,34 @@ export class UndergrowthStore {
     ]
     if (query.search) {
       values.push(`%${query.search}%`)
-      conditions.push(`(name ILIKE $${values.length} OR role_id ILIKE $${values.length} OR actor_id ILIKE $${values.length} OR execution_id::text ILIKE $${values.length} OR correlation_id::text ILIKE $${values.length})`)
+      conditions.push(
+        `(name ILIKE $${values.length} OR role_id ILIKE $${values.length} OR actor_id ILIKE $${values.length} OR execution_id::text ILIKE $${values.length} OR correlation_id::text ILIKE $${values.length})`,
+      )
     }
     values.push(limit)
     const result = await this.#pool.query<{
-      id: string; execution_id: string; correlation_id: string | null; source_execution_id: string | null
-      name: string; kind: string; role_id: string | null; transport: string | null; phase: string
-      occurred_at: Date; duration_ms: number | null
-    }>(`
+      id: string
+      execution_id: string
+      correlation_id: string | null
+      source_execution_id: string | null
+      name: string
+      kind: string
+      role_id: string | null
+      transport: string | null
+      phase: string
+      occurred_at: Date
+      duration_ms: number | null
+    }>(
+      `
       SELECT id, execution_id, correlation_id, source_execution_id, name, kind, role_id,
         transport, phase, occurred_at, duration_ms
       FROM canopy_undergrowth_observations
       WHERE ${conditions.join(' AND ')}
       ORDER BY occurred_at DESC, id DESC
       LIMIT $${values.length}
-    `, values)
+    `,
+      values,
+    )
     return result.rows.map((row) => ({
       entryId: row.id,
       executionId: row.execution_id,
@@ -142,41 +172,67 @@ export class UndergrowthStore {
   }
 
   async timeline(executionId: string): Promise<readonly Observation[]> {
-    const correlation = await this.#pool.query<{ correlation_id: string | null }>(`
+    const correlation = await this.#pool.query<{ correlation_id: string | null }>(
+      `
       SELECT correlation_id FROM canopy_undergrowth_observations
       WHERE execution_id = $1 ORDER BY sequence NULLS LAST, occurred_at, id LIMIT 1
-    `, [executionId])
+    `,
+      [executionId],
+    )
     const correlationId = correlation.rows[0]?.correlation_id
-    const result = await this.#pool.query(`
+    const result = await this.#pool.query(
+      `
       SELECT * FROM canopy_undergrowth_observations
       WHERE execution_id = $1 OR ($2::uuid IS NOT NULL AND correlation_id = $2::uuid)
       ORDER BY sequence NULLS LAST, occurred_at, id
-    `, [executionId, correlationId ?? null])
+    `,
+      [executionId, correlationId ?? null],
+    )
     return result.rows.map(toObservation)
   }
 
-  async close(): Promise<void> { await this.#pool.end() }
+  async close(): Promise<void> {
+    await this.#pool.end()
+  }
 }
 
 function toObservation(row: Record<string, unknown>): Observation {
-  const optional = <T>(key: string): T | undefined => row[key] === null || row[key] === undefined ? undefined : row[key] as T
+  const optional = <T>(key: string): T | undefined =>
+    row[key] === null || row[key] === undefined ? undefined : (row[key] as T)
   return {
-    id: String(row.id), occurredAt: (row.occurred_at as Date).toISOString(),
-    kind: row.kind as Observation['kind'], name: String(row.name), phase: row.phase as Observation['phase'],
+    id: String(row.id),
+    occurredAt: (row.occurred_at as Date).toISOString(),
+    kind: row.kind as Observation['kind'],
+    name: String(row.name),
+    phase: row.phase as Observation['phase'],
     ...(optional<string>('role_id') ? { roleId: optional<string>('role_id')! } : {}),
-    ...(optional<number>('duration_ms') === undefined ? {} : { durationMilliseconds: optional<number>('duration_ms')! }),
+    ...(optional<number>('duration_ms') === undefined
+      ? {}
+      : { durationMilliseconds: optional<number>('duration_ms')! }),
     context: {
-      ...(optional<string>('execution_id') ? { executionId: optional<string>('execution_id')! } : {}),
-      ...(optional<string>('source_execution_id') ? { sourceExecutionId: optional<string>('source_execution_id')! } : {}),
-      ...(optional<string>('correlation_id') ? { correlationId: optional<string>('correlation_id')! } : {}),
-      ...(optional<string>('causation_id') ? { causationId: optional<string>('causation_id')! } : {}),
+      ...(optional<string>('execution_id')
+        ? { executionId: optional<string>('execution_id')! }
+        : {}),
+      ...(optional<string>('source_execution_id')
+        ? { sourceExecutionId: optional<string>('source_execution_id')! }
+        : {}),
+      ...(optional<string>('correlation_id')
+        ? { correlationId: optional<string>('correlation_id')! }
+        : {}),
+      ...(optional<string>('causation_id')
+        ? { causationId: optional<string>('causation_id')! }
+        : {}),
       ...(optional<string>('trace_id') ? { traceId: optional<string>('trace_id')! } : {}),
       ...(optional<string>('span_id') ? { spanId: optional<string>('span_id')! } : {}),
-      ...(optional<Observation['context']['actorKind']>('actor_kind') ? { actorKind: optional<Observation['context']['actorKind']>('actor_kind')! } : {}),
+      ...(optional<Observation['context']['actorKind']>('actor_kind')
+        ? { actorKind: optional<Observation['context']['actorKind']>('actor_kind')! }
+        : {}),
       ...(optional<string>('actor_id') ? { actorId: optional<string>('actor_id')! } : {}),
       ...(optional<string>('tenant_id') ? { tenantId: optional<string>('tenant_id')! } : {}),
       ...(optional<string>('transport') ? { transport: optional<string>('transport')! } : {}),
-      ...(optional<string>('transport_name') ? { transportName: optional<string>('transport_name')! } : {}),
+      ...(optional<string>('transport_name')
+        ? { transportName: optional<string>('transport_name')! }
+        : {}),
     },
     attributes: row.attributes as Observation['attributes'],
     ...(row.error ? { error: row.error as NonNullable<Observation['error']> } : {}),

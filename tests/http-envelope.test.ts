@@ -44,14 +44,16 @@ describe('Canopy HTTP response envelopes', () => {
         ],
       },
       logger: new Logger(),
-      authenticateHttp: () => Promise.resolve({
-        actor: { kind: 'anonymous' },
-        authentication: { state: 'anonymous' },
-      }),
-      admit: async (_seed: unknown, work: (context: object) => Promise<unknown>) => work({
-        correlationId: 'envelope-test',
-        trace: { traceId: '1'.repeat(32), spanId: '2'.repeat(16), traceFlags: 1 },
-      }),
+      authenticateHttp: () =>
+        Promise.resolve({
+          actor: { kind: 'anonymous' },
+          authentication: { state: 'anonymous' },
+        }),
+      admit: async (_seed: unknown, work: (context: object) => Promise<unknown>) =>
+        work({
+          correlationId: 'envelope-test',
+          trace: { traceId: '1'.repeat(32), spanId: '2'.repeat(16), traceFlags: 1 },
+        }),
       dispatchRoute: (id: string) => {
         if (id === 'route:test/failure') {
           throw new HttpError(409, 'conflict', 'The resource changed.', { version: 2 })

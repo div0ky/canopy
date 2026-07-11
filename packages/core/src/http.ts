@@ -23,11 +23,7 @@ export function httpSuccess<Payload>(data: Payload): HttpSuccess<Payload> {
   return Object.freeze({ ok: true, data })
 }
 
-export function httpFailure(
-  code: string,
-  message: string,
-  details?: unknown,
-): HttpFailure {
+export function httpFailure(code: string, message: string, details?: unknown): HttpFailure {
   return Object.freeze({
     ok: false,
     code,
@@ -46,17 +42,22 @@ export interface StandardSchema<Input = unknown, Output = Input> {
   readonly '~standard': {
     readonly version: 1
     readonly vendor: string
-    readonly validate: (value: unknown, options?: { readonly libraryOptions?: Record<string, unknown> | undefined }) =>
+    readonly validate: (
+      value: unknown,
+      options?: { readonly libraryOptions?: Record<string, unknown> | undefined },
+    ) =>
       | { readonly value: Output; readonly issues?: undefined }
       | { readonly issues: readonly StandardSchemaIssue[] }
       | Promise<
           | { readonly value: Output; readonly issues?: undefined }
           | { readonly issues: readonly StandardSchemaIssue[] }
         >
-    readonly types?: {
-      readonly input: Input
-      readonly output: Output
-    } | undefined
+    readonly types?:
+      | {
+          readonly input: Input
+          readonly output: Output
+        }
+      | undefined
   }
 }
 
@@ -100,7 +101,11 @@ export class HttpRequest {
   param(name: string): string {
     const value = this.params[name]
     if (value === undefined) {
-      throw new HttpError(400, 'missing_path_parameter', `Required path parameter ${name} is missing.`)
+      throw new HttpError(
+        400,
+        'missing_path_parameter',
+        `Required path parameter ${name} is missing.`,
+      )
     }
     return value
   }
@@ -119,11 +124,17 @@ export class HttpRequest {
 
   async json<Value = unknown>(): Promise<Value> {
     try {
-      return await this.raw.json() as Value
+      return (await this.raw.json()) as Value
     } catch (cause) {
-      throw new HttpError(400, 'invalid_json', 'The request body must contain valid JSON.', undefined, {
-        cause,
-      })
+      throw new HttpError(
+        400,
+        'invalid_json',
+        'The request body must contain valid JSON.',
+        undefined,
+        {
+          cause,
+        },
+      )
     }
   }
 
@@ -137,12 +148,14 @@ export class HttpRequest {
   ): Promise<Output> {
     const result = await schema['~standard'].validate(value)
     if ('issues' in result && result.issues) {
-      throw new HttpValidationError(result.issues.map((issue) => ({
-        message: issue.message,
-        path: (issue.path ?? []).map((part) => (
-          typeof part === 'object' && part !== null && 'key' in part ? part.key : part
-        )),
-      })))
+      throw new HttpValidationError(
+        result.issues.map((issue) => ({
+          message: issue.message,
+          path: (issue.path ?? []).map((part) =>
+            typeof part === 'object' && part !== null && 'key' in part ? part.key : part,
+          ),
+        })),
+      )
     }
     return result.value
   }

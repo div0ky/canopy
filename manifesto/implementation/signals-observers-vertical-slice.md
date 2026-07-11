@@ -22,9 +22,9 @@ committed
 
 All phases except `committed` execute inside the action transaction. `committed` is registered on
 the Unit of Work and runs only after PostgreSQL confirms durability. A rollback therefore preserves
-the already-observed in-process phases but suppresses `committed`. Observer exceptions before
-commit fail the action and roll back its durable work. Remote side effects still belong in
-outbox-backed queued listeners, not observers.
+the already-observed in-process phases but suppresses `committed`. Observer exceptions before commit
+fail the action and roll back its durable work. Remote side effects still belong in outbox-backed
+queued listeners, not observers.
 
 The reference application proves declaration, type-inferred signal/model association, generated
 metadata, execution-context propagation, create/update ordering, and rollback behavior.

@@ -13,10 +13,7 @@ import {
   OptimisticConcurrencyError,
   type TraceContext,
 } from '@canopy/core'
-import {
-  type CanopyRuntime,
-  ExecutionAdmissionError,
-} from '@canopy/runtime'
+import { type CanopyRuntime, ExecutionAdmissionError } from '@canopy/runtime'
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 
@@ -36,40 +33,53 @@ export class HonoHttpEngine implements HttpEngine {
           const resolved = await runtime.authenticateHttp(context.req.raw)
           authenticationHeaders = resolved.responseHeaders
           const trace = traceContextFrom(context.req.raw)
-          const result = await runtime.admit({
-            actor: resolved.actor,
-            authentication: resolved.authentication,
-            ...(requestedCorrelation ? { correlationId: requestedCorrelation } : {}),
-            ...(trace ? { trace } : {}),
-            cancellation: context.req.raw.signal,
-            transport: {
-              kind: 'http',
-              name: `${route.method} ${route.path}`,
+          const result = await runtime.admit(
+            {
+              actor: resolved.actor,
+              authentication: resolved.authentication,
+              ...(requestedCorrelation ? { correlationId: requestedCorrelation } : {}),
+              ...(trace ? { trace } : {}),
+              cancellation: context.req.raw.signal,
+              transport: {
+                kind: 'http',
+                name: `${route.method} ${route.path}`,
+              },
             },
-          }, async (execution) => {
-            correlationId = execution.correlationId
-            responseTraceparent = formatTraceparent(execution.trace)
-            const routeResult = await runtime.dispatchRoute(route.id, context.req.raw, context.req.param())
-            const response = normalizeResponse(routeResult)
-            runtime.logger.channel('http').info(`${context.req.method} ${new URL(context.req.url).pathname}`, {
-              status: response.status,
-              durationMs: performance.now() - startedAt,
-            })
-            return response
-          })
+            async (execution) => {
+              correlationId = execution.correlationId
+              responseTraceparent = formatTraceparent(execution.trace)
+              const routeResult = await runtime.dispatchRoute(
+                route.id,
+                context.req.raw,
+                context.req.param(),
+              )
+              const response = normalizeResponse(routeResult)
+              runtime.logger
+                .channel('http')
+                .info(`${context.req.method} ${new URL(context.req.url).pathname}`, {
+                  status: response.status,
+                  durationMs: performance.now() - startedAt,
+                })
+              return response
+            },
+          )
           return withAuthenticationHeaders(
             withCorrelation(normalizeResponse(result), correlationId, responseTraceparent),
             authenticationHeaders,
           )
         } catch (error) {
-          const response = withAuthenticationHeaders(errorResponse(error, correlationId), authenticationHeaders)
+          const response = withAuthenticationHeaders(
+            errorResponse(error, correlationId),
+            authenticationHeaders,
+          )
           const attributes = {
             status: response.status,
             durationMs: performance.now() - startedAt,
             ...(correlationId ? { correlationId } : {}),
           }
           const message = `${context.req.method} ${new URL(context.req.url).pathname}`
-          if (response.status >= 500) runtime.logger.channel('http').error(message, error, attributes)
+          if (response.status >= 500)
+            runtime.logger.channel('http').error(message, error, attributes)
           else runtime.logger.channel('http').warn(message, attributes)
           return response
         }
@@ -102,12 +112,15 @@ export type HttpHostState = 'ready' | 'draining' | 'stopped'
 export class HonoHttpHost {
   #state: HttpHostState = 'ready'
   #shutdownPromise: Promise<void> | undefined
+  readonly #server: ReturnType<typeof serve>
 
   private constructor(
     readonly engine: HonoHttpEngine,
-    readonly server: ReturnType<typeof serve>,
+    server: ReturnType<typeof serve>,
     private readonly runtime: CanopyRuntime,
-  ) {}
+  ) {
+    this.#server = server
+  }
 
   static async listen(
     runtime: CanopyRuntime,
@@ -128,15 +141,16 @@ export class HonoHttpHost {
   }
 
   get url(): URL {
-    const address = this.server.address()
+    const address = this.#server.address()
     if (!address || typeof address === 'string') {
       throw new Error('The Canopy HTTP host does not have a TCP address.')
     }
-    const hostname = address.address === '::'
-      ? '127.0.0.1'
-      : address.family === 'IPv6'
-        ? `[${address.address}]`
-        : address.address
+    const hostname =
+      address.address === '::'
+        ? '127.0.0.1'
+        : address.family === 'IPv6'
+          ? `[${address.address}]`
+          : address.address
     return new URL(`http://${hostname}:${address.port}`)
   }
 
@@ -152,7 +166,7 @@ export class HonoHttpHost {
     let closeError: unknown
     try {
       await new Promise<void>((resolve, reject) => {
-        this.server.close((error) => error ? reject(error) : resolve())
+        this.#server.close((error) => (error ? reject(error) : resolve()))
       })
     } catch (error) {
       closeError = error
@@ -184,9 +198,17 @@ function traceContextFrom(request: Request): TraceContext | undefined {
   if (!value) return undefined
   const match = value.match(/^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/i)
   if (!match || /^0+$/.test(match[1]!) || /^0+$/.test(match[2]!)) {
-    throw new HttpError(400, 'invalid_traceparent', 'The traceparent header is not a supported W3C trace context.')
+    throw new HttpError(
+      400,
+      'invalid_traceparent',
+      'The traceparent header is not a supported W3C trace context.',
+    )
   }
-  return { traceId: match[1]!.toLowerCase(), spanId: match[2]!.toLowerCase(), traceFlags: Number.parseInt(match[3]!, 16) }
+  return {
+    traceId: match[1]!.toLowerCase(),
+    spanId: match[2]!.toLowerCase(),
+    traceFlags: Number.parseInt(match[3]!, 16),
+  }
 }
 
 function formatTraceparent(trace: TraceContext): string | undefined {
@@ -200,9 +222,14 @@ function normalizeResponse(value: unknown): Response {
   return Response.json(httpSuccess(value))
 }
 
-function withCorrelation(response: Response, correlationId?: string, traceparent?: string): Response {
+function withCorrelation(
+  response: Response,
+  correlationId?: string,
+  traceparent?: string,
+): Response {
   const headers = new Headers(response.headers)
-  if (correlationId && !headers.has('x-correlation-id')) headers.set('x-correlation-id', correlationId)
+  if (correlationId && !headers.has('x-correlation-id'))
+    headers.set('x-correlation-id', correlationId)
   if (traceparent && !headers.has('traceparent')) headers.set('traceparent', traceparent)
   return new Response(response.body, {
     status: response.status,
@@ -211,11 +238,18 @@ function withCorrelation(response: Response, correlationId?: string, traceparent
   })
 }
 
-function withAuthenticationHeaders(response: Response, values?: Readonly<Record<string, string>>): Response {
+function withAuthenticationHeaders(
+  response: Response,
+  values?: Readonly<Record<string, string>>,
+): Response {
   if (!values) return response
   const headers = new Headers(response.headers)
   for (const [name, value] of Object.entries(values)) headers.set(name, value)
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  })
 }
 
 function errorResponse(error: unknown, correlationId?: string): Response {
@@ -226,22 +260,17 @@ function errorResponse(error: unknown, correlationId?: string): Response {
     )
   }
   if (error instanceof AuthenticationError) {
-    const status = error.code === 'invalid_credentials' || error.code === 'ambiguous_credentials'
-      ? 401
-      : 422
-    return withCorrelation(
-      errorDocument(status, error.code, error.message),
-      correlationId,
-    )
+    const status =
+      error.code === 'invalid_credentials' || error.code === 'ambiguous_credentials' ? 401 : 422
+    return withCorrelation(errorDocument(status, error.code, error.message), correlationId)
   }
   if (error instanceof AuthenticationRateLimitError) {
-    return withCorrelation(errorDocument(
-      429,
-      'rate_limited',
-      error.message,
-      undefined,
-      { 'retry-after': String(error.retryAfterSeconds) },
-    ), correlationId)
+    return withCorrelation(
+      errorDocument(429, 'rate_limited', error.message, undefined, {
+        'retry-after': String(error.retryAfterSeconds),
+      }),
+      correlationId,
+    )
   }
   if (error instanceof AuthorizationError) {
     const status = error.decision.code === 'authentication_required' ? 401 : 403
@@ -255,10 +284,7 @@ function errorResponse(error: unknown, correlationId?: string): Response {
     )
   }
   if (error instanceof ModelNotFoundError) {
-    return withCorrelation(
-      errorDocument(404, 'model_not_found', error.message),
-      correlationId,
-    )
+    return withCorrelation(errorDocument(404, 'model_not_found', error.message), correlationId)
   }
   if (error instanceof OptimisticConcurrencyError) {
     return withCorrelation(
@@ -295,5 +321,8 @@ function errorDocument(
   details?: unknown,
   headers?: Headers | Record<string, string> | Array<[string, string]>,
 ): Response {
-  return Response.json(httpFailure(code, message, details), { status, ...(headers ? { headers } : {}) })
+  return Response.json(httpFailure(code, message, details), {
+    status,
+    ...(headers ? { headers } : {}),
+  })
 }

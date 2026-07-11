@@ -1,8 +1,32 @@
 {
   "name": "@canopy/arbor",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.1.0-alpha.0",
+  "description": "The canonical generator, development, runtime, inspection, and operations CLI for Canopy.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/div0ky/canopy.git",
+    "directory": "packages/arbor"
+  },
+  "homepage": "https://github.com/div0ky/canopy#readme",
+  "bugs": {
+    "url": "https://github.com/div0ky/canopy/issues"
+  },
+  "keywords": [
+    "canopy",
+    "framework",
+    "cli",
+    "generator",
+    "typescript"
+  ],
   "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "bin": {
     "arbor": "./dist/bin.js"
   },
@@ -17,17 +41,24 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "NOTICE"
   ],
+  "scripts": {
+    "prepack": "node ../../scripts/prepare-package.mjs",
+    "postpack": "node ../../scripts/prepare-package.mjs --clean"
+  },
   "dependencies": {
-    "@canopy/compiler": "workspace:*",
     "@canopy/core": "workspace:*",
     "@canopy/http-hono": "workspace:*",
     "@canopy/queue-pg-boss": "workspace:*",
     "@canopy/runtime": "workspace:*",
-    "@canopy/undergrowth": "workspace:*",
-    "drizzle-kit": "0.31.10",
     "pg": "8.22.0"
+  },
+  "optionalDependencies": {
+    "@canopy/compiler": "workspace:*",
+    "@canopy/undergrowth": "workspace:*",
+    "drizzle-kit": "0.31.10"
   },
   "devDependencies": {
     "@types/pg": "8.20.0"

@@ -3,7 +3,8 @@
 - **Status:** Implemented proof
 - **Implemented:** 2026-07-10
 - **MVP status:** Incomplete
-- **Depends on:** [Actor, Execution Context, and Authorization](../specifications/actor-execution-context-authorization.md)
+- **Depends on:**
+  [Actor, Execution Context, and Authorization](../specifications/actor-execution-context-authorization.md)
 
 ## Outcome
 
@@ -38,8 +39,8 @@ export class CounterPolicy extends Policy<OwnedCounter> {
 ```
 
 The Feature declares `policies = [CounterPolicy]`. The compiler rejects duplicate ability owners,
-invalid role classes, ambiguous IDs, invalid dependencies, and protected routes whose ability has
-no selected policy.
+invalid role classes, ambiguous IDs, invalid dependencies, and protected routes whose ability has no
+selected policy.
 
 Every route explicitly declares either `static access = 'public'` or a stable ability. Public is a
 visible opt-out; omission is a compilation failure. Protected routes authorize before their
@@ -65,16 +66,16 @@ in queue execution envelopes so asynchronous work cannot gain authority through 
 
 Routes, actions, queries, listeners, jobs, and schedules each compile an explicit `public` or
 ability access declaration. Protected work authorizes before constructing its handler. The
-injectable `Authorization` service remains available in every admitted execution scope for
-resource checks after loading domain state. The policy request always receives the current
-immutable execution context.
+injectable `Authorization` service remains available in every admitted execution scope for resource
+checks after loading domain state. The policy request always receives the current immutable
+execution context.
 
 ## Security audit
 
-Every allow and deny is recorded through the first-party authentication security store with
-ability, effect, canonical policy ID, code, actor reference, execution ID, and correlation ID.
-Resources and credential material are never serialized into the audit record. Audit failure fails
-the authorization call closed.
+Every allow and deny is recorded through the first-party authentication security store with ability,
+effect, canonical policy ID, code, actor reference, execution ID, and correlation ID. Resources and
+credential material are never serialized into the audit record. Audit failure fails the
+authorization call closed.
 
 ## Evidence
 

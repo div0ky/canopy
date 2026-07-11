@@ -1,5 +1,5 @@
-import { FieldGuide } from "@/components/field-guide";
+import { FieldGuide } from '@/components/field-guide'
 
 export default function Home() {
-  return <FieldGuide />;
+  return <FieldGuide />
 }

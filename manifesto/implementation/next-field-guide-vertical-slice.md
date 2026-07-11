@@ -2,7 +2,9 @@
 
 - **Status:** Implemented proof
 - **Implemented:** 2026-07-10
-- **Depends on:** [Hono HTTP](hono-http-vertical-slice.md), [authentication completion](authentication-completion-vertical-slice.md), and [queue workers](pg-boss-queue-worker-vertical-slice.md)
+- **Depends on:** [Hono HTTP](hono-http-vertical-slice.md),
+  [authentication completion](authentication-completion-vertical-slice.md), and
+  [queue workers](pg-boss-queue-worker-vertical-slice.md)
 
 ## Outcome
 

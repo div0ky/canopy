@@ -1,10 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 
-import type {
-  Job,
-  JobConstructor,
-  JobDispatchOptions,
-} from './queue.js'
+import type { Job, JobConstructor, JobDispatchOptions } from './queue.js'
 export interface JobDispatcher {
   dispatch<Input, Instance extends Job<Input>>(
     Constructor: JobConstructor<Instance, Input>,
