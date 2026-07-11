@@ -62,6 +62,8 @@ implemented is documented in the
 - `examples/reference-app` — executable conformance fixture.
 - `examples/persistence-app` — domain-organized auth, HTTP, event, model, queue, worker, schedule, and PostgreSQL
   fixture.
+- `examples/field-guide` — external-consumer Next.js, Tailwind, and shadcn/ui browser fixture for
+  public HTTP, first-party auth, bearer tokens, protected actions, and queued work.
 
 ## Development
 

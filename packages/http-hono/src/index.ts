@@ -24,6 +24,7 @@ export class HonoHttpEngine implements HttpEngine {
   constructor(private readonly runtime: CanopyRuntime) {
     for (const route of runtime.manifest.routes) {
       this.#app.on(route.method, route.path, async (context) => {
+        const startedAt = performance.now()
         let correlationId: string | undefined
         let responseTraceparent: string | undefined
         let authenticationHeaders: Readonly<Record<string, string>> | undefined
@@ -46,23 +47,42 @@ export class HonoHttpEngine implements HttpEngine {
           }, async (execution) => {
             correlationId = execution.correlationId
             responseTraceparent = formatTraceparent(execution.trace)
-            return runtime.dispatchRoute(route.id, context.req.raw, context.req.param())
+            const routeResult = await runtime.dispatchRoute(route.id, context.req.raw, context.req.param())
+            const response = normalizeResponse(routeResult)
+            runtime.logger.channel('http').info(`${context.req.method} ${new URL(context.req.url).pathname}`, {
+              status: response.status,
+              durationMs: performance.now() - startedAt,
+            })
+            return response
           })
           return withAuthenticationHeaders(
             withCorrelation(normalizeResponse(result), correlationId, responseTraceparent),
             authenticationHeaders,
           )
         } catch (error) {
-          return withAuthenticationHeaders(errorResponse(error, correlationId), authenticationHeaders)
+          const response = withAuthenticationHeaders(errorResponse(error, correlationId), authenticationHeaders)
+          const attributes = {
+            status: response.status,
+            durationMs: performance.now() - startedAt,
+            ...(correlationId ? { correlationId } : {}),
+          }
+          const message = `${context.req.method} ${new URL(context.req.url).pathname}`
+          if (response.status >= 500) runtime.logger.channel('http').error(message, error, attributes)
+          else runtime.logger.channel('http').warn(message, attributes)
+          return response
         }
       })
     }
 
-    this.#app.notFound((context) => errorDocument(
-      404,
-      'route_not_found',
-      `No Canopy route matches ${context.req.method} ${new URL(context.req.url).pathname}.`,
-    ))
+    this.#app.notFound((context) => {
+      const path = new URL(context.req.url).pathname
+      runtime.logger.channel('http').warn(`${context.req.method} ${path}`, { status: 404 })
+      return errorDocument(
+        404,
+        'route_not_found',
+        `No Canopy route matches ${context.req.method} ${path}.`,
+      )
+    })
   }
 
   async fetch(request: Request): Promise<Response> {

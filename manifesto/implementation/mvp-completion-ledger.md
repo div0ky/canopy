@@ -82,7 +82,7 @@ applications and tools do not depend on undocumented behavior.
 
 | Capability | State | Remaining acceptance work |
 | --- | --- | --- |
-| Structured logs | Complete | Execution and failure events use structured causal, actor, transport, and trace attributes with secret-safe behavior. |
+| Structured logs | Complete | Built-in constructor injection, recursive redaction, contextual framework channels, colored TTY output, NDJSON output, and in-memory assertions are proven. |
 | W3C trace context | Complete | HTTP validation/propagation plus durable queue, delivery, journal, and outbox correlation are proven. |
 | Metrics | Complete | Lifecycle, execution/HTTP, persistence, auth, authorization, queue/schedule, and communications instruments are proven. |
 | Diagnostics | Complete | Graph, routes, policies, observers, listeners, jobs, schedules, auth, delivery, journal, outbox, and cache are inspectable through Arbor. |

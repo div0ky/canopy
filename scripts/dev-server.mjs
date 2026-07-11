@@ -35,6 +35,7 @@ const runtime = await Canopy.boot(Application, {
     ...process.env,
     DATABASE_CONNECTION_STRING: connectionString,
   },
+  logging: { format: 'pretty', color: process.env.NO_COLOR === undefined },
 })
 
 let host
@@ -45,32 +46,24 @@ try {
   throw error
 }
 
-console.log(`Canopy dev server ready at ${host.url}`)
-console.log('GET  /')
-console.log('GET  /health')
-console.log('GET  /hello/:name')
-console.log('POST /auth/register')
-console.log('POST /auth/login')
-console.log('GET  /auth/me')
-console.log('POST /auth/logout')
-console.log('POST /auth/tokens')
-console.log('GET  /auth/tokens')
-console.log('POST /auth/tokens/:id/rotate')
-console.log('DELETE /auth/tokens/:id')
-console.log('POST /ping')
-console.log('POST /counters/:id/increment')
-console.log('DELETE /counters/:id')
+runtime.logger.channel('lifecycle').info('HTTP server ready', {
+  url: host.url.toString(),
+  routes: runtime.manifest.routes.length,
+})
+runtime.logger.channel('http').debug('Routes mounted', {
+  routes: runtime.manifest.routes.map((route) => `${route.method} ${route.path}`),
+})
 
 let shuttingDown = false
 async function shutdown(signal) {
   if (shuttingDown) return
   shuttingDown = true
-  console.log(`\n${signal} received; shutting down Canopy...`)
+  runtime.logger.channel('lifecycle').info('Process signal received', { signal })
   try {
     await host.shutdown()
     process.exitCode = 0
   } catch (error) {
-    console.error(error)
+    runtime.logger.channel('lifecycle').fatal('Host shutdown failed', error)
     process.exitCode = 1
   }
 }

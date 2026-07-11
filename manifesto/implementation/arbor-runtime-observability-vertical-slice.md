@@ -19,7 +19,9 @@ It records every role and source plus Canopy's DX, safety, folder, authorization
 generator conventions. The manifest and constructor registry remain the two canonical runtime
 artifacts.
 
-Canopy also owns a vendor-independent `Telemetry` port. Runtime admission emits structured logs,
+Canopy also owns a vendor-independent `Telemetry` port for metrics and spans. First-class application
+and framework logging is specified separately in [First-class logging](../specifications/logging.md).
+Runtime admission emits structured telemetry events,
 metrics, and spans with actor, correlation, causation, tenant, transport, and trace fields. HTTP
 validates and propagates W3C trace context; queues and durable records preserve it. The runtime
 generates trace/span IDs when no parent exists. Telemetry adapters are isolated from application

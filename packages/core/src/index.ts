@@ -19,6 +19,22 @@ export {
 export { Command } from './command.js'
 export { MemoryTelemetry, NoopTelemetry, Telemetry, type TelemetryRecord } from './telemetry.js'
 export {
+  ConsoleLogSink,
+  formatPrettyLog,
+  Logger,
+  LogSink,
+  MemoryLogSink,
+  NoopLogSink,
+  type ConsoleLogSinkOptions,
+  type LogContext,
+  type LogDestination,
+  type LogError,
+  type LogFormat,
+  type LogLevel,
+  type LogRecord,
+  type LoggerOptions,
+} from './logging.js'
+export {
   DeliveryError,
   DeliveryLedger,
   FakeMailTransport,

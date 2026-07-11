@@ -1,36 +1,46 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Canopy Field Guide
 
-## Getting Started
+Field Guide is Canopy's external browser-consumer fixture. It is a Next.js App Router application
+using Tailwind CSS and shadcn/ui. It deliberately imports no Canopy runtime packages: every
+interaction crosses the public HTTP boundary exactly as a separately deployed frontend would.
 
-First, run the development server:
+## Run it
+
+Start Canopy from the workspace root, then start Field Guide in another terminal:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
 pnpm dev
-# or
-bun dev
+pnpm dev:field-guide
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://127.0.0.1:3001`. The Next server forwards `/api/canopy/*` to
+`CANOPY_API_URL`, which defaults to `http://127.0.0.1:3000`. Copy `.env.example` to `.env.local`
+only when that backend URL needs to change.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## What it proves
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `GET /health` and `GET /hello/:name` through a typed frontend client.
+- Email/password registration and login.
+- Browser cookie propagation and `GET /auth/me` session resolution.
+- Logout and cookie expiry.
+- One-time opaque bearer-token issuance.
+- A default-deny protected counter mutation.
+- Transactional model persistence followed by durable job dispatch.
+- Stable Canopy error normalization without importing backend implementation types.
 
-## Learn More
+The same-origin Next route is an HTTP transport adapter, not a second application API. It forwards
+method, query, body, browser cookie, origin, authorization, content type, and user agent while
+preserving Canopy's status, headers, and response body. In production, the trusted frontend origin
+must also be declared by the Canopy authentication provider.
 
-To learn more about Next.js, take a look at the following resources:
+## Design and checks
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The accepted visual concept is [field-guide-concept.png](docs/design/field-guide-concept.png). Its
+editorial field-notebook direction is implemented with semantic shadcn/ui components and Tailwind
+tokens; all controls and application text remain code-native.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+pnpm check:field-guide
+```
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The root MVP audit runs this check and enforces the external-consumer dependency boundary.

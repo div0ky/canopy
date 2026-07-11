@@ -11,7 +11,6 @@ import {
   FakeQueueManager,
   FakeSmsTransport,
   MemoryCache,
-  MemoryTelemetry,
   MemoryTransactionManager,
 } from '@canopy/testing'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -147,7 +146,6 @@ describe('Arbor command suite', () => {
         'provider:infrastructure/cache': new MemoryCache(),
         'provider:infrastructure/mail': mail,
         'provider:infrastructure/sms': sms,
-        'provider:infrastructure/telemetry': new MemoryTelemetry(),
       },
     })
     try {

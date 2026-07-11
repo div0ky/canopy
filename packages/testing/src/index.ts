@@ -26,6 +26,7 @@ import {
   type JsonValue,
   type LoginInput,
   MemoryCache,
+  MemoryLogSink,
   MemoryTelemetry,
   type OutboxMessage,
   type PersistedEntity,
@@ -48,15 +49,17 @@ import {
 import { HonoHttpEngine } from '@canopy/http-hono'
 import { Canopy, type BootOptions, type CanopyRuntime } from '@canopy/runtime'
 
-export { FakeMailTransport, FakeSmsTransport, MemoryCache, MemoryTelemetry }
+export { FakeMailTransport, FakeSmsTransport, MemoryCache, MemoryLogSink, MemoryTelemetry }
 
 export class CanopyTestHarness {
   readonly http: HonoHttpEngine
+  readonly logs: MemoryLogSink
   #actor: ActorRef = { kind: 'anonymous' }
   #authentication: AuthenticationContext = { state: 'anonymous' }
 
-  private constructor(readonly runtime: CanopyRuntime, readonly auth?: TestAuth) {
+  private constructor(readonly runtime: CanopyRuntime, logs: MemoryLogSink, readonly auth?: TestAuth) {
     this.http = new HonoHttpEngine(runtime)
+    this.logs = logs
   }
 
   static async boot(
@@ -68,8 +71,12 @@ export class CanopyTestHarness {
       ...options.providerOverrides,
       ...(auth && options.authProviderId ? { [options.authProviderId]: auth } : {}),
     }
-    const runtime = await Canopy.boot(application, { ...options, providerOverrides: overrides })
-    return new CanopyTestHarness(runtime, auth)
+    const logs = new MemoryLogSink()
+    const logging = options.logging === false
+      ? false as const
+      : { level: 'debug' as const, ...options.logging, sink: logs }
+    const runtime = await Canopy.boot(application, { ...options, providerOverrides: overrides, logging })
+    return new CanopyTestHarness(runtime, logs, auth)
   }
 
   actingAs(actor: ActorRef, authentication?: AuthenticationContext): this {

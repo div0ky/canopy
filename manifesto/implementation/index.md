@@ -65,3 +65,6 @@ requirement to its implementation and acceptance evidence.
 21. [Existing-table model and authentication mapping](existing-table-mapping-vertical-slice.md) —
     Laravel-like model metadata, explicit first-party auth mappings, mixed external/framework
     ownership, PostgreSQL conformance, fakes, and operator/Cultivate inspection.
+22. [Next.js Field Guide frontend slice](next-field-guide-vertical-slice.md) — external-consumer
+    Next.js, Tailwind, and shadcn/ui proof across public HTTP, sessions, bearer tokens, protected
+    models, and queued work.

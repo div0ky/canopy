@@ -190,9 +190,9 @@ first-party token contract.
 Canopy will use Argon2id with versioned parameters and per-password random salts. Hash records must
 carry enough metadata to verify old parameters and upgrade them after successful authentication.
 
-Password policy will favor length, breached-password defenses, rate limiting, and secure recovery
-over arbitrary composition rules. Raw passwords must never enter logs, events, traces, or durable
-diagnostics.
+Password policy accepts 8–64 Unicode characters and favors breached-password defenses, rate
+limiting, and secure recovery over arbitrary composition rules. Raw passwords must never enter
+logs, events, traces, or durable diagnostics.
 
 The preferred implementation is the Argon2id primitive supplied by Node.js 24.7 and newer. Any
 fallback library must be isolated behind the same `PasswordHasher` contract, exactly pinned,

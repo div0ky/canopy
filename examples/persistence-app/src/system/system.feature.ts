@@ -9,11 +9,12 @@ import { RecordHttpPinged } from './listeners/record-http-pinged.js'
 import { SystemEventRecorder } from './support/system-event-recorder.js'
 import { DailyHealthCheckSchedule } from './schedules/daily-health-check.schedule.js'
 import { DescribeCanopy } from './commands/describe-canopy.js'
+import { PongRoute } from './http/pong.route.js'
 
 export class SystemFeature extends Feature {
   id = 'system'
   providers = [SystemEventRecorder]
-  routes = [HomeRoute, HealthRoute, HelloRoute, PingRoute]
+  routes = [HomeRoute, HealthRoute, HelloRoute, PingRoute, PongRoute]
   events = [HttpPinged]
   listeners = [RecordHttpPinged]
   schedules = [DailyHealthCheckSchedule]

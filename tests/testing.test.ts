@@ -73,6 +73,18 @@ describe('@canopy/testing', () => {
       const me = await harness.request('http://canopy.test/auth/me')
       expect(me.status).toBe(200)
       expect(await me.json()).toEqual(expect.objectContaining({ actor: { kind: 'user', id: 'ada' } }))
+      const home = await harness.request('http://canopy.test/')
+      expect(home.status).toBe(200)
+      expect((await harness.request('http://canopy.test/missing')).status).toBe(404)
+      expect(harness.logs.records).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          channel: 'app',
+          message: 'Canopy home visited',
+          context: expect.objectContaining({ transport: 'http', actorKind: 'user' }),
+        }),
+        expect.objectContaining({ channel: 'http', message: 'Execution completed' }),
+        expect.objectContaining({ channel: 'http', level: 'warn', message: 'GET /missing', attributes: { status: 404 } }),
+      ]))
 
       const ids = await harness.action(QueueNotifications, undefined)
       expect(queue.queued).toHaveLength(2)

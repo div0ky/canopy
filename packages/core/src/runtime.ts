@@ -9,3 +9,4 @@ export {
   type JobDispatcher,
   runWithJobDispatcher,
 } from './queue-context.js'
+export { runWithLogContext } from './logging.js'

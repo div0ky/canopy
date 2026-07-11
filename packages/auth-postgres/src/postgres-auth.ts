@@ -1007,10 +1007,10 @@ function normalizeEmailForLogin(value: string): string {
 
 function assertPassword(password: string): void {
   const length = [...password].length
-  if (length < 12 || length > 1_024) {
+  if (length < 8 || length > 64) {
     throw new AuthenticationError(
       'invalid_registration',
-      'Passwords must contain between 12 and 1024 characters.',
+      'Passwords must contain between 8 and 64 characters.',
     )
   }
 }

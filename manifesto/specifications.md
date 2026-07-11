@@ -121,7 +121,8 @@ resources, policy, hardening, and the complete HTTP specification remain unsettl
 | Area | Status | Central question |
 | --- | --- | --- |
 | Configuration and secrets | Exploring | [How do injectable configuration classes resolve, validate, and protect declared values?](decisions/0021-injectable-configuration-classes.md) |
-| Observability | Exploring | Which actor and causal fields connect logs, traces, journal entries, jobs, and audit records? |
+| Logging | Implemented | [How do built-in structured records become contextual, redacted, color-coded local output and machine-readable production output?](specifications/logging.md) |
+| Metrics and tracing | Exploring | Which actor and causal fields connect traces, journal entries, jobs, and audit records? |
 | Testing applications and fakes | Exploring | [How do direct unit tests and pre-boot derived test graphs preserve framework semantics?](decisions/0020-preboot-test-overrides.md) |
 | CLI and generators | Exploring | [How do generators support opinionated defaults without making paths semantic?](decisions/0016-path-independent-structure-autowired-services.md) |
 | Diagnostics | Unexplored | How can a developer inspect graph, lifecycle, routing, and delivery decisions? |

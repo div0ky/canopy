@@ -27,6 +27,11 @@ import {
   type LifecycleContext,
   type Listener,
   Mailer,
+  Logger,
+  ConsoleLogSink,
+  type ConsoleLogSinkOptions,
+  type LogLevel,
+  type LogSink,
   type MailMessage,
   type MailTransport,
   type Model,
@@ -67,6 +72,7 @@ import {
   ModelSession,
   runWithEventDispatcher,
   runWithJobDispatcher,
+  runWithLogContext,
   runWithModelSession,
   runWithSignalDispatcher,
   type SignalDispatcher,
@@ -104,6 +110,13 @@ export interface BootOptions {
   readonly deadlines?: Partial<LifecycleDeadlines>
   readonly roles?: Partial<{ readonly worker: boolean; readonly scheduler: boolean }>
   readonly providerOverrides?: Readonly<Record<string, object>>
+  readonly logging?: false | {
+    readonly level?: LogLevel
+    readonly sink?: LogSink
+    readonly format?: ConsoleLogSinkOptions['format']
+    readonly color?: boolean
+    readonly destination?: ConsoleLogSinkOptions['destination']
+  }
 }
 
 interface LifecycleDeadlines {
@@ -234,6 +247,7 @@ export class CanopyRuntime {
   readonly mailer: Mailer
   readonly sms: Sms
   readonly deliveryLedger: DeliveryLedger
+  readonly logger: Logger
   readonly authorization: Authorization
   readonly #currentExecution: CurrentExecution
 
@@ -249,7 +263,9 @@ export class CanopyRuntime {
     private readonly mailTransport: MailTransport | undefined,
     private readonly smsTransport: SmsTransport | undefined,
     private readonly telemetry: Telemetry,
+    logger: Logger,
   ) {
+    this.logger = logger
     this.actions = new RuntimeActionBus(this)
     this.queries = new RuntimeQueryBus(this)
     this.authorization = new RuntimeAuthorization(this)
@@ -357,7 +373,20 @@ export class CanopyRuntime {
     const deadlines = { ...DEFAULT_DEADLINES, ...options.deadlines }
     const configurations = await materializeConfigurations(artifacts, options)
     assertOperationInfrastructure(artifacts.manifest)
-    const graph = constructSingletonGraph(artifacts, configurations, options.providerOverrides ?? {})
+    const consoleOptions: ConsoleLogSinkOptions = {
+      ...(options.logging && options.logging.format ? { format: options.logging.format } : {}),
+      ...(options.logging && options.logging.color !== undefined ? { color: options.logging.color } : {}),
+      ...(options.logging && options.logging.destination ? { destination: options.logging.destination } : {}),
+    }
+    const sink = options.logging === false || options.logging === undefined
+      ? undefined
+      : options.logging?.sink ?? new ConsoleLogSink(consoleOptions)
+    const logger = new Logger({
+      ...(sink ? { sink } : {}),
+      ...(options.logging && options.logging.level ? { level: options.logging.level } : {}),
+    })
+    logger.channel('lifecycle').debug('Booting application', { application: artifacts.manifest.applicationId })
+    const graph = constructSingletonGraph(artifacts, configurations, options.providerOverrides ?? {}, logger)
     const transactionProvider = artifacts.manifest.providers.find(
       (provider) => provider.capabilities.includes('transactions'),
     )
@@ -394,6 +423,7 @@ export class CanopyRuntime {
       mailTransport,
       smsTransport,
       telemetry,
+      logger,
     )
     queues?.selectRoles({
       worker: options.roles?.worker ?? true,
@@ -410,11 +440,19 @@ export class CanopyRuntime {
         started.push(participant)
       }
       runtime.#state = 'ready'
+      runtime.logger.channel('lifecycle').info('Application ready', {
+        application: artifacts.manifest.applicationId,
+        durationMs: performance.now() - bootStartedAt,
+      })
       await runtime.recordTelemetry({ kind: 'metric', name: 'canopy.lifecycle.boot.duration', value: performance.now() - bootStartedAt, unit: 'milliseconds', attributes: { status: 'ok' } })
       return runtime
     } catch (primaryError) {
       const cleanupErrors = await unwindStartup(started, deadlines)
       runtime.#state = 'stopped'
+      runtime.logger.channel('lifecycle').error('Application boot failed', primaryError, {
+        application: artifacts.manifest.applicationId,
+        durationMs: performance.now() - bootStartedAt,
+      })
       await runtime.recordTelemetry({ kind: 'metric', name: 'canopy.lifecycle.boot.duration', value: performance.now() - bootStartedAt, unit: 'milliseconds', attributes: { status: 'error' } })
       throw new RuntimeBootError(primaryError, cleanupErrors)
     }
@@ -442,6 +480,11 @@ export class CanopyRuntime {
     }
     const context = createExecutionContext(seed, controller.signal)
     const startedAt = performance.now()
+    runWithLogContext(logContext(context), () => {
+      this.logger.channel(logChannelForTransport(context.transport.kind)).debug('Execution started', {
+        transport: context.transport.name ?? context.transport.kind,
+      })
+    })
     await this.recordTelemetry({
       kind: 'log', level: 'info', event: 'execution.started', attributes: telemetryAttributes(context),
     })
@@ -459,9 +502,10 @@ export class CanopyRuntime {
       this.mailer,
       this.sms,
       this.deliveryLedger,
+      this.logger,
     )
     const store: ExecutionStore = { context, scope, operationStack: [] }
-    const execution = Promise.resolve(this.#storage.run(store, () => runWithEventDispatcher(
+    const execution = Promise.resolve(this.#storage.run(store, () => runWithLogContext(logContext(context), () => runWithEventDispatcher(
       this.#eventDispatcher,
       () => runWithSignalDispatcher(this.#signalDispatcher, () => runWithJobDispatcher(this.#jobDispatcher, async () => {
         let result: Output | undefined
@@ -482,14 +526,14 @@ export class CanopyRuntime {
         if (cleanupErrors.length > 0) throw new ExecutionCleanupError(cleanupErrors)
         return result as Output
       })),
-    )))
+    ))))
     this.#activeExecutions.set(execution, controller)
     try {
       const result = await execution
       await this.completeTelemetry(context, startedAt, 'ok')
       return result
     } catch (error) {
-      await this.completeTelemetry(context, startedAt, 'error')
+      await this.completeTelemetry(context, startedAt, 'error', error)
       throw error
     } finally {
       this.#activeExecutions.delete(execution)
@@ -497,9 +541,19 @@ export class CanopyRuntime {
     }
   }
 
-  private async completeTelemetry(context: ExecutionContext, startedAt: number, status: 'ok' | 'error'): Promise<void> {
+  private async completeTelemetry(context: ExecutionContext, startedAt: number, status: 'ok' | 'error', error?: unknown): Promise<void> {
     const durationMilliseconds = performance.now() - startedAt
     const attributes = telemetryAttributes(context)
+    const executionLogger = this.logger.channel(logChannelForTransport(context.transport.kind))
+    const logAttributes = {
+      transport: context.transport.name ?? context.transport.kind,
+      durationMs: durationMilliseconds,
+    }
+    runWithLogContext(logContext(context), () => {
+      if (status === 'ok' && context.transport.kind === 'http') executionLogger.debug('Execution completed', logAttributes)
+      else if (status === 'ok') executionLogger.info('Execution completed', logAttributes)
+      else executionLogger.error('Execution failed', error, logAttributes)
+    })
     await this.recordTelemetry({ kind: 'log', level: status === 'ok' ? 'info' : 'error', event: `execution.${status === 'ok' ? 'completed' : 'failed'}`, attributes })
     await this.recordTelemetry({ kind: 'metric', name: 'canopy.execution.duration', value: durationMilliseconds, unit: 'milliseconds', attributes: { transport: context.transport.kind, status } })
     await this.recordTelemetry({
@@ -518,12 +572,16 @@ export class CanopyRuntime {
     work: () => Output | Promise<Output>,
   ): Promise<Output> {
     const startedAt = performance.now()
+    const logger = this.logger.channel(logChannelForSubsystem(subsystem))
+    logger.debug(`${humanizeSubsystem(subsystem)} started`, attributes)
     try {
       const output = await work()
+      logger.debug(`${humanizeSubsystem(subsystem)} completed`, { ...attributes, durationMs: performance.now() - startedAt })
       await this.recordTelemetry({ kind: 'metric', name: `canopy.${subsystem}.total`, value: 1, unit: 'count', attributes: { ...attributes, status: 'ok' } })
       await this.recordTelemetry({ kind: 'metric', name: `canopy.${subsystem}.duration`, value: performance.now() - startedAt, unit: 'milliseconds', attributes: { ...attributes, status: 'ok' } })
       return output
     } catch (error) {
+      logger.error(`${humanizeSubsystem(subsystem)} failed`, error, { ...attributes, durationMs: performance.now() - startedAt })
       await this.recordTelemetry({ kind: 'metric', name: `canopy.${subsystem}.total`, value: 1, unit: 'count', attributes: { ...attributes, status: 'error' } })
       await this.recordTelemetry({ kind: 'metric', name: `canopy.${subsystem}.duration`, value: performance.now() - startedAt, unit: 'milliseconds', attributes: { ...attributes, status: 'error' } })
       throw error
@@ -559,7 +617,7 @@ export class CanopyRuntime {
     if (operation.access !== 'public') await this.authorization.authorize(operation.access)
     store.operationStack.push('action')
     try {
-      return await this.observeTelemetry('persistence.transaction', { operation: 'action', id: operation.id }, () => this.transactions!.transaction(
+      return await this.observeLog('action', 'Action', { id: operation.id }, () => this.observeTelemetry('persistence.transaction', { operation: 'action', id: operation.id }, () => this.transactions!.transaction(
         store.context,
         async (unitOfWork) => {
           const models = new ModelSession(
@@ -576,7 +634,7 @@ export class CanopyRuntime {
             }
           }))
         },
-      ))
+      )))
     } finally {
       store.operationStack.pop()
     }
@@ -592,7 +650,7 @@ export class CanopyRuntime {
     const handler = store.scope.resolve(operation.id) as Query<Input, Output>
     store.operationStack.push('query')
     try {
-      return await handler.handle(input) as Awaited<Output>
+      return await this.observeLog('query', 'Query', { id: operation.id }, () => handler.handle(input)) as Awaited<Output>
     } finally {
       store.operationStack.pop()
     }
@@ -638,7 +696,7 @@ export class CanopyRuntime {
       unitOfWork.afterCommit(() => this.dispatchEventNow(event, manifest, store, true))
       return
     }
-    await this.dispatchEventNow(event, manifest, store)
+    await this.observeTelemetry('event.dispatch', { id: manifest.id }, () => this.dispatchEventNow(event, manifest, store))
   }
 
   private async dispatchSignal(signal: Signal): Promise<void> {
@@ -750,6 +808,11 @@ export class CanopyRuntime {
       ...(options?.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
     }, store)
     await this.enqueueEnvelope(envelope, store, availableAt)
+    this.logger.channel('queue').info('Job queued', {
+      id: envelope.id,
+      job: manifest.id,
+      ...(availableAt ? { availableAt: availableAt.toISOString() } : {}),
+    })
     return envelope.id
   }
 
@@ -820,6 +883,25 @@ export class CanopyRuntime {
       return
     }
     await this.queues.enqueue(envelope)
+  }
+
+  private async observeLog<Output>(
+    channel: string,
+    operation: string,
+    attributes: Readonly<Record<string, unknown>>,
+    work: () => Output | Promise<Output>,
+  ): Promise<Output> {
+    const logger = this.logger.channel(channel)
+    const startedAt = performance.now()
+    logger.debug(`${operation} started`, attributes)
+    try {
+      const output = await work()
+      logger.debug(`${operation} completed`, { ...attributes, durationMs: performance.now() - startedAt })
+      return output
+    } catch (error) {
+      logger.error(`${operation} failed`, error, { ...attributes, durationMs: performance.now() - startedAt })
+      throw error
+    }
   }
 
   private async handleQueueDelivery(delivery: QueueDelivery): Promise<void> {
@@ -1010,6 +1092,13 @@ export class CanopyRuntime {
       kind: 'metric', name: 'canopy.authorization.decisions', value: 1, unit: 'count',
       attributes: { ability, effect: decision.effect, policy: decision.policy, code: decision.code },
     })
+    this.logger.channel('auth').debug('Authorization decided', {
+      ability,
+      effect: decision.effect,
+      policy: decision.policy,
+      code: decision.code,
+      actorKind: context.actor.kind,
+    })
     return decision
   }
 
@@ -1033,6 +1122,8 @@ export class CanopyRuntime {
   }
 
   async #performShutdown(): Promise<void> {
+    const startedAt = performance.now()
+    this.logger.channel('lifecycle').info('Application shutting down')
     const reverse = [...this.participants].reverse()
     const errors: unknown[] = []
     this.#state = 'draining'
@@ -1043,7 +1134,17 @@ export class CanopyRuntime {
     this.#state = 'disposing'
     await this.observeTelemetry('lifecycle.phase', { phase: 'dispose', participant: 'runtime' }, () => invokePhase(reverse, 'dispose', this.deadlines.dispose, errors))
     this.#state = 'stopped'
-    if (errors.length > 0) throw new RuntimeShutdownError(errors)
+    if (errors.length > 0) {
+      const error = new RuntimeShutdownError(errors)
+      this.logger.channel('lifecycle').error('Application shutdown completed with errors', error, {
+        durationMs: performance.now() - startedAt,
+        errors: errors.length,
+      })
+      await this.logger.flush()
+      throw error
+    }
+    this.logger.channel('lifecycle').info('Application stopped', { durationMs: performance.now() - startedAt })
+    await this.logger.flush()
   }
 
   async #drainExecutions(errors: unknown[]): Promise<void> {
@@ -1317,6 +1418,7 @@ function constructSingletonGraph(
   artifacts: RuntimeArtifacts,
   configurations: ReadonlyMap<string, object>,
   overrides: Readonly<Record<string, object>>,
+  logger: Logger,
 ): RuntimeGraph {
   const providerById = new Map(artifacts.manifest.providers.map((provider) => [provider.id, provider]))
   const singletonInstances = new Map<string, object>()
@@ -1330,6 +1432,7 @@ function constructSingletonGraph(
   }
 
   const resolve = (id: string): object | undefined => {
+    if (id === 'canopy:logger') return logger
     const configuration = configurations.get(id)
     if (configuration) return configuration
     const provider = providerById.get(id)
@@ -1418,6 +1521,7 @@ class ExecutionScope {
     private readonly mailer: Mailer,
     private readonly sms: Sms,
     private readonly deliveryLedger: DeliveryLedger,
+    private readonly logger: Logger,
   ) {
     this.#providerById = new Map(
       artifacts.manifest.providers.map((provider) => [provider.id, provider]),
@@ -1449,6 +1553,7 @@ class ExecutionScope {
     if (id === 'canopy:mailer') return this.mailer
     if (id === 'canopy:sms') return this.sms
     if (id === 'canopy:delivery-ledger') return this.deliveryLedger
+    if (id === 'canopy:logger') return this.logger
     if (id === 'canopy:unit-of-work') return this.#unitOfWork ?? this.#readOnlyUnitOfWork
     const configuration = this.graph.configurations.get(id)
     if (configuration) return configuration
@@ -1644,11 +1749,44 @@ function telemetryAttributes(context: ExecutionContext): Readonly<Record<string,
     actorKind: context.actor.kind,
     ...(context.actor.id ? { actorId: context.actor.id } : {}),
     ...(context.tenant ? { tenantId: context.tenant.id } : {}),
+    ...(context.tenant ? { tenantId: context.tenant.id } : {}),
     transport: context.transport.kind,
     ...(context.transport.name ? { transportName: context.transport.name } : {}),
     traceId: context.trace.traceId!,
     spanId: context.trace.spanId!,
   })
+}
+
+function logContext(context: ExecutionContext): import('@canopy/core').LogContext {
+  return Object.freeze({
+    executionId: context.executionId,
+    correlationId: context.correlationId,
+    ...(context.causationId ? { causationId: context.causationId } : {}),
+    actorKind: context.actor.kind,
+    ...(context.actor.id ? { actorId: context.actor.id } : {}),
+    ...(context.trace.traceId ? { traceId: context.trace.traceId } : {}),
+    ...(context.trace.spanId ? { spanId: context.trace.spanId } : {}),
+    transport: context.transport.kind,
+  })
+}
+
+function logChannelForTransport(transport: ExecutionContext['transport']['kind']): string {
+  if (transport === 'job' || transport === 'schedule') return transport === 'job' ? 'queue' : 'schedule'
+  return transport
+}
+
+function logChannelForSubsystem(subsystem: string): string {
+  if (subsystem.startsWith('persistence.')) return 'db'
+  if (subsystem.startsWith('queue.')) return 'queue'
+  if (subsystem.startsWith('auth.')) return 'auth'
+  if (subsystem.startsWith('signal.')) return 'signal'
+  if (subsystem.startsWith('event.')) return 'event'
+  if (subsystem.startsWith('lifecycle.')) return 'lifecycle'
+  return subsystem.split('.')[0] ?? 'app'
+}
+
+function humanizeSubsystem(subsystem: string): string {
+  return subsystem.split('.').map((part) => part[0]?.toUpperCase() + part.slice(1)).join(' ')
 }
 
 function queueContext(context: ExecutionContext): QueueExecutionEnvelope {
@@ -1725,7 +1863,7 @@ function queueSeed(envelope: QueueEnvelope): ExecutionContextSeed {
         ? { constraints: [...context.authentication.constraints] }
         : {}),
     },
-    transport: { kind: 'job', name: envelope.targetId },
+    transport: { kind: envelope.scheduleId ? 'schedule' : 'job', name: envelope.targetId },
     trace: { ...context.trace },
     ...(context.locale ? { locale: context.locale } : {}),
     ...(context.timeZone ? { timeZone: context.timeZone } : {}),

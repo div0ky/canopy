@@ -1262,6 +1262,24 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     await waitFor(() => Promise.resolve(recordedJobAttempts.some((attempt) => attempt.key === 'scheduled-counter-sweep')))
   })
 
+  it('accepts passwords from 8 through 64 characters and rejects either boundary', async () => {
+    const runtime = await bootPersistenceRuntime()
+    const http = new HonoHttpEngine(runtime)
+    const register = (email: string, password: string) => http.fetch(jsonRequest('http://canopy.test/auth/register', { email, password }))
+
+    const tooShort = await register('seven@example.com', '1234567')
+    expect(tooShort.status).toBe(422)
+    expect(await tooShort.json()).toEqual(expect.objectContaining({
+      error: expect.objectContaining({
+        code: 'invalid_registration',
+        message: 'Passwords must contain between 8 and 64 characters.',
+      }),
+    }))
+    expect((await register('eight@example.com', '12345678')).status).toBe(201)
+    expect((await register('sixty-four@example.com', 'x'.repeat(64))).status).toBe(201)
+    expect((await register('sixty-five@example.com', 'x'.repeat(65))).status).toBe(422)
+  })
+
   it('registers, authenticates, resolves, protects, and revokes first-party browser sessions', async () => {
     const runtime = await bootPersistenceRuntime()
     const http = new HonoHttpEngine(runtime)

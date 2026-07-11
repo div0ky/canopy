@@ -1,7 +1,7 @@
 import { readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 
-const roots = ['examples/reference-app/src', 'examples/persistence-app/src']
+const roots = ['examples/reference-app/src', 'examples/persistence-app/src', 'examples/field-guide/src']
 const forbidden = [
   /^hono(?:\/|$)/,
   /^drizzle-orm(?:\/|$)/,
@@ -36,7 +36,7 @@ async function sourceFiles(root) {
   for (const entry of await readdir(root, { withFileTypes: true })) {
     const target = path.join(root, entry.name)
     if (entry.isDirectory()) files.push(...await sourceFiles(target))
-    else if (entry.isFile() && target.endsWith('.ts')) files.push(target)
+    else if (entry.isFile() && /\.tsx?$/.test(target)) files.push(target)
   }
   return files
 }

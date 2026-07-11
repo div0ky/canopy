@@ -1441,7 +1441,7 @@ function builtinIdForDeclaration(declaration: ts.ClassDeclaration): string | und
   const name = requiredClassName(declaration)
   if (name !== 'ActionBus' && name !== 'QueryBus' && name !== 'CurrentExecution'
     && name !== 'CurrentJob' && name !== 'UnitOfWork' && name !== 'Authorization'
-    && name !== 'Mailer' && name !== 'Sms' && name !== 'DeliveryLedger') return undefined
+    && name !== 'Mailer' && name !== 'Sms' && name !== 'DeliveryLedger' && name !== 'Logger') return undefined
   const source = declaration.getSourceFile().fileName.split(path.sep).join('/')
   if (!source.includes('/packages/core/') && !source.includes('/@canopy/core/')) return undefined
   if (name === 'ActionBus') return 'canopy:action-bus'
@@ -1452,6 +1452,7 @@ function builtinIdForDeclaration(declaration: ts.ClassDeclaration): string | und
   if (name === 'Mailer') return 'canopy:mailer'
   if (name === 'Sms') return 'canopy:sms'
   if (name === 'DeliveryLedger') return 'canopy:delivery-ledger'
+  if (name === 'Logger') return 'canopy:logger'
   return 'canopy:unit-of-work'
 }
 

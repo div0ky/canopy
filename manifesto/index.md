@@ -25,6 +25,8 @@ those convictions into decision rules and, eventually, executable specifications
   complete Canopy application model.
 - [Security model and threat assessment](security.md) records protected assets, trust boundaries,
   abuse cases, controls, and the release review gate.
+- [First-class logging](specifications/logging.md) defines structured records, automatic execution
+  context, safe redaction, and the colorful local console experience.
 - [Implementation proofs](implementation/index.md) record which accepted
   contracts have executable evidence without overstating the completeness of their specifications.
 - [Cultivate AI-assisted engineering](future/ai-assisted-engineering.md) describes the accepted,

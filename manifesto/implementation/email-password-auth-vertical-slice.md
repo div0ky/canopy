@@ -60,7 +60,7 @@ Canopy uses Node 24's asynchronous Argon2id primitive with:
 - Versioned parameters stored beside the salt and hash.
 - Constant-time hash comparison.
 - Transparent rehash after successful verification when the stored version or parameters differ.
-- A minimum length of 12 characters and a maximum of 1024, without arbitrary composition rules.
+- A minimum length of 8 characters and a maximum of 64, without arbitrary composition rules.
 
 Node's current primitive requires parallelism greater than one, so this proof uses two lanes while
 retaining OWASP's 19 MiB and two-pass baseline. Raw passwords never enter tables, audit metadata,
