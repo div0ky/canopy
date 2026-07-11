@@ -24,6 +24,7 @@ arbor make:job SendWelcomeEmail
 arbor migrate
 arbor serve
 arbor work
+arbor work --without-scheduler
 arbor schedule
 arbor route:list
 arbor graph
@@ -88,7 +89,7 @@ applications and tools do not depend on undocumented behavior.
 | Diagnostics | Complete | Graph, routes, policies, observers, listeners, jobs, schedules, auth, delivery, journal, outbox, and cache are inspectable through Arbor; `db:studio` provides safe local database browsing. |
 | Development execution debugger | Complete | Optional Undergrowth capture, redaction, causal PostgreSQL timelines, bounded retention, loopback UI, Arbor workflow, Cultivate knowledge, and an automatic test fake are proven. |
 | Operator recovery | Complete | Queue, delivery, schedule, session, token, cache, and auth-pruning operations are proven through Arbor. |
-| Production topology | Complete | The same manifest boots independent HTTP, worker, and scheduler roles; combined dev and bounded shutdown are proven. |
+| Production topology | Complete | One immutable image boots independent web and combined background roles from prebuilt artifacts; explicit migration, horizontal scheduling safety, advanced scheduler isolation, and bounded shutdown are proven. |
 
 ## Developer experience
 
@@ -98,7 +99,7 @@ applications and tools do not depend on undocumented behavior.
 | `new` application generator | Complete | A clean generated app compiles and boots auth, HTTP, persistence, policy, model, observer, event, signal, job, schedule, mail, SMS, telemetry, and tests. |
 | `make:*` generators | Complete | Every canonical role is generated, registered, overwrite-safe, and authorization-explicit. |
 | Database commands | Complete | Forward migration, status, batching, checksums, advisory lock, and drift refusal are proven; destructive rollback is intentionally excluded. |
-| Runtime commands | Complete | Independent serve/work/schedule, combined dev, and fail-safe fresh-runtime hot reload are proven. |
+| Runtime commands | Complete | `serve`, default combined `work`, advanced isolated `work --without-scheduler`/`schedule`, combined dev, and fail-safe fresh-runtime hot reload are proven. |
 | Inspection commands | Complete | Graph, routes, reactive roles, policies, commands, queues, deliveries, infrastructure, auth, and schedules are proven. |
 | Testing package and fakes | Complete | HTTP/auth/persistence/queue/comms/cache/telemetry plus direct event, signal, job, and schedule APIs are proven against real manifests. |
 | Cultivate integration | Complete | Derived manifest knowledge, command discovery, conventions, principles, and safe mutation guidance are generated. |

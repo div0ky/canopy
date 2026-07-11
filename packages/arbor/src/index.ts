@@ -94,8 +94,8 @@ Generate:
 
 Runtime:
   serve                 Start the HTTP role
-  work                  Start the queue worker role
-  schedule              Start the scheduler role
+  work                  Start workers and distributed scheduling [--without-scheduler]
+  schedule              Start only schedule admission (advanced isolation)
   dev                    Start all roles and hot reload valid src/ changes
   migrate               Apply pending forward migrations
   migrate:status        Show migration state
@@ -549,7 +549,7 @@ async function operateSchedule(
   args: readonly string[],
   io: ArborIo,
 ): Promise<void> {
-  const result = await buildApplication(cwd)
+  const result = await loadPrebuiltApplication(cwd)
   const schedules = result.manifest.schedules
   const requested = command === 'schedule:status' ? undefined : required(args[0], `${command} requires a schedule ID.`)
   const schedule = requested ? schedules.find((entry) => entry.id === requested || entry.id.endsWith(`/${requested}`)) : undefined
@@ -565,7 +565,7 @@ async function operateSchedule(
     if (command === 'schedule:enable' || command === 'schedule:disable') {
       const value = command === 'schedule:enable'
       await pool.query('UPDATE canopy_schedule_controls SET enabled = $2, updated_at = now() WHERE schedule_id = $1', [schedule!.id, value])
-      io.out(`${value ? 'Enabled' : 'Disabled'} schedule ${schedule!.id}. Restart the scheduler role to reconcile immediately.`)
+      io.out(`${value ? 'Enabled' : 'Disabled'} schedule ${schedule!.id}. Restart a background role to reconcile immediately.`)
       return
     }
     const job = result.manifest.jobs.find((entry) => entry.id === schedule!.jobId)
@@ -727,11 +727,14 @@ async function makeApplication(directory: string, rawName: string): Promise<void
       version: '0.1.0',
       private: true,
       type: 'module',
+      packageManager: 'pnpm@11.10.0',
       scripts: {
         arbor: 'arbor',
         build: 'arbor build',
         dev: 'arbor dev',
+        start: 'arbor serve',
         serve: 'arbor serve',
+        background: 'arbor work',
         work: 'arbor work',
         schedule: 'arbor schedule',
         migrate: 'arbor migrate',
@@ -761,10 +764,98 @@ async function makeApplication(directory: string, rawName: string): Promise<void
       },
       include: ['src/**/*.ts'],
     }, null, 2)}\n`,
-    '.gitignore': 'node_modules\ndist\n.canopy\n.env\n',
+    '.gitignore': 'node_modules\ndist\n.canopy\n.env\n.env.*\n!.env.example\n',
+    '.dockerignore': `.git
+.github
+.canopy
+.env
+.env.*
+node_modules
+dist
+coverage
+tests
+*.log
+compose.yaml
+compose.production.yaml
+README.md
+`,
+    'Dockerfile': `# syntax=docker/dockerfile:1
+
+ARG NODE_VERSION=24.14.0
+
+FROM node:\${NODE_VERSION}-bookworm-slim AS base
+ENV PNPM_HOME=/pnpm
+ENV PATH=\${PNPM_HOME}:\${PATH}
+WORKDIR /app
+RUN corepack enable
+
+FROM base AS dependencies
+COPY package.json pnpm-lock.yaml ./
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
+
+FROM dependencies AS build
+COPY . .
+RUN pnpm build
+RUN pnpm prune --prod
+
+FROM node:\${NODE_VERSION}-bookworm-slim AS runtime
+ENV NODE_ENV=production
+ENV HOST=0.0.0.0
+ENV PORT=3000
+ENV PATH=/app/node_modules/.bin:\${PATH}
+WORKDIR /app
+COPY --from=build --chown=node:node /app/package.json /app/pnpm-lock.yaml ./
+COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --from=build --chown=node:node /app/dist ./dist
+COPY --from=build --chown=node:node /app/.canopy ./.canopy
+COPY --from=build --chown=node:node /app/migrations ./migrations
+USER node
+EXPOSE 3000
+STOPSIGNAL SIGTERM
+CMD ["arbor", "serve", "--host=0.0.0.0", "--port=3000"]
+`,
+    'compose.production.yaml': `name: ${packageName}
+
+x-canopy-service: &canopy-service
+  image: \${CANOPY_IMAGE:-${packageName}:latest}
+  build:
+    context: .
+    target: runtime
+  init: true
+  stop_grace_period: 30s
+  environment:
+    NODE_ENV: production
+    DATABASE_CONNECTION_STRING: \${DATABASE_CONNECTION_STRING:?DATABASE_CONNECTION_STRING is required}
+
+services:
+  web:
+    <<: *canopy-service
+    command: ["arbor", "serve", "--host=0.0.0.0", "--port=3000"]
+    restart: unless-stopped
+    ports:
+      - "\${PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  background:
+    <<: *canopy-service
+    command: ["arbor", "work"]
+    restart: unless-stopped
+
+  migrate:
+    <<: *canopy-service
+    command: ["arbor", "migrate"]
+    profiles: ["release"]
+    restart: "no"
+`,
+    'migrations/.gitkeep': '',
     '.env.example': 'DATABASE_CONNECTION_STRING=postgresql://canopy:canopy@127.0.0.1:54329/canopy\nPORT=3000\nHOST=127.0.0.1\nCANOPY_LOG_LEVEL=info\n# CANOPY_LOG_FORMAT=pretty\n',
     'compose.yaml': `services:\n  postgres:\n    image: postgres:17-alpine\n    environment:\n      POSTGRES_USER: canopy\n      POSTGRES_PASSWORD: canopy\n      POSTGRES_DB: canopy\n    ports:\n      - "54329:5432"\n    healthcheck:\n      test: ["CMD-SHELL", "pg_isready -U canopy"]\n      interval: 2s\n      timeout: 2s\n      retries: 20\n`,
-    'README.md': `# ${name}\n\nGenerated by Canopy Arbor.\n\n\`\`\`sh\npnpm install\ncp .env.example .env\ndocker compose up -d\npnpm migrate\npnpm dev\n\`\`\`\n\n\`pnpm dev\` watches \`src/\`, keeps the last good server alive when a build fails, and hot reloads a fresh runtime after valid changes. Run \`pnpm db:studio\` to browse the configured PostgreSQL database.\n`,
+    'README.md': `# ${name}\n\nGenerated by Canopy Arbor.\n\n\`\`\`sh\npnpm install\ncp .env.example .env\ndocker compose up -d\npnpm migrate\npnpm dev\n\`\`\`\n\n\`pnpm dev\` watches \`src/\`, keeps the last good server alive when a build fails, and hot reloads a fresh runtime after valid changes. Run \`pnpm db:studio\` to browse the configured PostgreSQL database.\n\n## Production containers\n\nCanopy builds one immutable image and runs it as separate web and background services. The background service consumes queues and runs distributed-safe schedules. Migrations are an explicit release job and never run during service startup.\n\n\`\`\`sh\nexport DATABASE_CONNECTION_STRING=postgresql://...\ndocker compose -f compose.production.yaml build\ndocker compose -f compose.production.yaml --profile release run --rm migrate\ndocker compose -f compose.production.yaml up -d web background\n\`\`\`\n\nFor advanced schedule isolation, run background replicas with \`arbor work --without-scheduler\` and a separate \`arbor schedule\` service from the same image.\n`,
     'src/application.ts': `import { CanopyApplication } from '@canopy/core'\n\nimport { AccountsFeature } from './accounts/accounts.feature.js'\nimport { AppFeature } from './app/app.feature.js'\nimport { InfrastructureFeature } from './infrastructure/infrastructure.feature.js'\nimport { TasksFeature } from './tasks/tasks.feature.js'\n\nexport class Application extends CanopyApplication {\n  id = '${packageName}'\n  features = [InfrastructureFeature, AccountsFeature, TasksFeature, AppFeature]\n}\n`,
     'src/app/app.feature.ts': `import { Feature } from '@canopy/core'\n\nimport { HealthRoute } from './http/health.route.js'\nimport { HomeRoute } from './http/home.route.js'\n\nexport class AppFeature extends Feature {\n  id = 'app'\n  routes = [HomeRoute, HealthRoute]\n}\n`,
     'src/app/http/home.route.ts': `import { type HttpRequest, Route } from '@canopy/core'\n\nexport class HomeRoute extends Route {\n  static override readonly id = 'home'\n  static override readonly access = 'public'\n  readonly method = 'GET'\n  readonly path = '/'\n  handle(_request: HttpRequest) { this.logger.info('Home visited'); return { application: '${packageName}', framework: 'Canopy' } }\n}\n`,
@@ -818,6 +909,59 @@ async function buildApplication(cwd: string) {
   return result
 }
 
+interface PrebuiltApplication {
+  readonly Application: Parameters<typeof Canopy.boot>[0]
+  readonly manifest: {
+    readonly applicationId: string
+    readonly buildHash: string
+    readonly commands: readonly { readonly command: string }[]
+    readonly schedules: readonly {
+      readonly id: string
+      readonly jobId: string
+      readonly cadence: unknown
+      readonly timeZone: string
+      readonly input: unknown
+    }[]
+    readonly jobs: readonly {
+      readonly id: string
+      readonly retries: number
+      readonly retryDelay: number
+      readonly backoff: boolean
+      readonly timeout: number
+    }[]
+  }
+}
+
+async function loadPrebuiltApplication(cwd: string): Promise<PrebuiltApplication> {
+  const artifactsDirectory = path.join(cwd, '.canopy')
+  const manifestPath = path.join(artifactsDirectory, 'manifest.json')
+  const registryPath = path.join(artifactsDirectory, 'registry.mjs')
+  const applicationPath = path.join(cwd, 'dist/application.js')
+  let manifest: PrebuiltApplication['manifest']
+  try {
+    const [manifestJson] = await Promise.all([
+      readFile(manifestPath, 'utf8'),
+      readFile(registryPath, 'utf8'),
+      readFile(applicationPath, 'utf8'),
+    ])
+    manifest = JSON.parse(manifestJson) as PrebuiltApplication['manifest']
+    if (!manifest.applicationId || !manifest.buildHash || !Array.isArray(manifest.commands)
+      || !Array.isArray(manifest.schedules) || !Array.isArray(manifest.jobs)) {
+      throw new Error('invalid manifest')
+    }
+  } catch (error) {
+    throw new ArborCommandError(
+      `Prebuilt Canopy artifacts are missing or invalid. Run arbor build before starting a production role. (${errorMessage(error)})`,
+    )
+  }
+  const registry = await import(`${pathToFileURL(registryPath).href}?buildHash=${manifest.buildHash}`) as {
+    constructors?: Record<string, Parameters<typeof Canopy.boot>[0]>
+  }
+  const Application = registry.constructors?.[`application:${manifest.applicationId}`]
+  if (!Application) throw new ArborCommandError('The prebuilt registry does not export the declared Application.')
+  return { Application, manifest }
+}
+
 async function writeCultivateKnowledge(cwd: string, manifest: Record<string, unknown>): Promise<void> {
   const roles = ['features', 'configurations', 'providers', 'models', 'observers', 'actions', 'queries', 'routes', 'events', 'listeners', 'signals', 'signalHandlers', 'jobs', 'schedules', 'policies', 'commands']
   const providers = manifest.providers as Array<{ capabilities?: readonly string[] }> | undefined
@@ -843,6 +987,7 @@ async function writeCultivateKnowledge(cwd: string, manifest: Record<string, unk
       applicationCommands: 'arbor <colon-delimited-name>',
       developmentReload: 'compile a new graph and replace the runtime in a fresh process',
       httpResponses: 'return payloads; Canopy owns the success and failure envelope',
+      deployment: 'one precompiled immutable image with role-specific commands',
     },
     safeMutations: {
       createRole: 'Use arbor make:* so the Feature declaration remains explicit.',
@@ -856,9 +1001,43 @@ async function writeCultivateKnowledge(cwd: string, manifest: Record<string, unk
       observationKinds: ['execution', 'http', 'action', 'query', 'transaction', 'model', 'event', 'listener', 'signal', 'job', 'schedule', 'authorization', 'cache', 'mail', 'sms', 'log', 'exception'],
       safety: ['recursive secret redaction', 'bounded PostgreSQL retention', 'loopback-only host', 'recording failure isolation'],
     },
+    deployment: {
+      strategy: 'one-immutable-image',
+      artifacts: ['Dockerfile', '.dockerignore', 'compose.production.yaml'],
+      build: {
+        command: 'arbor build',
+        phase: 'image-build',
+        outputs: ['dist/', '.canopy/'],
+        runtimeCompilation: false,
+      },
+      roles: {
+        web: { command: 'arbor serve', scalesHorizontally: true, health: 'application HTTP health route' },
+        background: {
+          command: 'arbor work', scalesHorizontally: true, consumesQueues: true, admitsSchedules: true,
+        },
+        migration: { command: 'arbor migrate', releaseJob: true, automaticOnBoot: false },
+      },
+      advancedIsolation: {
+        workerCommand: 'arbor work --without-scheduler',
+        schedulerCommand: 'arbor schedule',
+        useWhen: 'schedule admission requires independent resources or fault isolation',
+      },
+      schedulerSafety: [
+        'cron declarations converge on stable pg-boss schedule keys',
+        'interval slots use deterministic UUIDs and PostgreSQL admits one transport record',
+      ],
+      invariants: [
+        'the same image digest runs every role in one release',
+        'migrations run once before web and background promotion',
+        'runtime roles consume prebuilt artifacts and never compile source',
+        'secrets enter through runtime environment and never image layers',
+        'runtime processes are non-root and receive SIGTERM for graceful drain',
+        'Undergrowth is disabled in production unless explicitly overridden',
+      ],
+    },
     arbor: {
       generate: ['new', 'make:feature', 'make:config', 'make:provider', 'make:service', 'make:model', 'make:observer', 'make:action', 'make:query', 'make:route', 'make:policy', 'make:event', 'make:listener', 'make:signal', 'make:signal-handler', 'make:job', 'make:schedule', 'make:command', 'make:migration', 'make:test'],
-      runtime: ['dev', 'serve', 'work', 'schedule'],
+      runtime: ['dev', 'serve', 'work', 'work --without-scheduler', 'schedule'],
       operations: ['migrate', 'migrate:status', 'db:studio', 'queue:list', 'queue:failed', 'queue:retry', 'queue:cancel', 'delivery:list', 'delivery:retry'],
       developmentDebugger: ['add undergrowth', 'undergrowth', 'undergrowth:prune'],
       inspect: ['graph', 'route:list', 'model:list', 'auth:storage', 'event:list', 'listener:list', 'observer:list', 'job:list', 'schedule:list', 'policy:list', 'command:list'],
@@ -878,12 +1057,10 @@ async function runRuntimeCommand(
     await runHotDevelopment(cwd, args, io)
     return
   }
-  const result = await buildApplication(cwd)
-  const applicationModule = await import(pathToFileURL(path.join(cwd, 'dist/application.js')).href) as { Application?: Parameters<typeof Canopy.boot>[0] }
-  if (!applicationModule.Application) throw new ArborCommandError('dist/application.js must export Application.')
+  const applicationModule = await loadPrebuiltApplication(cwd)
   const environment = { ...await dotenvEnvironment(cwd), ...process.env }
   const worker = command === 'work'
-  const scheduler = command === 'schedule'
+  const scheduler = command === 'schedule' || (command === 'work' && !args.includes('--without-scheduler'))
   const runtime = await Canopy.boot(applicationModule.Application, {
     artifactsDirectory: path.join(cwd, '.canopy'),
     dotenvPath: false,
@@ -896,14 +1073,19 @@ async function runRuntimeCommand(
     const port = integerOption(args, 'port', Number(environment.PORT ?? 3000))
     const hostname = option(args, 'host') ?? environment.HOST ?? '127.0.0.1'
     host = await HonoHttpHost.listen(runtime, { port, hostname })
-    io.out(`Canopy ${command} ready at ${host.url}`)
-  } else {
-    io.out(`Canopy ${command} role ready.`)
   }
-  await waitForShutdown(async () => {
+  const shutdown = waitForShutdown(async () => {
     if (host) await host.shutdown()
     else await runtime.shutdown()
   })
+  if (command === 'serve' && host) {
+    io.out(`Canopy ${command} ready at ${host.url}`)
+  } else {
+    io.out(command === 'work' && scheduler
+      ? 'Canopy background role ready (workers + schedules).'
+      : `Canopy ${command} role ready.`)
+  }
+  await shutdown
 }
 
 async function runHotDevelopment(cwd: string, args: readonly string[], io: ArborIo): Promise<void> {
@@ -974,11 +1156,7 @@ function waitForChildExit(child: ChildProcess): Promise<void> {
 }
 
 export async function runDevelopmentRuntime(cwd: string, args: readonly string[]): Promise<void> {
-  const manifest = JSON.parse(await readFile(path.join(cwd, '.canopy/manifest.json'), 'utf8')) as { buildHash: string }
-  const applicationModule = await import(
-    `${pathToFileURL(path.join(cwd, 'dist/application.js')).href}?buildHash=${manifest.buildHash}`
-  ) as { Application?: Parameters<typeof Canopy.boot>[0] }
-  if (!applicationModule.Application) throw new ArborCommandError('dist/application.js must export Application.')
+  const applicationModule = await loadPrebuiltApplication(cwd)
   const environment = { ...await dotenvEnvironment(cwd), ...process.env }
   const runtime = await Canopy.boot(applicationModule.Application, {
     artifactsDirectory: path.join(cwd, '.canopy'),
@@ -1006,10 +1184,8 @@ export async function runDevelopmentRuntime(cwd: string, args: readonly string[]
 }
 
 async function runApplicationCommand(name: string, args: readonly string[], cwd: string): Promise<boolean> {
-  const result = await buildApplication(cwd)
-  if (!result.manifest.commands.some((command) => command.command === name)) return false
-  const module = await import(pathToFileURL(path.join(cwd, 'dist/application.js')).href) as { Application?: Parameters<typeof Canopy.boot>[0] }
-  if (!module.Application) throw new ArborCommandError('dist/application.js must export Application.')
+  const module = await loadPrebuiltApplication(cwd)
+  if (!module.manifest.commands.some((command) => command.command === name)) return false
   const environment = { ...await dotenvEnvironment(cwd), ...process.env }
   const runtime = await Canopy.boot(module.Application, {
     artifactsDirectory: path.join(cwd, '.canopy'),
@@ -1029,9 +1205,7 @@ async function runApplicationCommand(name: string, args: readonly string[], cwd:
 }
 
 async function describeAuthStorage(cwd: string, args: readonly string[], io: ArborIo): Promise<void> {
-  await buildApplication(cwd)
-  const module = await import(pathToFileURL(path.join(cwd, 'dist/application.js')).href) as { Application?: Parameters<typeof Canopy.boot>[0] }
-  if (!module.Application) throw new ArborCommandError('dist/application.js must export Application.')
+  const module = await loadPrebuiltApplication(cwd)
   const runtime = await Canopy.boot(module.Application, {
     artifactsDirectory: path.join(cwd, '.canopy'),
     dotenvPath: false,
@@ -1070,9 +1244,11 @@ function runProcess(
 async function waitForShutdown(shutdown: () => Promise<void>): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     let closing = false
+    const keepAlive = setInterval(() => undefined, 2_147_483_647)
     const close = () => {
       if (closing) return
       closing = true
+      clearInterval(keepAlive)
       process.off('SIGINT', close)
       process.off('SIGTERM', close)
       void shutdown().then(resolve, reject)

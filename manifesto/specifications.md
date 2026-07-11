@@ -131,6 +131,7 @@ resources, policy, hardening, and the complete HTTP specification remain unsettl
 | Adapter contracts | Unexplored | Which guarantees and conformance cases apply to infrastructure engines? |
 | Compatibility releases | Unexplored | How does a release declare and prove a supported component matrix? |
 | Cultivate AI-assisted engineering | Accepted direction; implementation deferred | [How can agents safely inspect and work with a Canopy application?](future/ai-assisted-engineering.md) |
+| Container deployment | Accepted; implementation in progress | [How does one immutable image safely run web, background, and migration roles?](specifications/container-deployment.md) |
 
 ## Recommended authoring order
 

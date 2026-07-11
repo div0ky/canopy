@@ -29,6 +29,8 @@ those convictions into decision rules and, eventually, executable specifications
   context, safe redaction, and the colorful local console experience.
 - [Undergrowth](specifications/undergrowth.md) defines the typed, correlation-driven local
   execution debugger and its safety and retention boundaries.
+- [Container deployment](specifications/container-deployment.md) defines the one-image web,
+  background, and migration production topology.
 - [Implementation proofs](implementation/index.md) record which accepted
   contracts have executable evidence without overstating the completeness of their specifications.
 - [Cultivate AI-assisted engineering](future/ai-assisted-engineering.md) describes the accepted,

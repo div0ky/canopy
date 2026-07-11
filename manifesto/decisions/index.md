@@ -100,6 +100,7 @@ must still be intelligible if an engine is replaced.
 | Existing-table auth mapping | Explicit auth field/table configuration; never inferred | Accepted | [Existing tables](0023-existing-table-model-auth-mapping.md) |
 | AI-assisted engineering | Cultivate: local MCP server, guidelines, and skills; implementation deferred | Accepted | [Cultivate](0013-first-party-ai-engineering-mcp.md) |
 | Development debugger | Undergrowth: typed, correlation-driven local execution explorer | Accepted | [Undergrowth](0025-first-party-undergrowth-debugger.md) |
+| Container deployment | One immutable image; web, combined background, and migration roles | Accepted | [Container deployment](0026-one-image-role-based-container-deployment.md) |
 
 "Accepted in principle" means the manifesto establishes the architectural requirement, while the
 observable programming contract remains to be specified.
@@ -155,6 +156,7 @@ observable programming contract remains to be specified.
 24. [Use role-scoped injection and plain constructor-injected services](0024-role-injection-with-plain-services.md)
     — Accepted for the MVP on 2026-07-11.
 25. [Build Undergrowth as Canopy's first-party development debugger](0025-first-party-undergrowth-debugger.md)
+26. [Ship one immutable image with role-based container commands](0026-one-image-role-based-container-deployment.md)
     — Accepted on 2026-07-11.
 
 ## Adding a decision

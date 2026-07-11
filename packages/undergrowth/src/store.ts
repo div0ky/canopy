@@ -20,6 +20,20 @@ export interface UndergrowthExecution {
   readonly observationCount: number
 }
 
+export interface UndergrowthEntry {
+  readonly entryId: string
+  readonly executionId: string
+  readonly correlationId?: string
+  readonly sourceExecutionId?: string
+  readonly name: string
+  readonly kind: string
+  readonly roleId?: string
+  readonly transport?: string
+  readonly phase: string
+  readonly occurredAt: string
+  readonly durationMilliseconds?: number
+}
+
 export class UndergrowthStore {
   readonly #pool: Pool
 
@@ -83,6 +97,47 @@ export class UndergrowthStore {
       occurredAt: row.occurred_at.toISOString(),
       ...(row.duration_ms === null ? {} : { durationMilliseconds: row.duration_ms }),
       observationCount: Number(row.observation_count),
+    }))
+  }
+
+  async entries(query: UndergrowthQuery): Promise<readonly UndergrowthEntry[]> {
+    if (!query.kind) throw new TypeError('Undergrowth entries require a kind.')
+    const limit = Math.min(Math.max(query.limit ?? 100, 1), 500)
+    const values: unknown[] = [query.kind]
+    const conditions = [
+      'execution_id IS NOT NULL',
+      'kind = $1',
+      "phase IN ('occurred', 'completed', 'failed')",
+    ]
+    if (query.search) {
+      values.push(`%${query.search}%`)
+      conditions.push(`(name ILIKE $${values.length} OR role_id ILIKE $${values.length} OR actor_id ILIKE $${values.length} OR execution_id::text ILIKE $${values.length} OR correlation_id::text ILIKE $${values.length})`)
+    }
+    values.push(limit)
+    const result = await this.#pool.query<{
+      id: string; execution_id: string; correlation_id: string | null; source_execution_id: string | null
+      name: string; kind: string; role_id: string | null; transport: string | null; phase: string
+      occurred_at: Date; duration_ms: number | null
+    }>(`
+      SELECT id, execution_id, correlation_id, source_execution_id, name, kind, role_id,
+        transport, phase, occurred_at, duration_ms
+      FROM canopy_undergrowth_observations
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY occurred_at DESC, id DESC
+      LIMIT $${values.length}
+    `, values)
+    return result.rows.map((row) => ({
+      entryId: row.id,
+      executionId: row.execution_id,
+      ...(row.correlation_id ? { correlationId: row.correlation_id } : {}),
+      ...(row.source_execution_id ? { sourceExecutionId: row.source_execution_id } : {}),
+      name: row.name,
+      kind: row.kind,
+      ...(row.role_id ? { roleId: row.role_id } : {}),
+      ...(row.transport ? { transport: row.transport } : {}),
+      phase: row.phase,
+      occurredAt: row.occurred_at.toISOString(),
+      ...(row.duration_ms === null ? {} : { durationMilliseconds: row.duration_ms }),
     }))
   }
 

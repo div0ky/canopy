@@ -74,3 +74,6 @@ requirement to its implementation and acceptance evidence.
 24. [Undergrowth development debugger vertical slice](undergrowth-vertical-slice.md) — typed and
     redacted runtime observations, PostgreSQL causal ordering and retention, one-command Arbor
     installation, Cultivate knowledge, a read-only loopback explorer, and testing fakes.
+25. [Container deployment vertical slice](container-deployment-vertical-slice.md) — one generated
+    immutable image, prebuilt production boot, combined workers and schedules, explicit migrations,
+    advanced scheduler isolation, Compose topology, and Cultivate deployment knowledge.

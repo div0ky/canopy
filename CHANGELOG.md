@@ -44,6 +44,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Undergrowth, the optional first-party development debugger with typed runtime observations,
   recursive secret redaction, PostgreSQL retention, causal timelines, a read-only loopback UI,
   Cultivate knowledge, and `arbor add undergrowth`, `undergrowth`, and `undergrowth:prune` commands.
+- Undergrowth category browsing that lists actual HTTP, queue, event, and schedule observations and
+  opens each selected observation inside its complete causal timeline.
+- One-image production deployment generation with a multi-stage non-root Dockerfile,
+  `.dockerignore`, production Compose topology, prebuilt artifact-only startup, explicit migration
+  jobs, and a horizontally scalable `arbor work` role that runs workers and schedules together.
 - Local listener failure propagation plus Laravel-aligned event-level and listener-level
   after-commit delivery that is discarded on rollback.
 - Feature-declared HTTP routes compiled into the manifest with stable identities, methods, paths,

@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -152,9 +153,26 @@ describe('Arbor command suite', () => {
     expect(application).toContain('features = [InfrastructureFeature, AccountsFeature, TasksFeature, AppFeature]')
     expect(feature).toContain('routes = [HomeRoute, HealthRoute]')
     expect(JSON.parse(await readFile(path.join(destination, 'package.json'), 'utf8'))).toEqual(expect.objectContaining({
-      scripts: expect.objectContaining({ dev: 'arbor dev', work: 'arbor work', schedule: 'arbor schedule', 'db:studio': 'arbor db:studio' }),
+      packageManager: 'pnpm@11.10.0',
+      scripts: expect.objectContaining({
+        dev: 'arbor dev', start: 'arbor serve', background: 'arbor work', work: 'arbor work',
+        schedule: 'arbor schedule', 'db:studio': 'arbor db:studio',
+      }),
       engines: { node: '>=24 <25' },
     }))
+    const dockerfile = await readFile(path.join(destination, 'Dockerfile'), 'utf8')
+    expect(dockerfile).toContain('FROM node:${NODE_VERSION}-bookworm-slim AS runtime')
+    expect(dockerfile).toContain('RUN pnpm build')
+    expect(dockerfile).toContain('RUN pnpm prune --prod')
+    expect(dockerfile).toContain('USER node')
+    expect(dockerfile).toContain('CMD ["arbor", "serve", "--host=0.0.0.0", "--port=3000"]')
+    const productionCompose = await readFile(path.join(destination, 'compose.production.yaml'), 'utf8')
+    expect(productionCompose).toContain('command: ["arbor", "work"]')
+    expect(productionCompose).toContain('command: ["arbor", "migrate"]')
+    expect(productionCompose).not.toContain('arbor schedule')
+    expect(productionCompose).not.toContain('depends_on')
+    expect(productionCompose).toContain('profiles: ["release"]')
+    expect(await readFile(path.join(destination, '.dockerignore'), 'utf8')).toContain('.env.*')
     expect(await readFile(path.join(destination, '.env.example'), 'utf8')).toContain('DATABASE_CONNECTION_STRING=')
     expect(await readFile(path.join(destination, 'src/accounts/accounts.feature.ts'), 'utf8')).toContain('TokenRoute')
     expect(await readFile(path.join(destination, 'src/infrastructure/infrastructure.feature.ts'), 'utf8')).toContain('ApplicationAuth')
@@ -181,6 +199,22 @@ describe('Arbor command suite', () => {
     expect(generatedManifest).toEqual(expect.objectContaining({ applicationId: 'garden' }))
     expect(generatedManifest.actions.find((action) => action.id.endsWith('/complete-task'))?.dependencies)
       .toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'role', targetId: 'canopy:authorization' })]))
+    const cultivate = JSON.parse(await readFile(path.join(destination, '.canopy/cultivate.json'), 'utf8')) as {
+      deployment: Record<string, unknown>
+    }
+    expect(cultivate.deployment).toEqual(expect.objectContaining({
+      strategy: 'one-immutable-image',
+      roles: expect.objectContaining({
+        web: expect.objectContaining({ command: 'arbor serve' }),
+        background: expect.objectContaining({ command: 'arbor work', admitsSchedules: true }),
+        migration: expect.objectContaining({ command: 'arbor migrate', automaticOnBoot: false }),
+      }),
+      advancedIsolation: {
+        workerCommand: 'arbor work --without-scheduler',
+        schedulerCommand: 'arbor schedule',
+        useWhen: 'schedule admission requires independent resources or fault isolation',
+      },
+    }))
     const manifest = generatedManifest
     const registry = await import(`${pathToFileURL(path.join(destination, '.canopy/registry.mjs')).href}?buildHash=${manifest.buildHash}`) as {
       constructors: Record<string, abstract new () => CanopyApplication>
@@ -242,10 +276,111 @@ describe('Arbor command suite', () => {
       .toContain('ApplicationUndergrowth]')
     expect(messages.at(-1)).toContain('Run arbor migrate, then arbor undergrowth')
   })
+
+  it('fails production roles closed when prebuilt artifacts are absent', async () => {
+    const root = await temporaryDirectory()
+    const errors: string[] = []
+    expect(await runArbor(['work'], root, {
+      out: () => undefined,
+      error: (message) => errors.push(message),
+    })).toBe(1)
+    expect(errors).toEqual([
+      expect.stringContaining('Prebuilt Canopy artifacts are missing or invalid. Run arbor build'),
+    ])
+  })
+
+  it('boots background roles from prebuilt artifacts with scheduling enabled by default', async () => {
+    const root = await temporaryDirectory()
+    await mkdir(path.join(root, 'src'), { recursive: true })
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({ type: 'module' }))
+    await writeFile(path.join(root, 'tsconfig.json'), JSON.stringify({
+      compilerOptions: {
+        target: 'ES2024', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true,
+        rootDir: 'src', outDir: 'dist', skipLibCheck: true,
+      },
+      include: ['src/**/*.ts'],
+    }))
+    await writeFile(path.join(root, 'src/application.ts'), `import { CanopyApplication, Feature, QueueManager } from '@canopy/core'
+import type { QueueDeliveryHandler, QueueEnvelope, QueueJobRecord, QueueRuntimeRoles, ScheduleDefinition } from '@canopy/core'
+
+export class DeploymentQueue extends QueueManager {
+  static id = 'deployment-queue'
+  override selectRoles(roles: QueueRuntimeRoles): void { console.log('CANOPY_ROLES:' + JSON.stringify(roles)) }
+  bind(_handler: QueueDeliveryHandler): void {}
+  reconcileSchedules(_schedules: readonly ScheduleDefinition[]): void {}
+  async enqueue(envelope: QueueEnvelope): Promise<string> { return envelope.id }
+  async flushOutbox(): Promise<number> { return 0 }
+  async findJob(_id: string): Promise<QueueJobRecord | undefined> { return undefined }
+}
+
+export class InfrastructureFeature extends Feature {
+  id = 'infrastructure'
+  providers = [DeploymentQueue]
+}
+
+export class Application extends CanopyApplication {
+  id = 'deployment-fixture'
+  features = [InfrastructureFeature]
+}
+`)
+    await symlink(path.join(workspace, 'node_modules'), path.join(root, 'node_modules'))
+    expect(await runArbor(['build'], root, {
+      out: () => undefined,
+      error: (message) => { throw new Error(message) },
+    })).toBe(0)
+    await rm(path.join(root, 'src'), { recursive: true })
+    await rm(path.join(root, 'tsconfig.json'))
+
+    expect(await runPrebuiltRole(root, ['work'])).toContain(
+      'CANOPY_ROLES:{"worker":true,"scheduler":true}',
+    )
+    expect(await runPrebuiltRole(root, ['work', '--without-scheduler'])).toContain(
+      'CANOPY_ROLES:{"worker":true,"scheduler":false}',
+    )
+    expect(await runPrebuiltRole(root, ['schedule'])).toContain(
+      'CANOPY_ROLES:{"worker":false,"scheduler":true}',
+    )
+  })
 })
 
 async function temporaryDirectory(): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), 'canopy-arbor-'))
   directories.push(directory)
   return directory
+}
+
+async function runPrebuiltRole(cwd: string, arguments_: readonly string[]): Promise<string> {
+  const child = spawn(process.execPath, [path.join(workspace, 'packages/arbor/dist/bin.js'), ...arguments_], {
+    cwd,
+    env: { ...process.env, PATH: '/canopy-production-has-no-build-tools' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let output = ''
+  child.stdout.setEncoding('utf8')
+  child.stderr.setEncoding('utf8')
+  child.stdout.on('data', (chunk: string) => { output += chunk })
+  child.stderr.on('data', (chunk: string) => { output += chunk })
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(`Prebuilt role did not become ready. ${output}`)), 10_000)
+    const inspect = () => {
+      if (!output.includes('role ready')) return
+      clearTimeout(timeout)
+      resolve()
+    }
+    child.stdout.on('data', inspect)
+    child.once('error', reject)
+    child.once('exit', (code) => {
+      if (!output.includes('role ready')) reject(new Error(`Prebuilt role exited early (${code}). ${output}`))
+    })
+  })
+  child.kill('SIGTERM')
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('Prebuilt role did not stop.')) }, 10_000)
+    child.once('exit', (code) => {
+      clearTimeout(timeout)
+      if (code === 0) resolve()
+      else reject(new Error(`Prebuilt role exited with ${code}. ${output}`))
+    })
+  })
+  return output
 }

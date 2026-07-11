@@ -104,6 +104,24 @@ events, jobs, logs, and failures, and stores only recursively redacted, retentio
 
 Generated `dist/` and `.canopy/` artifacts are intentionally ignored.
 
+## Production containers
+
+`arbor new` generates one multi-stage `Dockerfile`, a `.dockerignore`, and a
+`compose.production.yaml` topology. Build the image once, migrate once, then run that same image as
+web and background roles:
+
+```bash
+docker build -t application .
+docker run --rm application arbor migrate
+docker run -p 3000:3000 application arbor serve --host=0.0.0.0
+docker run application arbor work
+```
+
+`arbor work` consumes queues and admits schedules by default; both are safe to scale horizontally.
+Use `arbor work --without-scheduler` with a separate `arbor schedule` process only when schedule
+admission needs independent resources or fault isolation. Production roles require artifacts
+created by `arbor build` and never compile application source at startup.
+
 ## Dependency injection
 
 Framework-facing classes extend their Canopy role. They inherit a class-bound logger and resolve

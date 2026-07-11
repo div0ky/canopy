@@ -509,6 +509,32 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     } finally { await store.close() }
   })
 
+  it('browses actual terminal observations for category tabs instead of their parent executions', async () => {
+    const executionId = randomUUID()
+    const correlationId = randomUUID()
+    const eventId = 'event:system/example-happened'
+    await pool.query(`
+      INSERT INTO canopy_undergrowth_observations
+        (id, occurred_at, kind, name, phase, role_id, execution_id, correlation_id, transport, attributes)
+      VALUES
+        ($1, now(), 'execution', 'GET /example', 'completed', NULL, $2, $3, 'http', '{}'::jsonb),
+        ($4, now() + interval '1 millisecond', 'event', $5, 'started', $5, $2, $3, 'http', '{}'::jsonb),
+        ($6, now() + interval '2 milliseconds', 'event', $5, 'completed', $5, $2, $3, 'http', '{}'::jsonb)
+    `, [randomUUID(), executionId, correlationId, randomUUID(), eventId, randomUUID()])
+    const store = new UndergrowthStore(connectionString)
+    try {
+      expect(await store.entries({ kind: 'event' })).toEqual([
+        expect.objectContaining({
+          executionId,
+          kind: 'event',
+          name: eventId,
+          phase: 'completed',
+          roleId: eventId,
+        }),
+      ])
+    } finally { await store.close() }
+  })
+
   it('links queued worker executions back to their source execution and correlation', async () => {
     const runtime = await bootPersistenceRuntime()
     await runAction(runtime, DispatchProcessCounter, { key: `undergrowth-${randomUUID()}` })
@@ -580,6 +606,8 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         ok: true, data: { service: 'undergrowth' },
       })
       expect((await fetch(new URL('/api/executions', host.url))).headers.get('cache-control')).toBe('no-store')
+      expect((await fetch(new URL('/api/entries?kind=event', host.url))).status).toBe(200)
+      expect((await fetch(new URL('/api/entries', host.url))).status).toBe(400)
       expect((await fetch(new URL('/api/executions', host.url), { method: 'POST' })).status).toBe(405)
     } finally { await host.shutdown() }
     await expect(listenUndergrowth({ connectionString, host: '0.0.0.0', port: 0 }))
