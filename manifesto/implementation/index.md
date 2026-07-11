@@ -1,0 +1,67 @@
+# Canopy Implementation Proofs
+
+Implementation proofs record executable evidence for accepted architectural directions. They do
+not silently promote an incomplete specification or vertical slice into the Canopy MVP.
+
+The active [MVP completion ledger](mvp-completion-ledger.md) maps every remaining viability
+requirement to its implementation and acceptance evidence.
+
+1. [Foundation vertical slice](foundation-vertical-slice.md) — deterministic declarations,
+   artifacts, configuration, container boot, readiness, and shutdown.
+2. [Execution and operations vertical slice](execution-operations-vertical-slice.md) — immutable
+   execution context, one admitted scope, action/query dispatch, transaction boundaries, and
+   deterministic scoped disposal.
+3. [PostgreSQL durability vertical slice](postgresql-durability-vertical-slice.md) — Drizzle-backed
+   transactions, Unit of Work, entity state, journal, outbox, concurrency, and after-commit
+   behavior.
+4. [Eloquent-style model vertical slice](eloquent-model-vertical-slice.md) — declared models,
+   execution-scoped hydration and identity, dirty tracking, `save()` lifecycle, concurrency, and
+   atomic model-driven durability without ordinary Unit of Work ceremony.
+5. [Class events vertical slice](class-events-vertical-slice.md) — inherited static dispatch,
+   typed listener inference, constructor injection, execution context, local failure, and
+   transaction-aware after-commit delivery.
+6. [Hono HTTP vertical slice](hono-http-vertical-slice.md) — compiled framework-owned routes,
+   Web Standards requests and responses, Standard Schema validation, actor-aware admission,
+   stable errors, and coordinated Node hosting over private Hono mechanics.
+7. [pg-boss queue and worker vertical slice](pg-boss-queue-worker-vertical-slice.md) — declared
+   jobs, transactional dispatch, atomic outbox handoff, retries, terminal failure, idempotency,
+   queued listeners, causal execution, writable job attempts, and graceful worker draining.
+8. [Scheduling vertical slice](scheduling-vertical-slice.md) — class-first cron and interval
+   declarations, manifest compilation, deterministic pg-boss reconciliation, overlap and misfire
+   policy, system actor causation, existing Job execution, and graceful scheduler draining.
+9. [Email and password authentication vertical slice](email-password-auth-vertical-slice.md) —
+   first-party identities, versioned Argon2id credentials, opaque digest-backed sessions, HTTP
+   actor resolution, rotation, CSRF origin enforcement, revocation, and security audit evidence.
+10. [Opaque bearer authentication vertical slice](opaque-bearer-auth-vertical-slice.md) — one-time
+    opaque credentials, digest-only storage, API actor resolution, authority constraints,
+    ambiguity rejection, rotation, revocation, and audit.
+11. [Default-deny authorization vertical slice](default-deny-authorization-vertical-slice.md) —
+    compiled policies and route access, structured entry/resource decisions, bearer constraint
+    narrowing, normalized denial, and durable security audits.
+12. [Signals and model observers vertical slice](signals-observers-vertical-slice.md) — immediate
+    typed coordination plus Eloquent-style retrieved, persistence, and post-commit lifecycle
+    phases with generated metadata and rollback proofs.
+13. [Cache vertical slice](cache-vertical-slice.md) — a Canopy-owned port with deterministic memory
+    behavior and PostgreSQL TTL/atomic-operation proof behind the compiled provider graph.
+14. [Arbor command kernel vertical slice](arbor-command-kernel-vertical-slice.md) — executable
+    help/build/inspection plus safe generators that automatically maintain Feature declarations.
+15. [Communications adapters vertical slice](communications-adapters-vertical-slice.md) —
+    provider-independent contracts and fakes plus SendGrid/Twilio sending, signature verification,
+    delivery normalization, and retry classification.
+16. [Arbor runtime and observability vertical slice](arbor-runtime-observability-vertical-slice.md)
+    — complete generators and operations, application commands, independent runtime roles,
+    Cultivate knowledge, structured telemetry, and W3C propagation.
+17. [First-party testing harness vertical slice](testing-harness-vertical-slice.md) — real-manifest
+    provider overrides, acting-as identity, in-memory durability, queue/comms fakes, and HTTP,
+    action, query, command, rollback, and telemetry proofs.
+18. [Authentication completion vertical slice](authentication-completion-vertical-slice.md) —
+    digest-only verification/reset, queued mail, password change, durable abuse controls, recovery
+    privacy, and user session management.
+19. [Operational control vertical slice](operational-control-vertical-slice.md) — durable schedule
+    enablement and manual firing plus journal, outbox, cache, auth, queue, and delivery inspection
+    and recovery through Arbor.
+20. [Generated MVP reference flow](generated-mvp-reference-flow.md) — clean Arbor generation plus
+    real-manifest fake and PostgreSQL acceptance flows spanning every required framework role.
+21. [Existing-table model and authentication mapping](existing-table-mapping-vertical-slice.md) —
+    Laravel-like model metadata, explicit first-party auth mappings, mixed external/framework
+    ownership, PostgreSQL conformance, fakes, and operator/Cultivate inspection.

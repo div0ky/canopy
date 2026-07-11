@@ -1,0 +1,19 @@
+{
+  "name": "@canopy/persistence-reference-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/application.d.ts",
+      "default": "./dist/application.js"
+    }
+  },
+  "dependencies": {
+    "@canopy/auth-postgres": "workspace:*",
+    "@canopy/core": "workspace:*",
+    "@canopy/postgres-drizzle": "workspace:*",
+    "@canopy/queue-pg-boss": "workspace:*",
+    "zod": "4.4.3"
+  }
+}

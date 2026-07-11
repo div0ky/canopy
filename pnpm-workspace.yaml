@@ -1,0 +1,10 @@
+packages:
+  - packages/*
+  - examples/*
+allowBuilds:
+  cpu-features: false
+  protobufjs: false
+  ssh2: false
+minimumReleaseAgeExclude:
+  - hono@4.12.29
+  - pg-boss@12.26.0

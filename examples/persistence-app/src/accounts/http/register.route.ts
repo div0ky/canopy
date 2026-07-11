@@ -1,0 +1,33 @@
+import { ActionBus, Auth, Http, type HttpRequest, Route } from '@canopy/core'
+
+import { UserRegistered } from '../events/user-registered.js'
+import { credentials } from './credentials.js'
+import { SendAuthEmail } from '../actions/send-auth-email.js'
+
+export class RegisterRoute extends Route {
+  static override readonly id = 'register'
+  static override readonly access = 'public'
+  readonly method = 'POST'
+  readonly path = '/auth/register'
+
+  constructor(private readonly auth: Auth, private readonly actions: ActionBus) {
+    super()
+  }
+
+  async handle(request: HttpRequest): Promise<Response> {
+    const identity = await this.auth.register(await credentials(request))
+    const verification = await this.auth.issueEmailVerification(identity.id)
+    await this.actions.execute(SendAuthEmail, { kind: 'verification', to: identity.email, token: verification.token.reveal() })
+    await UserRegistered.dispatch(identity.id)
+    return Http.created({ identity: publicIdentity(identity) })
+  }
+}
+
+function publicIdentity(identity: import('@canopy/core').AuthIdentity) {
+  return {
+    id: identity.id,
+    email: identity.email,
+    emailVerified: identity.emailVerified,
+    createdAt: identity.createdAt.toISOString(),
+  }
+}

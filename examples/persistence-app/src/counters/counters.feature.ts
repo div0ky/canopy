@@ -1,0 +1,82 @@
+import { Feature } from '@canopy/core'
+
+import { CaptureCounter } from './actions/capture-counter.js'
+import { CreateCounter } from './actions/create-counter.js'
+import { DeleteCounter } from './actions/delete-counter.js'
+import { DispatchProcessCounter } from './actions/dispatch-process-counter.js'
+import { DispatchCounterSignal } from './actions/dispatch-counter-signal.js'
+import { ExerciseCache } from './actions/exercise-cache.js'
+import { QueueNotifications } from './actions/queue-notifications.js'
+import { InspectCounter } from './actions/inspect-counter.js'
+import { RefreshCounter } from './actions/refresh-counter.js'
+import { RenameCounter } from './actions/rename-counter.js'
+import { RequestCounterNotification } from './actions/request-counter-notification.js'
+import { SaveCounter } from './actions/save-counter.js'
+import { SecureIncrementCounter } from './actions/secure-increment-counter.js'
+import { SaveLegacyCustomer } from './actions/save-legacy-customer.js'
+import { DeleteLegacyCustomer } from './actions/delete-legacy-customer.js'
+import { SaveLegacyNote } from './actions/save-legacy-note.js'
+import { SaveDetachedCounter } from './actions/save-detached-counter.js'
+import { CounterIncremented } from './events/counter-incremented.js'
+import { CounterNotificationRequested } from './events/counter-notification-requested.js'
+import { CounterSaved } from './events/counter-saved.js'
+import { DeleteCounterRoute } from './http/delete-counter.route.js'
+import { IncrementCounterRoute } from './http/increment-counter.route.js'
+import { SecureIncrementCounterRoute } from './http/secure-increment-counter.route.js'
+import { ProcessCounterJob } from './jobs/process-counter.job.js'
+import { RecordCounterNotification } from './listeners/record-counter-notification.js'
+import { RecordCounterIncremented } from './listeners/record-counter-incremented.js'
+import {
+  RecordCounterIncrementedAfterCommit,
+} from './listeners/record-counter-incremented-after-commit.js'
+import { RecordCounterSaved } from './listeners/record-counter-saved.js'
+import { Counter } from './models/counter.js'
+import { LegacyCustomer } from './models/legacy-customer.js'
+import { LegacyNote } from './models/legacy-note.js'
+import { CounterObserver } from './observers/counter.observer.js'
+import { AttemptCounterWrite } from './queries/attempt-counter-write.js'
+import { ProcessCountersSchedule } from './schedules/process-counters.schedule.js'
+import { CounterTouched } from './signals/counter-touched.js'
+import { RecordCounterTouched } from './signal-handlers/record-counter-touched.js'
+import { CounterEventRecorder } from './support/counter-event-recorder.js'
+import { CounterPolicy } from './policies/counter.policy.js'
+
+export class CountersFeature extends Feature {
+  id = 'counters'
+  providers = [CounterEventRecorder]
+  models = [Counter, LegacyCustomer, LegacyNote]
+  observers = [CounterObserver]
+  actions = [
+    SaveCounter,
+    CreateCounter,
+    InspectCounter,
+    RefreshCounter,
+    DeleteCounter,
+    SaveDetachedCounter,
+    CaptureCounter,
+    RenameCounter,
+    DispatchProcessCounter,
+    DispatchCounterSignal,
+    ExerciseCache,
+    QueueNotifications,
+    RequestCounterNotification,
+    SecureIncrementCounter,
+    SaveLegacyCustomer,
+    DeleteLegacyCustomer,
+    SaveLegacyNote,
+  ]
+  queries = [AttemptCounterWrite]
+  routes = [IncrementCounterRoute, DeleteCounterRoute, SecureIncrementCounterRoute]
+  events = [CounterIncremented, CounterSaved, CounterNotificationRequested]
+  listeners = [
+    RecordCounterIncremented,
+    RecordCounterIncrementedAfterCommit,
+    RecordCounterSaved,
+    RecordCounterNotification,
+  ]
+  jobs = [ProcessCounterJob]
+  schedules = [ProcessCountersSchedule]
+  policies = [CounterPolicy]
+  signals = [CounterTouched]
+  signalHandlers = [RecordCounterTouched]
+}

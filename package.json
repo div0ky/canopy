@@ -1,0 +1,41 @@
+{
+  "name": "canopy-framework",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.10.0",
+  "engines": {
+    "node": ">=24.7 <25"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "arbor": "node packages/arbor/dist/bin.js",
+    "audit:boundaries": "node scripts/check-boundaries.mjs",
+    "audit:docs": "node scripts/check-doc-links.mjs",
+    "audit:mvp": "pnpm check && pnpm test && pnpm audit:boundaries && pnpm audit:docs",
+    "check": "tsc -b --pretty false && tsc -p tsconfig.tests.json --noEmit --pretty false",
+    "clean": "tsc -b --clean",
+    "dev": "pnpm build && node scripts/dev-server.mjs",
+    "test": "pnpm build && tsc -p tsconfig.tests.json --noEmit --pretty false && vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@canopy/compiler": "workspace:*",
+    "@canopy/arbor": "workspace:*",
+    "@canopy/sendgrid": "workspace:*",
+    "@canopy/twilio-sms": "workspace:*",
+    "@canopy/testing": "workspace:*",
+    "@canopy/auth-postgres": "workspace:*",
+    "@canopy/core": "workspace:*",
+    "@canopy/http-hono": "workspace:*",
+    "@canopy/postgres-drizzle": "workspace:*",
+    "@canopy/queue-pg-boss": "workspace:*",
+    "@canopy/runtime": "workspace:*",
+    "@testcontainers/postgresql": "12.0.4",
+    "@types/node": "24.13.3",
+    "@types/pg": "8.20.0",
+    "pg": "8.22.0",
+    "typescript": "6.0.2",
+    "vitest": "4.1.10"
+  }
+}

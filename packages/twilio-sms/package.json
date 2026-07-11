@@ -1,0 +1,1 @@
+{"name":"@canopy/twilio-sms","version":"0.1.0","private":true,"type":"module","exports":{".":{"types":"./dist/index.d.ts","default":"./dist/index.js"}},"files":["dist"],"dependencies":{"@canopy/core":"workspace:*"}}

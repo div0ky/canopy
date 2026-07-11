@@ -1,0 +1,33 @@
+import { Auth, CurrentExecution, Http, type HttpRequest, Route } from '@canopy/core'
+import { z } from 'zod'
+
+import { publicAccessToken, requirePasswordSession } from './token-management.js'
+
+const Input = z.object({
+  name: z.string(),
+  constraints: z.array(z.string()).optional(),
+  expiresAt: z.iso.datetime().optional(),
+})
+
+export class IssueAccessTokenRoute extends Route {
+  static override readonly id = 'issue-access-token'
+  static override readonly access = 'accounts.tokens.manage'
+  readonly method = 'POST'
+  readonly path = '/auth/tokens'
+
+  constructor(private readonly auth: Auth, private readonly execution: CurrentExecution) { super() }
+
+  async handle(request: HttpRequest): Promise<Response> {
+    const identityId = requirePasswordSession(this.execution)
+    const input = await request.validate(Input, await request.json())
+    const grant = await this.auth.issueAccessToken(identityId, {
+      name: input.name,
+      ...(input.constraints ? { constraints: input.constraints } : {}),
+      ...(input.expiresAt ? { expiresAt: new Date(input.expiresAt) } : {}),
+    })
+    return Http.created({
+      accessToken: publicAccessToken(grant.accessToken),
+      token: grant.token.reveal(),
+    })
+  }
+}

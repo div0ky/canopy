@@ -1,0 +1,279 @@
+import { once } from 'node:events'
+
+import {
+  AfterCommitError,
+  AuthenticationError,
+  AuthenticationRateLimitError,
+  AuthorizationError,
+  HttpError,
+  type HttpEngine,
+  ModelNotFoundError,
+  OptimisticConcurrencyError,
+  type TraceContext,
+} from '@canopy/core'
+import {
+  type CanopyRuntime,
+  ExecutionAdmissionError,
+} from '@canopy/runtime'
+import { serve } from '@hono/node-server'
+import { Hono } from 'hono'
+
+export class HonoHttpEngine implements HttpEngine {
+  readonly #app = new Hono()
+
+  constructor(private readonly runtime: CanopyRuntime) {
+    for (const route of runtime.manifest.routes) {
+      this.#app.on(route.method, route.path, async (context) => {
+        let correlationId: string | undefined
+        let responseTraceparent: string | undefined
+        let authenticationHeaders: Readonly<Record<string, string>> | undefined
+        try {
+          const requestedCorrelation = correlationIdFrom(context.req.raw)
+          correlationId = requestedCorrelation
+          const resolved = await runtime.authenticateHttp(context.req.raw)
+          authenticationHeaders = resolved.responseHeaders
+          const trace = traceContextFrom(context.req.raw)
+          const result = await runtime.admit({
+            actor: resolved.actor,
+            authentication: resolved.authentication,
+            ...(requestedCorrelation ? { correlationId: requestedCorrelation } : {}),
+            ...(trace ? { trace } : {}),
+            cancellation: context.req.raw.signal,
+            transport: {
+              kind: 'http',
+              name: `${route.method} ${route.path}`,
+            },
+          }, async (execution) => {
+            correlationId = execution.correlationId
+            responseTraceparent = formatTraceparent(execution.trace)
+            return runtime.dispatchRoute(route.id, context.req.raw, context.req.param())
+          })
+          return withAuthenticationHeaders(
+            withCorrelation(normalizeResponse(result), correlationId, responseTraceparent),
+            authenticationHeaders,
+          )
+        } catch (error) {
+          return withAuthenticationHeaders(errorResponse(error, correlationId), authenticationHeaders)
+        }
+      })
+    }
+
+    this.#app.notFound((context) => errorDocument(
+      404,
+      'route_not_found',
+      `No Canopy route matches ${context.req.method} ${new URL(context.req.url).pathname}.`,
+    ))
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    return await this.#app.fetch(request)
+  }
+}
+
+export interface HonoHttpHostOptions {
+  readonly port?: number
+  readonly hostname?: string
+}
+
+export type HttpHostState = 'ready' | 'draining' | 'stopped'
+
+export class HonoHttpHost {
+  #state: HttpHostState = 'ready'
+  #shutdownPromise: Promise<void> | undefined
+
+  private constructor(
+    readonly engine: HonoHttpEngine,
+    readonly server: ReturnType<typeof serve>,
+    private readonly runtime: CanopyRuntime,
+  ) {}
+
+  static async listen(
+    runtime: CanopyRuntime,
+    options: HonoHttpHostOptions = {},
+  ): Promise<HonoHttpHost> {
+    const engine = new HonoHttpEngine(runtime)
+    const server = serve({
+      fetch: (request) => engine.fetch(request),
+      port: options.port ?? 3000,
+      ...(options.hostname ? { hostname: options.hostname } : {}),
+    })
+    if (!server.listening) await once(server, 'listening')
+    return new HonoHttpHost(engine, server, runtime)
+  }
+
+  get state(): HttpHostState {
+    return this.#state
+  }
+
+  get url(): URL {
+    const address = this.server.address()
+    if (!address || typeof address === 'string') {
+      throw new Error('The Canopy HTTP host does not have a TCP address.')
+    }
+    const hostname = address.address === '::'
+      ? '127.0.0.1'
+      : address.family === 'IPv6'
+        ? `[${address.address}]`
+        : address.address
+    return new URL(`http://${hostname}:${address.port}`)
+  }
+
+  shutdown(): Promise<void> {
+    if (this.#shutdownPromise) return this.#shutdownPromise
+    this.#shutdownPromise = this.#performShutdown()
+    return this.#shutdownPromise
+  }
+
+  async #performShutdown(): Promise<void> {
+    if (this.#state === 'stopped') return
+    this.#state = 'draining'
+    let closeError: unknown
+    try {
+      await new Promise<void>((resolve, reject) => {
+        this.server.close((error) => error ? reject(error) : resolve())
+      })
+    } catch (error) {
+      closeError = error
+    }
+    try {
+      await this.runtime.shutdown()
+    } finally {
+      this.#state = 'stopped'
+    }
+    if (closeError) throw closeError
+  }
+}
+
+function correlationIdFrom(request: Request): string | undefined {
+  const value = request.headers.get('x-correlation-id')
+  if (!value) return undefined
+  if (!/^[A-Za-z0-9._:-]{1,128}$/.test(value)) {
+    throw new HttpError(
+      400,
+      'invalid_correlation_id',
+      'The X-Correlation-ID header contains unsupported characters or is too long.',
+    )
+  }
+  return value
+}
+
+function traceContextFrom(request: Request): TraceContext | undefined {
+  const value = request.headers.get('traceparent')
+  if (!value) return undefined
+  const match = value.match(/^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/i)
+  if (!match || /^0+$/.test(match[1]!) || /^0+$/.test(match[2]!)) {
+    throw new HttpError(400, 'invalid_traceparent', 'The traceparent header is not a supported W3C trace context.')
+  }
+  return { traceId: match[1]!.toLowerCase(), spanId: match[2]!.toLowerCase(), traceFlags: Number.parseInt(match[3]!, 16) }
+}
+
+function formatTraceparent(trace: TraceContext): string | undefined {
+  if (!trace.traceId || !trace.spanId) return undefined
+  return `00-${trace.traceId}-${trace.spanId}-${(trace.traceFlags ?? 1).toString(16).padStart(2, '0')}`
+}
+
+function normalizeResponse(value: unknown): Response {
+  if (value instanceof Response) return value
+  if (value === undefined) return new Response(null, { status: 204 })
+  return Response.json(value)
+}
+
+function withCorrelation(response: Response, correlationId?: string, traceparent?: string): Response {
+  const headers = new Headers(response.headers)
+  if (correlationId && !headers.has('x-correlation-id')) headers.set('x-correlation-id', correlationId)
+  if (traceparent && !headers.has('traceparent')) headers.set('traceparent', traceparent)
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  })
+}
+
+function withAuthenticationHeaders(response: Response, values?: Readonly<Record<string, string>>): Response {
+  if (!values) return response
+  const headers = new Headers(response.headers)
+  for (const [name, value] of Object.entries(values)) headers.set(name, value)
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+}
+
+function errorResponse(error: unknown, correlationId?: string): Response {
+  if (error instanceof HttpError) {
+    return withCorrelation(
+      errorDocument(error.status, error.code, error.message, error.details),
+      correlationId,
+    )
+  }
+  if (error instanceof AuthenticationError) {
+    const status = error.code === 'invalid_credentials' || error.code === 'ambiguous_credentials'
+      ? 401
+      : 422
+    return withCorrelation(
+      errorDocument(status, error.code, error.message),
+      correlationId,
+    )
+  }
+  if (error instanceof AuthenticationRateLimitError) {
+    return withCorrelation(Response.json({ error: { code: 'rate_limited', message: error.message } }, {
+      status: 429,
+      headers: { 'retry-after': String(error.retryAfterSeconds) },
+    }), correlationId)
+  }
+  if (error instanceof AuthorizationError) {
+    const status = error.decision.code === 'authentication_required' ? 401 : 403
+    return withCorrelation(
+      errorDocument(
+        status,
+        status === 401 ? 'authentication_required' : 'forbidden',
+        status === 401 ? 'Authentication is required.' : 'The current actor is not authorized.',
+      ),
+      correlationId,
+    )
+  }
+  if (error instanceof ModelNotFoundError) {
+    return withCorrelation(
+      errorDocument(404, 'model_not_found', error.message),
+      correlationId,
+    )
+  }
+  if (error instanceof OptimisticConcurrencyError) {
+    return withCorrelation(
+      errorDocument(409, 'optimistic_concurrency_conflict', error.message),
+      correlationId,
+    )
+  }
+  if (error instanceof AfterCommitError) {
+    return withCorrelation(
+      errorDocument(
+        500,
+        'after_commit_failed',
+        'The action committed, but after-commit processing did not complete successfully.',
+      ),
+      correlationId,
+    )
+  }
+  if (error instanceof ExecutionAdmissionError) {
+    return withCorrelation(
+      errorDocument(503, 'service_unavailable', 'The application is not accepting HTTP work.'),
+      correlationId,
+    )
+  }
+  return withCorrelation(
+    errorDocument(500, 'internal_error', 'The application could not complete the request.'),
+    correlationId,
+  )
+}
+
+function errorDocument(
+  status: number,
+  code: string,
+  message: string,
+  details?: unknown,
+): Response {
+  return Response.json({
+    error: {
+      code,
+      message,
+      ...(details === undefined ? {} : { details }),
+    },
+  }, { status })
+}

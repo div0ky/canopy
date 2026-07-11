@@ -1,0 +1,24 @@
+import { Action } from '@canopy/core'
+
+import { LegacyCustomer } from '../models/legacy-customer.js'
+
+export interface SaveLegacyCustomerInput {
+  readonly id: string
+  readonly displayName: string
+  readonly delayAfterLoad?: number
+}
+
+export class SaveLegacyCustomer extends Action<SaveLegacyCustomerInput, { id: string; displayName: string; version: number; created: boolean }> {
+  static id = 'save-legacy-customer'
+  static override readonly access = 'public'
+
+  async handle(input: SaveLegacyCustomerInput): Promise<{ id: string; displayName: string; version: number; created: boolean }> {
+    const customer = await LegacyCustomer.find(input.id)
+      ?? LegacyCustomer.make({ id: input.id, displayName: input.displayName, active: true })
+    const created = !customer.exists
+    if (input.delayAfterLoad) await new Promise((resolve) => setTimeout(resolve, input.delayAfterLoad))
+    customer.rename(input.displayName)
+    await customer.save()
+    return { id: customer.id, displayName: customer.displayName, version: customer.version!, created }
+  }
+}

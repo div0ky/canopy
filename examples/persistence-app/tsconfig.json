@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
+  },
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/auth-postgres" },
+    { "path": "../../packages/postgres-drizzle" }
+    ,{ "path": "../../packages/sendgrid" }
+    ,{ "path": "../../packages/twilio-sms" }
+  ],
+  "include": ["src/**/*.ts"]
+}

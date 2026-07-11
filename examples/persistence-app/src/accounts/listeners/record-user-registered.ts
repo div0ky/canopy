@@ -1,0 +1,25 @@
+import { CurrentExecution, Listener } from '@canopy/core'
+
+import { UserRegistered } from '../events/user-registered.js'
+import { AccountEventRecorder } from '../support/account-event-recorder.js'
+
+export class RecordUserRegistered extends Listener<UserRegistered> {
+  static readonly id = 'record-user-registered'
+  static override readonly access = 'public'
+
+  constructor(
+    private readonly recorder: AccountEventRecorder,
+    private readonly execution: CurrentExecution,
+  ) {
+    super()
+  }
+
+  handle(_event: UserRegistered): void {
+    this.recorder.record({
+      event: 'user-registered',
+      phase: 'http',
+      correlationId: this.execution.context.correlationId,
+      actor: this.execution.context.actor.kind,
+    })
+  }
+}

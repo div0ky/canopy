@@ -2,14 +2,43 @@
 
 ## Status
 
-This document marks a reset.
+Canopy 0.1 has reached the viability bar defined by this knowledge base. Its connected acceptance
+flow proves compile-to-boot composition, execution and authorization, PostgreSQL-backed atomic
+durability, Eloquent-style models and observers, events and signals, Hono-backed HTTP, auth,
+pg-boss workers and schedules, communications, observability, testing, Arbor, and Cultivate
+metadata. It remains an early MVP rather than a compatibility-stable 1.0 release.
 
-The current Canopy codebase is abandoned as an implementation. It taught us what Canopy wants to
-be, but its foundation makes NestJS the application kernel and leaves Canopy competing with the
-framework underneath it. We will not incrementally extract the new design from that architecture.
-The next Canopy repository will begin from specifications derived from this manifesto.
+## Using this knowledge base
 
-The ideas survive. The implementation does not constrain them.
+This manifesto is the constitutional document for Canopy. It records the durable convictions that
+should survive changes in syntax, package layout, and infrastructure. Supporting documents turn
+those convictions into decision rules and, eventually, executable specifications.
+
+- [Principles](principles.md) distills the manifesto into tests for design decisions.
+- [Architecture](architecture.md) describes the framework boundary and the dependency direction it
+  requires.
+- [Specifications](specifications.md) tracks the contracts that must be settled before the next
+  implementation begins.
+- [Technology decisions](decisions/index.md) records selected engines, rejected alternatives, and
+  the boundaries that keep those engines from becoming Canopy's application model.
+- [MVP viability bar](mvp.md) defines the smallest product that can honestly demonstrate the
+  complete Canopy application model.
+- [Security model and threat assessment](security.md) records protected assets, trust boundaries,
+  abuse cases, controls, and the release review gate.
+- [Implementation proofs](implementation/index.md) record which accepted
+  contracts have executable evidence without overstating the completeness of their specifications.
+- [Cultivate AI-assisted engineering](future/ai-assisted-engineering.md) describes the accepted,
+  deferred first-party MCP and agent-context direction.
+
+These documents have different authority:
+
+1. The manifesto explains what Canopy is and why it exists.
+2. Principles constrain choices when several designs appear plausible.
+3. Specifications define observable framework behavior.
+4. Implementation realizes the specifications and may be replaced when it no longer serves them.
+
+When implementation and specification disagree, the discrepancy must be resolved explicitly. The
+implementation does not silently become the design.
 
 ## What Canopy is
 
@@ -73,6 +102,95 @@ Those parts must agree about how an application is structured and how work flows
 Canopy will prefer fewer supported patterns with excellent integration over broad flexibility that
 makes every application invent its own architecture.
 
+## Developer experience breaks ties
+
+When multiple designs satisfy Canopy's requirements for correctness, security, durability,
+operability, performance, maintainability, and explainability equally well, the design with the
+better developer experience wins.
+
+Developer experience is not decoration applied after the architecture is complete. It is one of
+the framework's primary outcomes. Canopy should absorb incidental complexity into its compiler,
+generators, defaults, and tooling when doing so preserves explicit behavior and strong diagnostics.
+A shorter, clearer application-facing API is preferable to ceremony that exists only to make the
+framework implementation easier.
+
+Ergonomics do not excuse hidden consequences or weakened guarantees. A design that is more concise
+but less safe, predictable, observable, or debuggable is not equally viable and does not win this
+tie-breaker.
+
+Canopy is deliberately opinionated, magical wherever that magic is safe, trivial for Cultivate to
+understand, and extremely difficult to misuse. This is not merely an implementation preference or
+documentation goal. It is the point of the framework.
+
+Canopy should make routine choices on the application's behalf, infer what can be proven safely,
+generate what should not be handwritten, and reject ambiguous or unsafe constructions before the
+application boots. Every ordinary task should have one recognizable Canopy shape. That shape must
+be simple enough for a developer to remember, explicit enough for the compiler to verify, and
+regular enough for Cultivate to generate and explain without guessing.
+
+The framework should spend complexity so applications do not have to. When safe automation is
+possible, forcing repetitive configuration onto developers is a framework failure. When safety
+cannot be inferred, Canopy must require an intention-revealing declaration and provide a precise
+diagnostic rather than silently guessing.
+
+## Object-oriented by conviction
+
+Canopy believes application behavior belongs in objects with identity, state, invariants, and
+explicit collaborators. Domain models, actions, queries, policies, observers, listeners, jobs,
+schedules, and console commands should primarily be classes resolved through constructor
+injection.
+
+This is not nostalgia for class syntax and it is not permission to build inheritance hierarchies
+for their own sake. The value is encapsulation: an object owns behavior, protects its invariants,
+and exposes an intention-revealing interface. Polymorphism belongs at deliberate application and
+infrastructure boundaries.
+
+Canopy applications are class-first and manifest-composed. Declarative fields and helpers may
+assemble features and applications, but they do not turn domain behavior into configuration.
+Decorators are deferred from the MVP and may eventually provide optional metadata syntax; the
+object model and dependency graph will not depend on legacy runtime reflection.
+
+The Canopy compiler will produce an inspectable application manifest and dependency graph from
+TypeScript source. Concrete classes may be autowired. Abstract ports, aliases, values, and factories
+are bound explicitly. The runtime container remains small, reflection-free, deterministic, and
+subordinate to the programming model.
+
+The application chooses its features. Features own their code. Canopy discovers and wires their
+declared classes. The compiler makes every resulting behavior explicit before the process boots.
+
+Persistent models should feel alive. Canopy will hydrate identity-bearing model objects from their
+stored state, track their original and changed attributes, allow behavior to mutate them, and
+persist them through methods such as `save()`, `delete()`, and `refresh()`. This Eloquent-like
+experience is part of the framework promise, not optional repository boilerplate every application
+must recreate.
+
+Events should feel equally natural. A developer should be able to define a named event class,
+dispatch it from any Canopy-managed application context, and attach typed listener classes whose
+`handle` methods state exactly what they consume. Queueing, after-commit delivery, and future
+broadcasting should be concise class capabilities rather than dispatcher plumbing repeated at each
+call site.
+
+Folder paths organize humans; imports and Feature declarations organize Canopy. Applications may
+use role-first folders, domain folders, vertical slices, or workspace packages without changing
+framework semantics or adding discovery configuration. Moving a file must not change the identity,
+ownership, or behavior of the class it contains.
+
+Large business logic should decompose naturally. Ordinary concrete services and helpers are
+autowired through constructor reachability without base classes, decorators, provider entries, or
+Feature registration. These collaborators remain directly constructible in focused unit tests.
+Cross-feature concrete dependencies are rejected unless the application exposes an intentional
+capability or port.
+
+Configuration should feel like ordinary typed application code. Applications and Features declare
+configuration classes, Canopy derives conventional environment names and validation, and services
+inject frozen groups for direct property access. Only declared configuration exists inside the
+application; unusual schemas remain an escape hatch rather than common-path ceremony.
+
+The ergonomic surface does not weaken the execution model. Model persistence participates in the
+active Canopy unit of work, optimistic concurrency, lifecycle observers, journal, outbox, actor
+context, and transaction. A model cannot silently open an unrelated transaction or expose the
+private database engine.
+
 ## Our promise to developers
 
 If a team subscribes to Canopy's opinions, Canopy should make application development feel almost
@@ -84,11 +202,42 @@ delivery, tracing, test fakes, and shutdown behavior.
 
 Canopy should make the correct path the short path.
 
+More strongly, the correct path should be the obvious path, and incorrect paths should be hard to
+express accidentally. Framework APIs should be designed for both human and machine comprehension:
+few concepts, stable patterns, strong types, deterministic manifests, excellent diagnostics, and
+no ceremony that exists only because Canopy declined to make a safe decision.
+
 The framework may feel magical, but its behavior must remain explainable. Good magic removes
 repetition while preserving a comprehensible execution model. Bad magic hides ordering, failure,
 or state behind conventions that cannot be inspected.
 
 Canopy will automate the tedious parts and make the consequential parts explicit.
+
+## Identity, authority, and causality are one system
+
+Authentication does more than attach a user to an HTTP request. It establishes identity for the
+framework-wide actor model that governs authorization, observability, auditing, journal records,
+jobs, and tests.
+
+Canopy distinguishes the actor performing work from the initiator who began the larger chain. They
+are often the same in synchronous work, but they must not be collapsed. A delayed job may execute
+as a named worker or system actor while preserving the user who originally caused it. Impersonation
+and delegation must retain both sides of the authority transfer rather than overwrite history.
+
+Every request, action, query, listener, job, schedule, console command, WebSocket message, and
+future transport participates in one immutable execution context. That context carries actor,
+initiator, tenant, delegation, correlation, causation, trace linkage, deadline, and cancellation
+through a documented lifecycle.
+
+Canopy will attach this causal metadata automatically to logs, traces, security audits, journal
+entries, outbox records, and jobs. Sensitive identity data will not be propagated merely because it
+is observable. Durable records retain the opaque references required to explain what happened;
+general telemetry applies deliberate disclosure, pseudonymization, and cardinality rules.
+
+Authentication mechanisms and optional auth plugins may prove identity. They do not define the
+application actor, session semantics, tenant authority, or authorization model. Canopy owns the
+translation from authenticated identity to actor and applies default-deny policies through one
+consistent pipeline across every execution type.
 
 ## The framework boundary
 
@@ -208,29 +357,40 @@ an internal assumption that must be reconstructed.
 
 ## The desired programming experience
 
-The final syntax will be specified separately, but the experience should approach this level of
-simplicity:
+Application composition should approach this level of simplicity:
 
 ```ts
-const app = Canopy.create({
-  features: [Orders, Customers, Billing],
-  infrastructure,
-});
-
-await app.serve();
+export class Application extends CanopyApplication {
+  features = [OrdersFeature, CustomersFeature, BillingFeature]
+}
 ```
 
 A feature should describe its capabilities without exposing infrastructure composition:
 
 ```ts
-export const Orders = feature({
-  providers: [OrderStore, bind(OrderPersistence).to(PrismaOrderPersistence)],
-  actions: [CreateOrder, UpdateOrder],
-  queries: [GetOrder, ListOrders],
-  observers: [OrderObserver],
-  listeners: [SendOrderCreatedNotification],
-  http: [OrdersController],
-});
+export class OrdersFeature extends Feature {
+  id = 'orders'
+  models = [Order]
+  actions = [CreateOrder, UpdateOrder]
+  queries = [GetOrder, ListOrders]
+  events = [OrderShipped]
+  observers = [OrderObserver]
+  listeners = [SendOrderCreatedNotification]
+  routes = [OrdersController]
+}
+```
+
+An event should be a named application fact that can be dispatched wherever the application needs
+it:
+
+```ts
+export class OrderShipped extends Event {
+  constructor(public readonly order: Order) {
+    super()
+  }
+}
+
+await OrderShipped.dispatch(order)
 ```
 
 An HTTP endpoint should express application intent rather than HTTP plumbing:
@@ -282,7 +442,7 @@ Subject to the specifications, Canopy should be able to:
 - Validate request inputs and return stable error documents.
 - Invoke authentication and authorization policies.
 - Open transactions for mutating application operations.
-- Persist model snapshots with optimistic concurrency.
+- Persist entity state with optimistic concurrency.
 - Append journal and outbox records atomically.
 - Run model lifecycle observers at defined phases.
 - Dispatch local and queued event listeners at the correct time.
@@ -313,6 +473,10 @@ should support the dependency patterns the Canopy programming model actually req
 - Test overrides.
 - Deterministic disposal.
 - Excellent cycle and missing-binding diagnostics.
+
+HTTP requests, jobs, schedules, console commands, listeners, and future transports each receive a
+distinct execution scope with identical semantics. Canopy does not create parallel request and job
+container models.
 
 Features should compose directly. We should avoid a system in which modules import modules to
 export providers to modules that indirectly expose them elsewhere. The application graph should
@@ -349,7 +513,7 @@ Canopy is not:
 - A wrapper that renames every method from its dependencies.
 - A generic dependency injection container project.
 - A generic HTTP framework.
-- An ORM written from scratch.
+- A database engine, SQL query builder, or migration engine written from scratch.
 - A queue transport written from scratch.
 - A universal compatibility layer for arbitrary infrastructure choices.
 - A Laravel syntax clone.
@@ -378,7 +542,7 @@ If a behavior cannot meet those standards, prefer explicit code.
 Canopy is succeeding when:
 
 - A new developer can trace a request from route to durable side effects without learning the
-  internals of Hono, Prisma, BullMQ, or Redis.
+  internals of the HTTP, database, queue, or telemetry engines.
 - A feature reads primarily as domain vocabulary and application intent.
 - The normal implementation path is short, safe, and consistent.
 - Cross-cutting behavior is configured once and applied predictably.

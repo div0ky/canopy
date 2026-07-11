@@ -1,0 +1,214 @@
+# pg-boss Queue and Worker Vertical Slice
+
+- **Status:** Implemented proof
+- **Implemented:** 2026-07-10
+- **MVP status:** Incomplete
+- **Depends on:** [Class events vertical slice](class-events-vertical-slice.md)
+
+## Outcome
+
+The seventh Canopy implementation proves one durable asynchronous path end to end:
+
+```text
+await ProcessCounterJob.dispatch(input)
+  → active Canopy execution and transaction
+  → canopy.queue outbox intent
+  → atomic outbox-to-pg-boss handoff
+  → pg-boss claim and attempt
+  → fresh actor-aware Canopy execution scope
+  → writable job transaction + ModelSession
+  → retry or terminal failure
+  → graceful worker drain
+```
+
+Canopy promises at-least-once execution. A stable job ID survives every attempt, while each attempt
+receives a new execution ID. Handlers must remain idempotent around effects that cannot participate
+in their local transaction.
+
+pg-boss 12.26.0 is a private implementation engine. Application jobs, events, listeners, Features,
+tests, and generated manifests contain no pg-boss types or queue-engine vocabulary.
+
+## Application organization
+
+Before adding queue behavior, the integrated example was reorganized into the canonized
+enterprise default:
+
+```text
+src/
+├── application.ts
+├── infrastructure/
+│   ├── infrastructure.feature.ts
+│   ├── database/
+│   └── queue/
+├── counters/
+│   ├── counters.feature.ts
+│   ├── actions/
+│   ├── events/
+│   ├── http/
+│   ├── jobs/
+│   ├── listeners/
+│   ├── models/
+│   ├── queries/
+│   └── support/
+└── system/
+    ├── system.feature.ts
+    ├── events/
+    ├── http/
+    ├── listeners/
+    └── support/
+```
+
+The move required imports and Feature ownership declarations only. No path configuration or
+runtime discovery changed. Manifest IDs moved from the former `persistence` owner to
+`infrastructure`, `counters`, and `system`, proving that Feature declarations—not directories—own
+framework behavior.
+
+## Job authoring
+
+A job is one class with one handler:
+
+```ts
+export class ProcessCounterJob extends Job<ProcessCounterInput> {
+  static id = 'process-counter'
+  static retries = 2
+  static retryDelay = 0
+  static backoff = false
+  static timeout = 10
+
+  constructor(
+    private readonly job: CurrentJob,
+    private readonly execution: CurrentExecution,
+  ) {
+    super()
+  }
+
+  async handle(input: ProcessCounterInput): Promise<void> {
+    // normal services and model APIs are available here
+  }
+}
+```
+
+The Feature declares `jobs = [ProcessCounterJob]`. The compiler verifies the stable ID, typed
+handler, constructor graph, retry policy, timeout, and lifecycle restrictions. This proof recorded
+them in manifest format v3; scheduling later advanced the required artifact contract to v4.
+
+`Job.dispatch(input)` is inherited and uses the current application execution rather than a
+process-global queue. Optional delay and idempotency settings remain concise:
+
+```ts
+await ProcessCounterJob.dispatch(input, {
+  delaySeconds: 30,
+  idempotencyKey: `counter:${counterId}`,
+})
+```
+
+## Transaction and outbox boundary
+
+Dispatch inside an action or job writes a `canopy.queue` intent into the existing transactional
+outbox. Rollback removes that intent with every other state, journal, and outbox write.
+
+The pg-boss adapter claims committed queue intents with `FOR UPDATE SKIP LOCKED`. Inside the same
+PostgreSQL transaction it inserts the pg-boss job through pg-boss's external database boundary and
+marks the Canopy outbox row dispatched. A crash before commit leaves both operations absent; a
+successful commit makes both visible. This preserves the semantic distinction between durable
+application intent and queue transport while making their initial PostgreSQL handoff atomic.
+
+Dispatch outside a Unit of Work, but still inside a managed execution, sends directly to the queue.
+
+## Worker execution
+
+Every attempt creates a fresh admitted execution with:
+
+- The original opaque actor and initiator.
+- Tenant and delegation metadata.
+- The original correlation ID.
+- The stable job ID as causation ID.
+- A new execution ID.
+- Job transport identity.
+- Authentication metadata with session identifiers omitted.
+- Trace, locale, and time-zone context.
+- pg-boss cancellation composed into Canopy cancellation.
+
+`CurrentJob` exposes the stable ID, one-based attempt, maximum attempts, and optional idempotency
+key through constructor injection.
+
+Each declared job attempt opens a Canopy transaction and ModelSession. Job handlers therefore use
+the same hydrated model, dirty tracking, journal, outbox, and optimistic-concurrency APIs as
+actions. A failed attempt rolls its local mutation back before pg-boss applies retry policy.
+
+## Retries, failure, delay, and idempotency
+
+- `retries` is the number of retries after the initial attempt.
+- `retryDelay` is measured in seconds.
+- `backoff` selects fixed or exponential pg-boss retry timing.
+- `timeout` controls the pg-boss active-job expiration boundary.
+- Delays are stored as an absolute availability time so outbox polling does not extend them.
+- Terminally failed jobs remain inspectable with normalized Canopy job state.
+
+Idempotency keys deterministically derive the Canopy job UUID from the job type and key. Repeated
+dispatches therefore return the same job identity. The atomic handoff treats an existing transport
+record with that ID as success and marks every corresponding outbox intent dispatched. This
+deduplicates admission; handlers still need idempotency for non-transactional effects under
+at-least-once delivery.
+
+## Queued listeners
+
+`ShouldQueue` and `ShouldQueueAfterCommit` listeners now become normal Canopy queue envelopes.
+When an event is raised inside a transaction, queued listener intent is always outbox-backed and
+cannot become eligible before commit. This also remains true for an event implementing
+`ShouldDispatchAfterCommit`: queued listener intent is staged before commit, while its local
+listeners remain delayed until durability.
+
+The worker rehydrates the declared event class without invoking its application constructor,
+resolves the declared listener with normal injection, and executes it in a fresh job execution.
+
+## Worker lifecycle
+
+The queue provider participates in `start → ready → drain → stop → dispose`:
+
+- Start requires explicitly installed pg-boss schema and binds declared delivery to the runtime.
+- Drain stops outbox polling and new worker claims, then waits for active handlers.
+- Runtime draining waits for their admitted executions.
+- Stop closes pg-boss gracefully.
+- Dispose closes the adapter's outbox pool.
+
+The adapter installs no process-global signal handlers. pg-boss schema installation remains an
+explicit development/migration step rather than an application boot side effect.
+
+## Executable evidence
+
+At implementation time the complete suite contained thirty-eight passing tests. Queue-specific PostgreSQL conformance
+proves:
+
+1. Stable jobs, policies, queue capability, and queued listener relationships in the manifest.
+2. Atomic committed outbox-to-pg-boss handoff.
+3. No queued job survives a failed action transaction.
+4. One retry preserves job, actor, correlation, and causation identity while creating distinct
+   attempt execution IDs.
+5. Every job attempt receives a writable transaction and ModelSession.
+6. Retry exhaustion retains a terminal failed job with attempt metadata.
+7. Repeated idempotent dispatch returns one stable job and executes it once.
+8. Delayed jobs do not execute before their availability boundary.
+9. A queued event listener runs in a fresh injected job execution.
+10. Shutdown waits for active worker completion before stopping the runtime.
+
+## Deliberate boundary
+
+This is a queue and worker proof, not the complete asynchronous MVP. Still required:
+
+- Crash-process conformance that kills dispatchers and workers at controlled phases.
+- First-party idempotency records for external effects and transactional handler helpers.
+- Permanent versus transient failure classification beyond retry exhaustion.
+- Public failed-job listing, redrive, cancellation, and operator diagnostics.
+- Queue fakes and application-scoped assertions.
+- Payload schema/version manifests and model-reference serialization.
+- Concurrency, uniqueness, priority, and per-key ordering policies beyond the initial default.
+- Heartbeats and conformance for jobs approaching their expiration boundary.
+- Production topology commands for independent `serve` and `work` roles.
+- Metrics, tracing spans, structured logs, and capacity guidance.
+- Scheduling declarations and pg-boss reconciliation. Completed in the
+  [scheduling vertical slice](scheduling-vertical-slice.md).
+
+## Next slice
+
+Completed next: [scheduling vertical slice](scheduling-vertical-slice.md).

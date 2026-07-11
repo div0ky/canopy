@@ -1,0 +1,25 @@
+{
+  "name": "@canopy/arbor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "arbor": "./dist/bin.js" },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "dependencies": {
+    "@canopy/compiler": "workspace:*",
+    "@canopy/core": "workspace:*",
+    "@canopy/http-hono": "workspace:*",
+    "@canopy/queue-pg-boss": "workspace:*",
+    "@canopy/runtime": "workspace:*",
+    "pg": "8.22.0"
+  },
+  "devDependencies": {
+    "@types/pg": "8.20.0"
+  }
+}
