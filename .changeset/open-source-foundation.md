@@ -4,9 +4,11 @@
 '@doxajs/compiler': patch
 '@doxajs/core': patch
 '@doxajs/http-hono': patch
+'@doxajs/keryx': patch
 '@doxajs/manifest': patch
 '@doxajs/postgres-drizzle': patch
 '@doxajs/queue-pg-boss': patch
+'@doxajs/realtime': patch
 '@doxajs/runtime': patch
 '@doxajs/sendgrid': patch
 '@doxajs/testing': patch

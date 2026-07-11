@@ -92,6 +92,7 @@ domain-event, signal, queue, serialization, and testing specifications remain **
 | Jobs and workers          | Exploring; implementation proof | How are context, retries, timeouts, uniqueness, and terminal failure defined?                                                                                                                                                      |
 | Scheduling                | Implemented proof               | Class-first Job targets, cron/interval cadence, time zones, deterministic reconciliation, serialized overlap, skipped misfires, and causal system execution are proven; catch-up, operator state, fakes, and observability remain. |
 | Mail and SMS              | Exploring                       | How are queued provider delivery and webhook outcomes normalized?                                                                                                                                                                  |
+| Realtime broadcasting     | Implemented                     | [How do queued and synchronous event broadcasts, authenticated Keryx subscriptions, presence, reconnect, ordering, and failure semantics compose?](specifications/realtime-broadcasting.md)                                        |
 
 The [pg-boss queue and worker vertical slice](implementation/pg-boss-queue-worker-vertical-slice.md)
 proves declared transactional jobs, atomic outbox handoff, retries, terminal retention, idempotency,

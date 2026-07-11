@@ -8,6 +8,7 @@ export type ObservationKind =
   | 'transaction'
   | 'model'
   | 'event'
+  | 'broadcast'
   | 'listener'
   | 'signal'
   | 'job'

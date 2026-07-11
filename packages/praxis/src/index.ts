@@ -83,7 +83,7 @@ Generate:
   make:action <Feature/Name> --public|--ability=<ability>
   make:query <Feature/Name> --public|--ability=<ability>
   make:route <Feature/Name> --method=GET --path=/path --public|--ability=<ability>
-  make:event <Feature/Name>
+  make:event <Feature/Name> [--broadcast|--broadcast-now] [--channel=name] [--private|--presence]
   make:listener <Feature/Name> --event=Event [--queued|--after-commit|--queued-after-commit] --public|--ability=<ability>
   make:signal <Feature/Name>
   make:signal-handler <Feature/Name> --signal=Signal --public|--ability=<ability>
@@ -1930,7 +1930,33 @@ function roleDefinition(
       source: (name) =>
         `import { ${pascal(role)} } from '@doxajs/core'\n\nexport class ${name} extends ${pascal(role)}<void, void> {\n  static id = '${kebab(name)}'\n  static override readonly access = '${access}'\n\n  async handle(): Promise<void> {\n    // TODO: implement ${name}.\n  }\n}\n`,
     }
-  if (role === 'event') return { field: 'events', folder: 'events', source: simple('Event') }
+  if (role === 'event') {
+    const queued = args.includes('--broadcast')
+    const now = args.includes('--broadcast-now')
+    if (queued && now)
+      throw new PraxisCommandError('Events cannot combine --broadcast and --broadcast-now.')
+    if (!queued && !now) return { field: 'events', folder: 'events', source: simple('Event') }
+    const channel = required(
+      option(args, 'channel'),
+      'Broadcast events require --channel=<channel-name>.',
+    )
+    const privateChannel = args.includes('--private')
+    const presence = args.includes('--presence')
+    if (privateChannel && presence)
+      throw new PraxisCommandError('Broadcast events cannot combine --private and --presence.')
+    const channelClass = presence
+      ? 'PresenceChannel'
+      : privateChannel
+        ? 'PrivateChannel'
+        : 'Channel'
+    const capability = now ? 'ShouldBroadcastNow' : 'ShouldBroadcast'
+    return {
+      field: 'events',
+      folder: 'events',
+      source: (name) =>
+        `import { ${channelClass}, Event, type ${capability} } from '@doxajs/core'\n\nexport class ${name} extends Event implements ${capability} {\n  static override readonly id = '${kebab(name)}'\n\n  broadcastOn() {\n    return new ${channelClass}('${channel}')\n  }\n}\n`,
+    }
+  }
   if (role === 'signal') return { field: 'signals', folder: 'signals', source: simple('Signal') }
   if (role === 'route') {
     const method = option(args, 'method')?.toUpperCase()
@@ -2107,7 +2133,8 @@ function inspectionField(command: string): string | undefined {
 }
 
 function formatInspection(field: string, entry: Record<string, unknown>): string {
-  if (field === 'events') return `${String(entry.id)} ${String(entry.dispatch)}`
+  if (field === 'events')
+    return `${String(entry.id)} ${String(entry.dispatch)} broadcast=${String(entry.broadcast)}`
   if (field === 'listeners')
     return `${String(entry.id)} <- ${String(entry.eventId)} ${String(entry.delivery)} ${String(entry.access)}`
   if (field === 'observers')

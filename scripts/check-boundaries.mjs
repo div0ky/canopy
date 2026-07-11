@@ -36,6 +36,8 @@ const allowedDoxaDependencies = new Map(
     '@doxajs/compiler': ['@doxajs/manifest'],
     '@doxajs/runtime': ['@doxajs/core', '@doxajs/manifest'],
     '@doxajs/http-hono': ['@doxajs/core', '@doxajs/runtime'],
+    '@doxajs/keryx': ['@doxajs/core'],
+    '@doxajs/realtime': [],
     '@doxajs/postgres-drizzle': ['@doxajs/core'],
     '@doxajs/auth-postgres': ['@doxajs/core'],
     '@doxajs/queue-pg-boss': ['@doxajs/core'],

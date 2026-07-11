@@ -372,7 +372,7 @@ export function registerCompilationAndTheoriaTests(
       }),
       expect.objectContaining({
         id: 'policy:counters/counter',
-        abilities: ['counters.update', 'counters.write'],
+        abilities: ['broadcast.subscribe', 'counters.update', 'counters.write'],
       }),
     ])
     expect(result.manifest.signals).toEqual([
@@ -585,7 +585,7 @@ export function registerCompilationAndTheoriaTests(
       const page = await fetch(host.url)
       expect(page.status).toBe(200)
       const html = await page.text()
-      expect(html).toContain('Everything beneath your Doxa')
+      expect(html).toContain('Everything beneath the surface')
       expect(html).toContain('.filters{flex:0 0 auto')
       expect(html).toContain('.scroll{flex:1 1 auto}')
       expect(await (await fetch(new URL('/api/health', host.url))).json()).toEqual({
@@ -596,7 +596,7 @@ export function registerCompilationAndTheoriaTests(
         'no-store',
       )
       expect((await fetch(new URL('/api/entries?kind=event', host.url))).status).toBe(200)
-      expect((await fetch(new URL('/api/entries', host.url))).status).toBe(400)
+      expect((await fetch(new URL('/api/entries', host.url))).status).toBe(200)
       expect((await fetch(new URL('/api/executions', host.url), { method: 'POST' })).status).toBe(
         405,
       )

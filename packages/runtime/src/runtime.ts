@@ -7,6 +7,13 @@ import { pathToFileURL } from 'node:url'
 import {
   ActionBus,
   Auth,
+  type BroadcastConnectionAdmission,
+  type BroadcastDestination,
+  type BroadcastMessage,
+  type BroadcastSubscriptionAdmission,
+  type BroadcastSubscriptionResource,
+  BroadcastTransport,
+  validateBroadcastChannelName,
   Authorization,
   AuthorizationError,
   Cache,
@@ -231,6 +238,7 @@ export class DoxaRuntime {
     private readonly authentication: Auth | undefined,
     private readonly mailTransport: MailTransport | undefined,
     private readonly smsTransport: SmsTransport | undefined,
+    private readonly broadcastTransport: BroadcastTransport | undefined,
     private readonly telemetry: Telemetry,
     private readonly observations: ObservationRecorder,
     logger: Logger,
@@ -300,6 +308,11 @@ export class DoxaRuntime {
     }
     for (const schedule of manifest.schedules) this.#schedulesById.set(schedule.id, schedule)
     for (const command of manifest.commands) this.#commandsByName.set(command.command, command)
+    broadcastTransport?.bind({
+      connect: (connectionId, request) => this.connectBroadcast(connectionId, request),
+      subscribe: (admission, destination) => this.subscribeBroadcast(admission, destination),
+      unsubscribe: (admission, destination) => this.unsubscribeBroadcast(admission, destination),
+    })
     queues?.bind((delivery) => this.handleQueueDelivery(delivery))
     queues?.reconcileSchedules(
       manifest.schedules.map((schedule): ScheduleDefinition => {
@@ -408,6 +421,12 @@ export class DoxaRuntime {
     const smsTransport = smsProvider
       ? (graph.singletonInstances.get(smsProvider.id) as SmsTransport | undefined)
       : undefined
+    const broadcastProvider = artifacts.manifest.providers.find((provider) =>
+      provider.capabilities.includes('broadcasting'),
+    )
+    const broadcastTransport = broadcastProvider
+      ? (graph.singletonInstances.get(broadcastProvider.id) as BroadcastTransport | undefined)
+      : undefined
     const telemetryProvider = artifacts.manifest.providers.find((provider) =>
       provider.capabilities.includes('telemetry'),
     )
@@ -432,6 +451,7 @@ export class DoxaRuntime {
       authentication,
       mailTransport,
       smsTransport,
+      broadcastTransport,
       telemetry,
       observations,
       logger,
@@ -978,6 +998,9 @@ export class DoxaRuntime {
           await this.enqueueListener(listener, manifest, event, store)
         }
       }
+      if (manifest.broadcast === 'queued') {
+        await this.enqueueBroadcast(manifest, event, store)
+      }
       unitOfWork.afterCommit(() =>
         this.observeObservation(
           'event',
@@ -1071,6 +1094,159 @@ export class DoxaRuntime {
       }
       await this.invokeListener(listener, event, store)
     }
+    if (manifest.broadcast === 'queued') {
+      if (!skipQueued) await this.enqueueBroadcast(manifest, event, store)
+    } else if (manifest.broadcast === 'now') {
+      await this.publishBroadcast(manifest, event)
+    }
+  }
+
+  private async enqueueBroadcast(
+    manifest: EventManifestEntry,
+    event: Event<unknown>,
+    store: ExecutionStore,
+  ): Promise<void> {
+    const envelope = this.createQueueEnvelope(
+      {
+        kind: 'broadcast',
+        targetId: manifest.id,
+        eventId: manifest.id,
+        payload: serializeQueuePayload(event),
+        policy: { retries: 3, retryDelay: 1, backoff: true, timeout: 30 },
+      },
+      store,
+    )
+    await this.enqueueEnvelope(envelope, store)
+    await this.recordObservation({
+      kind: 'broadcast',
+      name: manifest.id,
+      phase: 'occurred',
+      roleId: manifest.id,
+      attributes: { delivery: 'queued', messageId: envelope.id },
+    })
+  }
+
+  private async publishBroadcast(
+    manifest: EventManifestEntry,
+    event: Event<unknown>,
+  ): Promise<void> {
+    if (!this.broadcastTransport) {
+      throw new OperationDispatchError('No broadcasting transport is configured.')
+    }
+    const candidate = event as Event<unknown> & {
+      broadcastOn(): BroadcastDestination | readonly BroadcastDestination[]
+      broadcastAs?(): string
+      broadcastWith?(): import('@doxajs/core').JsonValue
+    }
+    if (typeof candidate.broadcastOn !== 'function') {
+      throw new OperationDispatchError(`${manifest.id} must define broadcastOn().`)
+    }
+    const selected = candidate.broadcastOn()
+    const channels = (Array.isArray(selected) ? selected : [selected]).map((channel) => ({
+      name: channel.name,
+      kind: channel.kind,
+    }))
+    if (channels.length === 0) {
+      throw new OperationDispatchError(`${manifest.id}.broadcastOn() returned no channels.`)
+    }
+    for (const channel of channels) {
+      if (!['public', 'private', 'presence'].includes(channel.kind)) {
+        throw new OperationDispatchError(`${manifest.id} returned an invalid broadcast channel.`)
+      }
+      validateBroadcastDestination(channel)
+    }
+    const eventName = candidate.broadcastAs?.() ?? manifest.id
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,199}$/.test(eventName)) {
+      throw new OperationDispatchError(`${manifest.id}.broadcastAs() returned an invalid name.`)
+    }
+    const message: BroadcastMessage = Object.freeze({
+      id: randomUUID(),
+      event: eventName,
+      channels: Object.freeze(channels),
+      data: serializeQueuePayload(candidate.broadcastWith?.() ?? event.payload),
+      occurredAt: new Date().toISOString(),
+    })
+    await this.observeObservation(
+      'broadcast',
+      manifest.id,
+      { messageId: message.id, event: eventName, channels: channels.map((entry) => entry.name) },
+      () => this.broadcastTransport!.publish(message),
+      manifest.id,
+    )
+  }
+
+  private async connectBroadcast(
+    connectionId: string,
+    request: Request,
+  ): Promise<BroadcastConnectionAdmission> {
+    const resolved = this.authentication
+      ? await this.authentication.resolveHttp(request)
+      : { actor: { kind: 'anonymous' as const }, authentication: { state: 'anonymous' as const } }
+    return Object.freeze({
+      connectionId,
+      actor: Object.freeze({ ...resolved.actor }),
+      authentication: Object.freeze({ ...resolved.authentication }),
+      correlationId: randomUUID(),
+    })
+  }
+
+  private subscribeBroadcast(
+    admission: BroadcastConnectionAdmission,
+    destination: BroadcastDestination,
+  ): Promise<BroadcastSubscriptionAdmission> {
+    validateBroadcastDestination(destination)
+    return this.admit(
+      {
+        actor: admission.actor,
+        authentication: admission.authentication,
+        ...(admission.tenant ? { tenant: admission.tenant } : {}),
+        correlationId: admission.correlationId,
+        causationId: admission.connectionId,
+        transport: { kind: 'websocket', name: 'broadcast.subscribe' },
+      },
+      async () => {
+        if (destination.kind !== 'public') {
+          const resource: BroadcastSubscriptionResource = {
+            channel: destination.name,
+            kind: destination.kind,
+          }
+          await this.authorization.authorize('broadcast.subscribe', resource)
+        }
+        await this.recordObservation({
+          kind: 'broadcast',
+          name: 'subscription',
+          phase: 'occurred',
+          attributes: { channel: destination.name, kind: destination.kind },
+        })
+        return destination.kind === 'presence'
+          ? Object.freeze({ member: Object.freeze({ ...admission.actor }) })
+          : Object.freeze({})
+      },
+    )
+  }
+
+  private unsubscribeBroadcast(
+    admission: BroadcastConnectionAdmission,
+    destination: BroadcastDestination,
+  ): Promise<void> {
+    validateBroadcastDestination(destination)
+    return this.admit(
+      {
+        actor: admission.actor,
+        authentication: admission.authentication,
+        ...(admission.tenant ? { tenant: admission.tenant } : {}),
+        correlationId: admission.correlationId,
+        causationId: admission.connectionId,
+        transport: { kind: 'websocket', name: 'broadcast.unsubscribe' },
+      },
+      () =>
+        this.recordObservation({
+          kind: 'broadcast',
+          name: 'unsubscription',
+          phase: 'occurred',
+          attributes: { channel: destination.name, kind: destination.kind },
+        }),
+    )
   }
 
   private async enqueueListener(
@@ -1319,6 +1495,31 @@ export class DoxaRuntime {
             }
             if (envelope.kind === 'mail' || envelope.kind === 'sms') {
               await this.invokeCommunication(envelope, store)
+              return
+            }
+            if (envelope.kind === 'broadcast') {
+              const eventManifest = this.manifest.events.find(
+                (entry) => entry.id === envelope.targetId,
+              )
+              const EventConstructor = eventManifest
+                ? this.artifacts.registry.constructors[eventManifest.id]
+                : undefined
+              if (
+                !eventManifest ||
+                !EventConstructor ||
+                typeof envelope.payload !== 'object' ||
+                envelope.payload === null ||
+                Array.isArray(envelope.payload)
+              ) {
+                throw new OperationDispatchError(
+                  `Queued broadcast ${envelope.targetId} cannot be rehydrated.`,
+                )
+              }
+              const event = Object.assign(
+                Object.create(EventConstructor.prototype),
+                envelope.payload,
+              ) as Event<unknown>
+              await this.publishBroadcast(eventManifest, event)
               return
             }
             const listener = this.manifest.listeners.find((entry) => entry.id === envelope.targetId)
@@ -2269,12 +2470,32 @@ function assertOperationInfrastructure(manifest: DoxaManifest): void {
   const hasCommunications = manifest.providers.some(
     (provider) => provider.capabilities.includes('mail') || provider.capabilities.includes('sms'),
   )
+  const hasQueuedBroadcasts = manifest.events.some((event) => event.broadcast === 'queued')
+  const broadcastingProviders = manifest.providers.filter((provider) =>
+    provider.capabilities.includes('broadcasting'),
+  )
   if (
-    (manifest.jobs.length > 0 || hasQueuedListeners || hasCommunications) &&
+    manifest.events.some((event) => event.broadcast !== false) &&
+    broadcastingProviders.length !== 1
+  ) {
+    throw new RuntimeIntegrityError(
+      `Applications with broadcast events require exactly one broadcasting provider; found ${broadcastingProviders.length}.`,
+    )
+  }
+  if (
+    manifest.events.some((event) => event.broadcast !== false) &&
+    !manifest.policies.some((policy) => policy.abilities.includes('broadcast.subscribe'))
+  ) {
+    throw new RuntimeIntegrityError(
+      'Applications with broadcast events must declare a Policy for the broadcast.subscribe ability.',
+    )
+  }
+  if (
+    (manifest.jobs.length > 0 || hasQueuedListeners || hasQueuedBroadcasts || hasCommunications) &&
     queueProviders.length !== 1
   ) {
     throw new RuntimeIntegrityError(
-      `Applications with jobs or queued listeners require exactly one queue provider; found ${queueProviders.length}.`,
+      `Applications with jobs, queued listeners, or queued broadcasts require exactly one queue provider; found ${queueProviders.length}.`,
     )
   }
 }
@@ -2494,6 +2715,14 @@ function serializeQueuePayload(value: unknown): import('@doxajs/core').JsonValue
   }
 }
 
+function validateBroadcastDestination(destination: BroadcastDestination): void {
+  try {
+    validateBroadcastChannelName(destination.name)
+  } catch (cause) {
+    throw new OperationDispatchError('Broadcast channel is invalid.', { cause })
+  }
+}
+
 function deterministicJobId(targetId: string, idempotencyKey: string): string {
   const hex = createHash('sha256')
     .update(targetId)
@@ -2577,6 +2806,7 @@ const INJECTION_CAPABILITIES = new Map<object, ProviderManifestEntry['capabiliti
   [Cache, 'cache'],
   [MailTransport, 'mail'],
   [SmsTransport, 'sms'],
+  [BroadcastTransport, 'broadcasting'],
   [Telemetry, 'telemetry'],
 ])
 

@@ -1,0 +1,44 @@
+{
+  "name": "@doxajs/realtime",
+  "version": "0.1.0-alpha.0",
+  "description": "Typed subscriber client for Doxa realtime broadcasts.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/div0ky/doxajs.git",
+    "directory": "packages/realtime"
+  },
+  "homepage": "https://github.com/div0ky/doxajs#readme",
+  "bugs": {
+    "url": "https://github.com/div0ky/doxajs/issues"
+  },
+  "keywords": [
+    "doxa",
+    "websocket",
+    "broadcasting",
+    "realtime",
+    "typescript"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "NOTICE"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/prepare-package.mjs",
+    "postpack": "node ../../scripts/prepare-package.mjs --clean"
+  }
+}

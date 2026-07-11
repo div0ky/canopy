@@ -124,12 +124,14 @@ Still required:
 - Event fakes and application-isolated assertions.
 - Event inspection tooling and finalized listener ordering policy.
 - Equivalent proof from jobs, schedules, console commands, and queued listeners.
-- Broadcasting implementations for `ShouldBroadcast` and `ShouldBroadcastNow`.
 
 Queued listener delivery is now implemented by the
 [pg-boss queue and worker vertical slice](pg-boss-queue-worker-vertical-slice.md). Event fakes,
 versioned payload schemas, model-reference rehydration, and complete entry-point parity remain
 future work.
+
+Broadcasting is implemented by the
+[realtime broadcasting vertical slice](realtime-broadcasting-vertical-slice.md).
 
 ## Next slice
 

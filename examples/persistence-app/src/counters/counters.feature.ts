@@ -1,6 +1,7 @@
 import { Feature } from '@doxajs/core'
 
 import { CaptureCounter } from './actions/capture-counter.js'
+import { BroadcastCounter } from './actions/broadcast-counter.js'
 import { CreateCounter } from './actions/create-counter.js'
 import { DeleteCounter } from './actions/delete-counter.js'
 import { DispatchProcessCounter } from './actions/dispatch-process-counter.js'
@@ -20,6 +21,8 @@ import { SaveDetachedCounter } from './actions/save-detached-counter.js'
 import { CounterIncremented } from './events/counter-incremented.js'
 import { CounterNotificationRequested } from './events/counter-notification-requested.js'
 import { CounterSaved } from './events/counter-saved.js'
+import { CounterBroadcasted } from './events/counter-broadcasted.js'
+import { CounterBroadcastedNow } from './events/counter-broadcasted-now.js'
 import { DeleteCounterRoute } from './http/delete-counter.route.js'
 import { IncrementCounterRoute } from './http/increment-counter.route.js'
 import { SecureIncrementCounterRoute } from './http/secure-increment-counter.route.js'
@@ -45,6 +48,7 @@ export class CountersFeature extends Feature {
   models = [Counter, LegacyCustomer, LegacyNote]
   observers = [CounterObserver]
   actions = [
+    BroadcastCounter,
     SaveCounter,
     CreateCounter,
     InspectCounter,
@@ -65,7 +69,13 @@ export class CountersFeature extends Feature {
   ]
   queries = [AttemptCounterWrite]
   routes = [IncrementCounterRoute, DeleteCounterRoute, SecureIncrementCounterRoute]
-  events = [CounterIncremented, CounterSaved, CounterNotificationRequested]
+  events = [
+    CounterIncremented,
+    CounterSaved,
+    CounterNotificationRequested,
+    CounterBroadcasted,
+    CounterBroadcastedNow,
+  ]
   listeners = [
     RecordCounterIncremented,
     RecordCounterIncrementedAfterCommit,

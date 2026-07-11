@@ -108,7 +108,7 @@ export interface QueueExecutionEnvelope {
 
 export interface QueueEnvelope {
   readonly id: string
-  readonly kind: 'job' | 'listener' | 'mail' | 'sms'
+  readonly kind: 'job' | 'listener' | 'broadcast' | 'mail' | 'sms'
   readonly targetId: string
   readonly scheduleId?: string
   readonly eventId?: string

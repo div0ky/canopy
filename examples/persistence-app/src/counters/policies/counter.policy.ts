@@ -1,18 +1,24 @@
 import { allow, deny, Policy, type PolicyDecision, type PolicyRequest } from '@doxajs/core'
 
 interface OwnedCounter {
-  readonly ownerId: string
+  readonly ownerId?: string
+  readonly channel?: string
 }
 
 export class CounterPolicy extends Policy<OwnedCounter> {
   static override readonly id = 'counter'
-  static override readonly abilities = ['counters.write', 'counters.update']
+  static override readonly abilities = ['counters.write', 'counters.update', 'broadcast.subscribe']
 
   decide(request: PolicyRequest<OwnedCounter>): PolicyDecision {
     if (request.actor.kind !== 'user' || !request.actor.id) {
       return deny('counter', 'authentication_required')
     }
     if (request.ability === 'counters.write' && !request.resource) return allow('counter')
+    if (
+      request.ability === 'broadcast.subscribe' &&
+      request.resource?.channel?.startsWith('counters.')
+    )
+      return allow('counter')
     if (!request.resource || request.resource.ownerId !== request.actor.id) {
       return deny('counter', 'counter_owner_required')
     }

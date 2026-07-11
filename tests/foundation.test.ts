@@ -322,7 +322,7 @@ describe('foundational compile-to-boot slice', () => {
         dotenvPath: false,
         environment: {},
       }),
-    ).rejects.toThrow('Unsupported Doxa manifest format 2; expected 11')
+    ).rejects.toThrow('Unsupported Doxa manifest format 2; expected 12')
   })
 
   it('rejects an Application constructor that does not match the generated registry', async () => {

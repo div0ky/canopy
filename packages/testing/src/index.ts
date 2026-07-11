@@ -18,6 +18,7 @@ import {
   type DeliveryTransition,
   type ExecutionContext,
   Event,
+  FakeBroadcastTransport,
   FakeMailTransport,
   FakeSmsTransport,
   type IssueAccessTokenInput,
@@ -53,6 +54,7 @@ import { HonoHttpEngine } from '@doxajs/http-hono'
 import { Doxa, type BootOptions, type DoxaRuntime } from '@doxajs/runtime'
 
 export {
+  FakeBroadcastTransport,
   FakeMailTransport,
   FakeSmsTransport,
   MemoryCache,

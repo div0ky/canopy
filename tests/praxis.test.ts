@@ -136,7 +136,7 @@ describe('Praxis command suite', () => {
     await runPraxis(['make:feature', 'Commerce'], root, io)
     const commands = [
       ['make:model', 'Commerce/Order'],
-      ['make:event', 'Commerce/OrderPlaced'],
+      ['make:event', 'Commerce/OrderPlaced', '--broadcast', '--channel=orders', '--private'],
       [
         'make:listener',
         'Commerce/NotifyWarehouse',
@@ -187,6 +187,9 @@ describe('Praxis command suite', () => {
       expect(feature).toContain(`${field} = [`)
     }
     expect(feature).not.toContain('services =')
+    expect(
+      await readFile(path.join(root, 'src/commerce/events/order-placed.ts'), 'utf8'),
+    ).toContain('implements ShouldBroadcast')
     expect(
       await readFile(path.join(root, 'src/commerce/listeners/notify-warehouse.ts'), 'utf8'),
     ).toContain('implements ShouldQueueAfterCommit')

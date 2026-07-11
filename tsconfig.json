@@ -10,6 +10,8 @@
     { "path": "packages/testing" },
     { "path": "packages/runtime" },
     { "path": "packages/http-hono" },
+    { "path": "packages/keryx" },
+    { "path": "packages/realtime" },
     { "path": "packages/auth-postgres" },
     { "path": "packages/postgres-drizzle" },
     { "path": "packages/queue-pg-boss" },

@@ -1124,6 +1124,22 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         attempt: 1,
       }),
     )
+    await waitFor(async () => {
+      const completed = await pool.query<{ count: string }>(`
+        SELECT count(*)
+        FROM doxa_theoria_observations
+        WHERE execution_id = (
+          SELECT execution_id
+          FROM doxa_theoria_observations
+          WHERE kind = 'schedule' AND name = 'schedule:counters/process-counters'
+          ORDER BY occurred_at DESC
+          LIMIT 1
+        )
+          AND kind IN ('execution', 'job')
+          AND phase = 'completed'
+      `)
+      return Number(completed.rows[0]?.count ?? 0) === 2
+    })
     const scheduledExecution = await pool.query<{
       kind: string
       transport: string

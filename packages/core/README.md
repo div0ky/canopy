@@ -28,3 +28,19 @@ export class AppFeature extends Feature {
 ```
 
 See the [Doxa repository](https://github.com/div0ky/doxajs) for documentation and support.
+
+## Broadcasting
+
+```ts
+import { Event, PrivateChannel, type ShouldBroadcast } from '@doxajs/core'
+
+export class OrderShipped extends Event<{ orderId: string }> implements ShouldBroadcast {
+  static override readonly id = 'order-shipped'
+  broadcastOn() {
+    return new PrivateChannel(`orders.${this.payload.orderId}`)
+  }
+}
+```
+
+Queued broadcasts use the Unit of Work outbox automatically. Use `ShouldBroadcastNow` only when the
+publisher must synchronously observe transport success or failure.

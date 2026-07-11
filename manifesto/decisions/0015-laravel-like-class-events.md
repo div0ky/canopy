@@ -169,8 +169,10 @@ The MVP must prove:
 The [class events vertical slice](../implementation/class-events-vertical-slice.md) implements the
 first executable proof of inherited static dispatch, typed listener inference, constructor
 injection, runtime isolation, local failure propagation, and transaction-aware after-commit
-delivery. Queued delivery, domain events, signals, serialization, event fakes, inspection, and
-entry-point parity remain required before the complete MVP contract is satisfied.
+delivery. Queued delivery, signals, inspection, and broadcasting now have executable proofs. Domain
+events, versioned serialization, event fakes, and complete entry-point parity remain required before
+the complete event contract is satisfied. Broadcasting is proven by the
+[realtime broadcasting vertical slice](../implementation/realtime-broadcasting-vertical-slice.md).
 
 ## References
 

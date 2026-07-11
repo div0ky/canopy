@@ -13,6 +13,7 @@ import { SendGridWebhookRoute } from './communications/sendgrid-webhook.route.js
 import { TwilioSmsWebhookRoute } from './communications/twilio-sms-webhook.route.js'
 import { ReferenceTelemetry } from './telemetry/reference-telemetry.js'
 import { ApplicationTheoria } from './theoria/application-theoria.js'
+import { ReferenceBroadcasting } from './broadcasting/reference-broadcasting.js'
 
 export class InfrastructureFeature extends Feature {
   id = 'infrastructure'
@@ -26,6 +27,7 @@ export class InfrastructureFeature extends Feature {
     ReferenceSms,
     ReferenceTelemetry,
     ApplicationTheoria,
+    ReferenceBroadcasting,
   ]
   actions = [RecordDeliveryUpdates]
   routes = [SendGridWebhookRoute, TwilioSmsWebhookRoute]

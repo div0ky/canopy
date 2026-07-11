@@ -1,6 +1,24 @@
 export type Class<T = object> = abstract new (...args: never[]) => T
 
 export {
+  BroadcastTransport,
+  Channel,
+  FakeBroadcastTransport,
+  PresenceChannel,
+  PrivateChannel,
+  validateBroadcastChannelName,
+  type BroadcastChannelKind,
+  type BroadcastConnectionAdmission,
+  type BroadcastDestination,
+  type BroadcastGateway,
+  type BroadcastMessage,
+  type BroadcastSubscriptionAdmission,
+  type BroadcastSubscriptionResource,
+  type ShouldBroadcast,
+  type ShouldBroadcastNow,
+} from './broadcasting.js'
+
+export {
   allow,
   Authorization,
   AuthorizationError,

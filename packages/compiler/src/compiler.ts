@@ -320,7 +320,7 @@ export async function compileApplication(
       `Applications may declare at most one cache provider; found ${cacheProviders.length}.`,
     )
   }
-  for (const capability of ['mail', 'sms', 'telemetry'] as const) {
+  for (const capability of ['mail', 'sms', 'broadcasting', 'telemetry'] as const) {
     const selected = providers.filter((provider) => provider.capabilities.includes(capability))
     if (selected.length > 1)
       throw new DoxaCompilationError(
@@ -330,18 +330,36 @@ export async function compileApplication(
   const queuedListeners = listeners.filter(
     (listener) => listener.delivery === 'queued' || listener.delivery === 'queued-after-commit',
   )
+  const queuedBroadcasts = events.filter((event) => event.broadcast === 'queued')
+  const broadcastingProviders = providers.filter((provider) =>
+    provider.capabilities.includes('broadcasting'),
+  )
+  if (events.some((event) => event.broadcast !== false) && broadcastingProviders.length !== 1) {
+    throw new DoxaCompilationError(
+      `Applications with broadcast events require exactly one broadcasting provider; found ${broadcastingProviders.length}.`,
+    )
+  }
+  if (
+    events.some((event) => event.broadcast !== false) &&
+    !policyAbilities.has('broadcast.subscribe')
+  ) {
+    throw new DoxaCompilationError(
+      'Applications with broadcast events must declare a Policy for the broadcast.subscribe ability.',
+    )
+  }
   const communicationProviders = providers.filter(
     (provider) => provider.capabilities.includes('mail') || provider.capabilities.includes('sms'),
   )
   if (
     (jobs.length > 0 ||
       queuedListeners.length > 0 ||
+      queuedBroadcasts.length > 0 ||
       schedules.length > 0 ||
       communicationProviders.length > 0) &&
     queueProviders.length !== 1
   ) {
     throw new DoxaCompilationError(
-      `Applications with jobs, schedules, or queued listeners require exactly one queue provider; found ${queueProviders.length}.`,
+      `Applications with jobs, schedules, queued listeners, or queued broadcasts require exactly one queue provider; found ${queueProviders.length}.`,
     )
   }
 
@@ -532,6 +550,9 @@ export async function compileApplication(
         ...(extendsNamedClass(declaration, 'Cache', checker) ? ['cache' as const] : []),
         ...(extendsNamedClass(declaration, 'MailTransport', checker) ? ['mail' as const] : []),
         ...(extendsNamedClass(declaration, 'SmsTransport', checker) ? ['sms' as const] : []),
+        ...(extendsNamedClass(declaration, 'BroadcastTransport', checker)
+          ? ['broadcasting' as const]
+          : []),
         ...(extendsNamedClass(declaration, 'Telemetry', checker) ? ['telemetry' as const] : []),
         ...(extendsNamedClass(declaration, 'ObservationRecorder', checker)
           ? ['observations' as const]
@@ -987,6 +1008,11 @@ export async function compileApplication(
       dispatch: implementsNamedInterface(declaration, 'ShouldDispatchAfterCommit', checker)
         ? 'after-commit'
         : 'immediate',
+      broadcast: implementsNamedInterface(declaration, 'ShouldBroadcastNow', checker)
+        ? 'now'
+        : implementsNamedInterface(declaration, 'ShouldBroadcast', checker)
+          ? 'queued'
+          : false,
       source: sourceOf(declaration, normalized.projectRoot),
     }
     eventByDeclaration.set(declaration, entry)
@@ -1744,6 +1770,7 @@ function providerCapabilityForDeclaration(
     name !== 'Cache' &&
     name !== 'MailTransport' &&
     name !== 'SmsTransport' &&
+    name !== 'BroadcastTransport' &&
     name !== 'Telemetry' &&
     name !== 'ObservationRecorder'
   )
@@ -1762,9 +1789,11 @@ function providerCapabilityForDeclaration(
               ? 'mail'
               : name === 'SmsTransport'
                 ? 'sms'
-                : name === 'Telemetry'
-                  ? 'telemetry'
-                  : 'observations'
+                : name === 'BroadcastTransport'
+                  ? 'broadcasting'
+                  : name === 'Telemetry'
+                    ? 'telemetry'
+                    : 'observations'
     : undefined
 }
 

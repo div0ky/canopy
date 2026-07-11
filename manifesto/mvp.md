@@ -170,7 +170,6 @@ The following may be deferred without making the initial product incoherent:
 - Optional OAuth, passkey, multifactor, API-key, and machine-auth plugins. First-party bearer access
   tokens for existing identities are not deferred.
 - Multiple HTTP, database, queue, cache, mail, or SMS implementations.
-- WebSocket and broadcasting support.
 - A third-party plugin marketplace.
 - Multiple JavaScript runtimes.
 - A graphical administration interface.
@@ -178,6 +177,9 @@ The following may be deferred without making the initial product incoherent:
 
 Deferred capabilities must not be required to complete the reference flow or operate the framework
 safely.
+
+Realtime broadcasting is implemented as an optional post-MVP package family. It is not required to
+complete the MVP reference flow or satisfy this viability bar.
 
 ## MVP acceptance bar
 

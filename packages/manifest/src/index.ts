@@ -1,4 +1,4 @@
-export const MANIFEST_FORMAT_VERSION = 11 as const
+export const MANIFEST_FORMAT_VERSION = 12 as const
 
 export type Scope = 'singleton' | 'execution' | 'transient'
 
@@ -76,6 +76,7 @@ export interface ProviderManifestEntry {
     | 'cache'
     | 'mail'
     | 'sms'
+    | 'broadcasting'
     | 'telemetry'
     | 'observations'
   )[]
@@ -153,6 +154,7 @@ export interface EventManifestEntry {
   readonly name: string
   readonly exportName: string
   readonly dispatch: 'immediate' | 'after-commit'
+  readonly broadcast: false | 'queued' | 'now'
   readonly source: SourceProvenance
 }
 

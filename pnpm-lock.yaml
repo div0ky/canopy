@@ -15,9 +15,9 @@ importers:
       '@arethetypeswrong/cli':
         specifier: 0.18.5
         version: 0.18.5
-      '@doxajs/praxis':
-        specifier: workspace:*
-        version: link:packages/praxis
+      '@changesets/cli':
+        specifier: 2.31.0
+        version: 2.31.0(@types/node@24.13.3)
       '@doxajs/auth-postgres':
         specifier: workspace:*
         version: link:packages/auth-postgres
@@ -30,12 +30,21 @@ importers:
       '@doxajs/http-hono':
         specifier: workspace:*
         version: link:packages/http-hono
+      '@doxajs/keryx':
+        specifier: workspace:*
+        version: link:packages/keryx
       '@doxajs/postgres-drizzle':
         specifier: workspace:*
         version: link:packages/postgres-drizzle
+      '@doxajs/praxis':
+        specifier: workspace:*
+        version: link:packages/praxis
       '@doxajs/queue-pg-boss':
         specifier: workspace:*
         version: link:packages/queue-pg-boss
+      '@doxajs/realtime':
+        specifier: workspace:*
+        version: link:packages/realtime
       '@doxajs/runtime':
         specifier: workspace:*
         version: link:packages/runtime
@@ -45,15 +54,12 @@ importers:
       '@doxajs/testing':
         specifier: workspace:*
         version: link:packages/testing
-      '@doxajs/twilio-sms':
-        specifier: workspace:*
-        version: link:packages/twilio-sms
       '@doxajs/theoria':
         specifier: workspace:*
         version: link:packages/theoria
-      '@changesets/cli':
-        specifier: 2.31.0
-        version: 2.31.0(@types/node@24.13.3)
+      '@doxajs/twilio-sms':
+        specifier: workspace:*
+        version: link:packages/twilio-sms
       '@eslint/js':
         specifier: 10.0.1
         version: 10.0.1(eslint@10.6.0(jiti@2.7.0))
@@ -185,38 +191,6 @@ importers:
         specifier: workspace:*
         version: link:../../packages/core
 
-  packages/praxis:
-    dependencies:
-      '@doxajs/core':
-        specifier: workspace:*
-        version: link:../core
-      '@doxajs/http-hono':
-        specifier: workspace:*
-        version: link:../http-hono
-      '@doxajs/queue-pg-boss':
-        specifier: workspace:*
-        version: link:../queue-pg-boss
-      '@doxajs/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      pg:
-        specifier: 8.22.0
-        version: 8.22.0
-    devDependencies:
-      '@types/pg':
-        specifier: 8.20.0
-        version: 8.20.0
-    optionalDependencies:
-      '@doxajs/compiler':
-        specifier: workspace:*
-        version: link:../compiler
-      '@doxajs/theoria':
-        specifier: workspace:*
-        version: link:../theoria
-      drizzle-kit:
-        specifier: 0.31.10
-        version: 0.31.10
-
   packages/auth-postgres:
     dependencies:
       '@doxajs/core':
@@ -259,6 +233,19 @@ importers:
         specifier: 4.12.29
         version: 4.12.29
 
+  packages/keryx:
+    dependencies:
+      '@doxajs/core':
+        specifier: workspace:*
+        version: link:../core
+      ws:
+        specifier: 8.21.0
+        version: 8.21.0
+    devDependencies:
+      '@types/ws':
+        specifier: 8.18.1
+        version: 8.18.1
+
   packages/manifest: {}
 
   packages/postgres-drizzle:
@@ -277,6 +264,38 @@ importers:
         specifier: 8.20.0
         version: 8.20.0
 
+  packages/praxis:
+    dependencies:
+      '@doxajs/core':
+        specifier: workspace:*
+        version: link:../core
+      '@doxajs/http-hono':
+        specifier: workspace:*
+        version: link:../http-hono
+      '@doxajs/queue-pg-boss':
+        specifier: workspace:*
+        version: link:../queue-pg-boss
+      '@doxajs/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      pg:
+        specifier: 8.22.0
+        version: 8.22.0
+    devDependencies:
+      '@types/pg':
+        specifier: 8.20.0
+        version: 8.20.0
+    optionalDependencies:
+      '@doxajs/compiler':
+        specifier: workspace:*
+        version: link:../compiler
+      '@doxajs/theoria':
+        specifier: workspace:*
+        version: link:../theoria
+      drizzle-kit:
+        specifier: 0.31.10
+        version: 0.31.10
+
   packages/queue-pg-boss:
     dependencies:
       '@doxajs/core':
@@ -292,6 +311,8 @@ importers:
       '@types/pg':
         specifier: 8.20.0
         version: 8.20.0
+
+  packages/realtime: {}
 
   packages/runtime:
     dependencies:
@@ -320,12 +341,6 @@ importers:
         specifier: workspace:*
         version: link:../runtime
 
-  packages/twilio-sms:
-    dependencies:
-      '@doxajs/core':
-        specifier: workspace:*
-        version: link:../core
-
   packages/theoria:
     dependencies:
       '@doxajs/core':
@@ -338,6 +353,12 @@ importers:
       '@types/pg':
         specifier: 8.20.0
         version: 8.20.0
+
+  packages/twilio-sms:
+    dependencies:
+      '@doxajs/core':
+        specifier: workspace:*
+        version: link:../core
 
 packages:
 
@@ -1664,6 +1685,9 @@ packages:
 
   '@types/validate-npm-package-name@4.0.2':
     resolution: {integrity: sha512-lrpDziQipxCEeK5kWxvljWYhUvOiB2A9izZd9B2AFarYAkqZshb4lPbRs7zKEic6eGtH8V/2qJW+dPp9OtF6bw==}
+
+  '@types/ws@8.18.1':
+    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
 
   '@typescript-eslint/eslint-plugin@8.63.0':
     resolution: {integrity: sha512-rvwSgqT+DHpWdzfSzPatRLm02a0GlESt++9iy3hLCDY4BgkaLcl8LBi9Yh7XGFBpwcBE/K3024QuXWTpbz4FfQ==}
@@ -4882,6 +4906,18 @@ packages:
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
 
+  ws@8.21.0:
+    resolution: {integrity: sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
   wsl-utils@0.3.1:
     resolution: {integrity: sha512-g/eziiSUNBSsdDJtCLB8bdYEUMj4jR7AGeUo96p/3dTafgjHhpF4RiCFPiRILwjQoDXx5MqkBr4fwWtR3Ky4Wg==}
     engines: {node: '>=20'}
@@ -6194,6 +6230,10 @@ snapshots:
       '@types/node': 18.19.130
 
   '@types/validate-npm-package-name@4.0.2': {}
+
+  '@types/ws@8.18.1':
+    dependencies:
+      '@types/node': 24.13.3
 
   '@typescript-eslint/eslint-plugin@8.63.0(@typescript-eslint/parser@8.63.0(eslint@10.6.0(jiti@2.7.0))(typescript@6.0.2))(eslint@10.6.0(jiti@2.7.0))(typescript@6.0.2)':
     dependencies:
@@ -9796,6 +9836,8 @@ snapshots:
       strip-ansi: 7.2.0
 
   wrappy@1.0.2: {}
+
+  ws@8.21.0: {}
 
   wsl-utils@0.3.1:
     dependencies:

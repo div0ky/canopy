@@ -77,3 +77,6 @@ requirement to its implementation and acceptance evidence.
 25. [Container deployment vertical slice](container-deployment-vertical-slice.md) — one generated
     immutable image, prebuilt production boot, combined workers and schedules, explicit migrations,
     advanced scheduler isolation, Compose topology, and Gnosis deployment knowledge.
+26. [Realtime broadcasting vertical slice](realtime-broadcasting-vertical-slice.md) — compiled
+    queued/now event capabilities, transactional queue handoff, Keryx WebSockets, policy-backed
+    private and presence subscriptions, reconnecting typed clients, fakes, and Praxis tooling.
