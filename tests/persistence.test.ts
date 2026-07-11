@@ -572,7 +572,10 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     try {
       const page = await fetch(host.url)
       expect(page.status).toBe(200)
-      expect(await page.text()).toContain('Everything beneath your Canopy')
+      const html = await page.text()
+      expect(html).toContain('Everything beneath your Canopy')
+      expect(html).toContain('.filters{flex:0 0 auto')
+      expect(html).toContain('.scroll{flex:1 1 auto}')
       expect(await (await fetch(new URL('/api/health', host.url))).json()).toEqual({
         ok: true, data: { service: 'undergrowth' },
       })
