@@ -9,7 +9,7 @@ import {
   type StagedDelivery,
   type DeliveryTransition,
   UnitOfWork,
-} from '@canopy/core'
+} from '@doxajs/core'
 
 import { operationLog } from './operation-log.js'
 

@@ -3,11 +3,11 @@
 - **Status:** Implemented proof
 - **Completed:** 2026-07-11
 
-`arbor dev` and the Canopy framework workspace now watch application source and replace the running
+`doxa dev` and the Doxa framework workspace now watch application source and replace the running
 development runtime after a successful edit. Developers do not manually restart the server when a
 route, Feature declaration, service, event, job, policy, or other application class changes.
 
-The implementation preserves Canopy's immutable-graph rule. It does not patch a container, Hono
+The implementation preserves Doxa's immutable-graph rule. It does not patch a container, Hono
 router, or Node module in place. The supervisor compiles TypeScript, regenerates the canonical
 manifest and constructor registry, gracefully stops the previous child, and boots a fresh process
 with a completely new ESM module graph. This makes role additions and dependency-graph changes as

@@ -7,7 +7,7 @@ import {
   type Observation,
   type ObservationContext,
   type ObservationRecorder,
-} from '@canopy/core'
+} from '@doxajs/core'
 
 export class ObservationLogSink {
   #observations: ObservationRecorder | undefined

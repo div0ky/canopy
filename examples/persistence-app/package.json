@@ -1,5 +1,5 @@
 {
-  "name": "@canopy/persistence-reference-app",
+  "name": "@doxajs/persistence-reference-app",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,11 +10,11 @@
     }
   },
   "dependencies": {
-    "@canopy/auth-postgres": "workspace:*",
-    "@canopy/core": "workspace:*",
-    "@canopy/postgres-drizzle": "workspace:*",
-    "@canopy/queue-pg-boss": "workspace:*",
-    "@canopy/undergrowth": "workspace:*",
+    "@doxajs/auth-postgres": "workspace:*",
+    "@doxajs/core": "workspace:*",
+    "@doxajs/postgres-drizzle": "workspace:*",
+    "@doxajs/queue-pg-boss": "workspace:*",
+    "@doxajs/theoria": "workspace:*",
     "zod": "4.4.3"
   }
 }

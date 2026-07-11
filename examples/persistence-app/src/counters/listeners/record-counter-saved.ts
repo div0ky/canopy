@@ -1,4 +1,4 @@
-import { CurrentExecution, Listener } from '@canopy/core'
+import { CurrentExecution, Listener } from '@doxajs/core'
 
 import { CounterSaved } from '../events/counter-saved.js'
 import { CounterEventRecorder } from '../support/counter-event-recorder.js'

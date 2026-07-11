@@ -1,4 +1,4 @@
-import { Action, ActionBus } from '@canopy/core'
+import { Action, ActionBus } from '@doxajs/core'
 
 import { IncrementCounter } from './increment-counter.js'
 

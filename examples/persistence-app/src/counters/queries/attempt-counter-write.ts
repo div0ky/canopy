@@ -1,4 +1,4 @@
-import { Query, UnitOfWork } from '@canopy/core'
+import { Query, UnitOfWork } from '@doxajs/core'
 
 export class AttemptCounterWrite extends Query<string, number> {
   static id = 'attempt-counter-write'

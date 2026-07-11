@@ -1,19 +1,19 @@
 ---
-'@canopy/arbor': patch
-'@canopy/auth-postgres': patch
-'@canopy/compiler': patch
-'@canopy/core': patch
-'@canopy/http-hono': patch
-'@canopy/manifest': patch
-'@canopy/postgres-drizzle': patch
-'@canopy/queue-pg-boss': patch
-'@canopy/runtime': patch
-'@canopy/sendgrid': patch
-'@canopy/testing': patch
-'@canopy/twilio-sms': patch
-'@canopy/undergrowth': patch
+'@doxajs/praxis': patch
+'@doxajs/auth-postgres': patch
+'@doxajs/compiler': patch
+'@doxajs/core': patch
+'@doxajs/http-hono': patch
+'@doxajs/manifest': patch
+'@doxajs/postgres-drizzle': patch
+'@doxajs/queue-pg-boss': patch
+'@doxajs/runtime': patch
+'@doxajs/sendgrid': patch
+'@doxajs/testing': patch
+'@doxajs/twilio-sms': patch
+'@doxajs/theoria': patch
 ---
 
-Prepare the complete Canopy framework package family for its public alpha: publishable package
+Prepare the complete Doxa framework package family for its public alpha: publishable package
 metadata and provenance, production-safe dependency closures, documented APIs, stronger architecture
 validation, and responsibility-based internal module boundaries.

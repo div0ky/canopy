@@ -2,27 +2,27 @@
 
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
-- **Decision owners:** Canopy maintainers
+- **Decision owners:** Doxa maintainers
 
 ## Decision
 
-Canopy will use pg-boss on PostgreSQL as its initial private queue and scheduling engine. Canopy
-will own the public job, worker, retry, uniqueness, failure, schedule, execution-context, testing,
-and diagnostic contracts.
+Doxa will use pg-boss on PostgreSQL as its initial private queue and scheduling engine. Doxa will
+own the public job, worker, retry, uniqueness, failure, schedule, execution-context, testing, and
+diagnostic contracts.
 
-Canopy promises **at-least-once job execution**. Job handlers and external effects must be
-idempotent even where pg-boss describes its internal delivery behavior as exactly once.
+Doxa promises **at-least-once job execution**. Job handlers and external effects must be idempotent
+even where pg-boss describes its internal delivery behavior as exactly once.
 
 ## Context
 
-The Canopy MVP requires queues, workers, retries, terminal failure, delayed jobs, schedules, actor
-and causal propagation, observability, testing fakes, and lifecycle integration. PostgreSQL and
-Drizzle are already accepted foundations.
+The Doxa MVP requires queues, workers, retries, terminal failure, delayed jobs, schedules, actor and
+causal propagation, observability, testing fakes, and lifecycle integration. PostgreSQL and Drizzle
+are already accepted foundations.
 
 pg-boss provides a focused Node.js job engine on PostgreSQL with transactional enqueueing, delayed
 jobs, retries, backoff, dead-letter handling, concurrency controls, and cron scheduling. Selecting
-it avoids adding Redis as a second required data service while preserving a Canopy-owned boundary
-for future queue engines.
+it avoids adding Redis as a second required data service while preserving a Doxa-owned boundary for
+future queue engines.
 
 ## Boundary
 
@@ -32,20 +32,20 @@ Application and feature code must not depend on:
 - pg-boss database tables or migrations.
 - PostgreSQL polling, locking, or notification details.
 
-Application code declares Canopy jobs and schedules. The adapter translates those declarations to
-pg-boss and normalizes provider state into Canopy job and schedule states.
+Application code declares Doxa jobs and schedules. The adapter translates those declarations to
+pg-boss and normalizes provider state into Doxa job and schedule states.
 
 ## Outbox relationship
 
 The transactional outbox and pg-boss remain distinct concepts:
 
 - The outbox records committed application intent atomically with entity state and the journal.
-- The outbox dispatcher claims committed intent and enqueues the corresponding Canopy job through
-  the pg-boss adapter.
+- The outbox dispatcher claims committed intent and enqueues the corresponding Doxa job through the
+  pg-boss adapter.
 - pg-boss owns transport availability, claiming, attempts, delays, and worker delivery after that
   handoff.
 - Provider delivery outcomes may produce new journal, audit, or application events through normal
-  Canopy operations.
+  Doxa operations.
 
 Because both initially use PostgreSQL, an adapter may optimize their handoff after the semantic
 boundary is proven. It must not collapse the outbox into pg-boss tables or make application
@@ -53,7 +53,7 @@ durability depend on pg-boss internals.
 
 ## Execution guarantee
 
-Canopy does not promise exactly-once effects. A process can perform an external side effect and fail
+Doxa does not promise exactly-once effects. A process can perform an external side effect and fail
 before acknowledging completion, causing the job to be delivered again.
 
 The framework contract therefore requires:
@@ -72,7 +72,7 @@ idempotent handlers.
 
 ## Scheduling model
 
-Canopy schedule declarations live in the application manifest. At startup or through an explicit
+Doxa schedule declarations live in the application manifest. At startup or through an explicit
 reconciliation command, the scheduler adapter will reconcile those declarations into pg-boss.
 
 The schedule specification must define:
@@ -86,16 +86,16 @@ The schedule specification must define:
 - Enable, disable, and deployment reconciliation behavior.
 - Schedule firing as causation for the resulting job.
 
-Schedules dispatch Canopy jobs. They do not introduce a separate execution or handler model.
+Schedules dispatch Doxa jobs. They do not introduce a separate execution or handler model.
 
 ## Runtime topology
 
 HTTP, worker, and scheduler roles consume the same application manifest and kernel:
 
 ```text
-canopy serve
-canopy work
-canopy schedule
+doxa serve
+doxa work
+doxa schedule
 ```
 
 Development and tests may run all roles in one process. Production may run them independently. Every
@@ -120,10 +120,10 @@ locking, crashes, retries, redrive, reconciliation, drain, and shutdown.
 
 - The MVP needs PostgreSQL but not Redis for queueing and scheduling.
 - Queue and schedule records remain operational infrastructure rather than application domain state.
-- Canopy must maintain a strict adapter boundary around pg-boss schema and APIs.
+- Doxa must maintain a strict adapter boundary around pg-boss schema and APIs.
 - Heavy queue workloads share the PostgreSQL operational envelope and require documented capacity
   guidance.
-- A future BullMQ or other adapter must satisfy the same Canopy conformance suite without changing
+- A future BullMQ or other adapter must satisfy the same Doxa conformance suite without changing
   feature code.
 
 ## Required implementation proof
@@ -131,7 +131,7 @@ locking, crashes, retries, redrive, reconciliation, drain, and shutdown.
 Before the adapter is production-ready, it must prove:
 
 1. Outbox work is not lost when a dispatcher or worker crashes.
-2. Duplicate execution is safe through the Canopy idempotency model.
+2. Duplicate execution is safe through the Doxa idempotency model.
 3. Retries and terminal failures preserve causal metadata.
 4. Concurrent workers respect queue, job, and uniqueness policies.
 5. Schedule reconciliation is deterministic across multiple processes and deployments.
@@ -144,7 +144,7 @@ Before the adapter is production-ready, it must prove:
 - PostgreSQL queue load compromises primary application persistence.
 - pg-boss cannot implement accepted job or schedule semantics without leaking its model.
 - Independent queue scaling or isolation becomes an MVP requirement.
-- Another engine passes the Canopy conformance suite with materially better reliability or
+- Another engine passes the Doxa conformance suite with materially better reliability or
   operability.
 
 ## Implementation evidence
@@ -163,5 +163,5 @@ production-ready.
 ## References
 
 - [pg-boss documentation](https://timgit.github.io/pg-boss/)
-- [Canopy MVP viability bar](../mvp.md)
-- [Canopy persistence decision](0002-postgresql-drizzle-persistence.md)
+- [Doxa MVP viability bar](../mvp.md)
+- [Doxa persistence decision](0002-postgresql-drizzle-persistence.md)

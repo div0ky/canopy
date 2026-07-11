@@ -5,7 +5,7 @@ import {
   type JsonValue,
   type LifecycleContext,
   type Starts,
-} from '@canopy/core'
+} from '@doxajs/core'
 import { Pool } from 'pg'
 
 export interface PostgresCacheOptions {
@@ -33,7 +33,7 @@ export class PostgresCache extends Cache implements Starts, Disposes {
   async get<Value extends JsonValue>(key: string): Promise<Value | undefined> {
     const result = await this.pool().query<{ value: Value }>(
       `
-      DELETE FROM canopy_cache_entries
+      DELETE FROM doxa_cache_entries
       WHERE key = $1 AND expires_at IS NOT NULL AND expires_at <= now()
     `,
       [key],
@@ -41,7 +41,7 @@ export class PostgresCache extends Cache implements Starts, Disposes {
     void result
     const found = await this.pool().query<{ value: Value }>(
       `
-      SELECT value FROM canopy_cache_entries WHERE key = $1
+      SELECT value FROM doxa_cache_entries WHERE key = $1
     `,
       [key],
     )
@@ -55,7 +55,7 @@ export class PostgresCache extends Cache implements Starts, Disposes {
   ): Promise<void> {
     await this.pool().query(
       `
-      INSERT INTO canopy_cache_entries (key, value, expires_at)
+      INSERT INTO doxa_cache_entries (key, value, expires_at)
       VALUES ($1, $2::jsonb, $3)
       ON CONFLICT (key) DO UPDATE SET value = excluded.value, expires_at = excluded.expires_at
     `,
@@ -70,13 +70,13 @@ export class PostgresCache extends Cache implements Starts, Disposes {
   ): Promise<boolean> {
     const result = await this.pool().query(
       `
-      INSERT INTO canopy_cache_entries (key, value, expires_at)
+      INSERT INTO doxa_cache_entries (key, value, expires_at)
       VALUES ($1, $2::jsonb, $3)
       ON CONFLICT (key) DO UPDATE SET
         value = excluded.value,
         expires_at = excluded.expires_at
-      WHERE canopy_cache_entries.expires_at IS NOT NULL
-        AND canopy_cache_entries.expires_at <= now()
+      WHERE doxa_cache_entries.expires_at IS NOT NULL
+        AND doxa_cache_entries.expires_at <= now()
     `,
       [key, JSON.stringify(value), expiresAt(options)],
     )
@@ -87,20 +87,20 @@ export class PostgresCache extends Cache implements Starts, Disposes {
     if (!Number.isFinite(amount)) throw new TypeError('Cache increment amount must be finite.')
     const result = await this.pool().query<{ value: JsonValue }>(
       `
-      INSERT INTO canopy_cache_entries (key, value, expires_at)
+      INSERT INTO doxa_cache_entries (key, value, expires_at)
       VALUES ($1, to_jsonb($2::double precision), $3)
       ON CONFLICT (key) DO UPDATE SET
         value = CASE
-          WHEN canopy_cache_entries.expires_at IS NOT NULL AND canopy_cache_entries.expires_at <= now()
+          WHEN doxa_cache_entries.expires_at IS NOT NULL AND doxa_cache_entries.expires_at <= now()
             THEN excluded.value
-          WHEN jsonb_typeof(canopy_cache_entries.value) = 'number'
-            THEN to_jsonb((canopy_cache_entries.value #>> '{}')::double precision + $2)
-          ELSE canopy_cache_entries.value
+          WHEN jsonb_typeof(doxa_cache_entries.value) = 'number'
+            THEN to_jsonb((doxa_cache_entries.value #>> '{}')::double precision + $2)
+          ELSE doxa_cache_entries.value
         END,
         expires_at = CASE
-          WHEN canopy_cache_entries.expires_at IS NOT NULL AND canopy_cache_entries.expires_at <= now()
+          WHEN doxa_cache_entries.expires_at IS NOT NULL AND doxa_cache_entries.expires_at <= now()
             THEN excluded.expires_at
-          ELSE canopy_cache_entries.expires_at
+          ELSE doxa_cache_entries.expires_at
         END
       RETURNING value
     `,
@@ -112,7 +112,7 @@ export class PostgresCache extends Cache implements Starts, Disposes {
   }
 
   async forget(key: string): Promise<boolean> {
-    const result = await this.pool().query('DELETE FROM canopy_cache_entries WHERE key = $1', [key])
+    const result = await this.pool().query('DELETE FROM doxa_cache_entries WHERE key = $1', [key])
     return result.rowCount === 1
   }
 

@@ -6,8 +6,8 @@
 
 ## Recommendation
 
-Canopy should define one actor model and one immutable execution context for every kind of work.
-Authentication mechanisms produce normalized identities. The Canopy actor resolver turns identity,
+Doxa should define one actor model and one immutable execution context for every kind of work.
+Authentication mechanisms produce normalized identities. The Doxa actor resolver turns identity,
 tenant, delegation, and impersonation evidence into an actor. Authorization policies evaluate that
 actor. The execution context carries the resulting identity and causal metadata through the
 application.
@@ -15,14 +15,14 @@ application.
 The same contract should govern HTTP requests, actions, queries, listeners, jobs, schedules, console
 commands, WebSockets, and future transports.
 
-`Actor` should be the backbone of Canopy's authorization, observability, audit, journal, and testing
+`Actor` should be the backbone of Doxa's authorization, observability, audit, journal, and testing
 models—not a user object attached to HTTP requests.
 
 ## Vocabulary
 
 ### Identity
 
-An identity is a durable Canopy record representing a subject that has successfully presented one or
+An identity is a durable Doxa record representing a subject that has successfully presented one or
 more credentials. Authentication establishes identity. Identity does not by itself determine tenant,
 delegation, impersonation, or domain permission.
 
@@ -34,14 +34,14 @@ minimal reference rather than a loaded domain model or authentication-session ob
 The initial actor kinds should be:
 
 - `anonymous` — no authenticated principal.
-- `user` — a person represented by a Canopy identity and application actor record.
+- `user` — a person represented by a Doxa identity and application actor record.
 - `service` — a machine or integration with explicitly granted authority.
 - `system` — trusted framework work with a named, narrowly defined purpose.
 
 Actor kinds are not roles. Roles, memberships, ownership, and permissions are application facts
 evaluated by authorization policies.
 
-Canopy's first-party storage and management model for those facts is intentionally deferred by
+Doxa's first-party storage and management model for those facts is intentionally deferred by
 [Decision 0022](../decisions/0022-defer-first-party-permissions.md). Applications may load them from
 existing tables or services without bypassing the common policy decision and audit path.
 
@@ -95,7 +95,7 @@ export interface DelegationHop {
 }
 ```
 
-An anonymous actor has no durable ID by default. Canopy should not manufacture a pseudonymous user
+An anonymous actor has no durable ID by default. Doxa should not manufacture a pseudonymous user
 identifier merely to make anonymous traffic easier to correlate.
 
 Actor references must use opaque internal identifiers. Email addresses, usernames, provider claims,
@@ -149,8 +149,8 @@ export interface AuthenticationContext {
 }
 ```
 
-The method is a stable Canopy identifier such as `password` or `passkey`, not a plugin-specific
-type. Session IDs are local diagnostic references and must not be serialized into jobs, events, or
+The method is a stable Doxa identifier such as `password` or `passkey`, not a plugin-specific type.
+Session IDs are local diagnostic references and must not be serialized into jobs, events, or
 external trace baggage.
 
 ## Context creation
@@ -177,7 +177,7 @@ and the unit of work can read that carrier without application code forwarding c
 
 This is an implementation detail, not the public programming model:
 
-- Application APIs receive explicit actors or use Canopy-owned context accessors.
+- Application APIs receive explicit actors or use Doxa-owned context accessors.
 - Domain models do not import `AsyncLocalStorage`.
 - Async work that outlives an execution must be admitted as a new execution rather than retaining a
   stale in-process store.
@@ -185,7 +185,7 @@ This is an implementation detail, not the public programming model:
 
 ## Cross-process propagation
 
-Cross-process work uses a versioned Canopy context envelope. The portable envelope should contain
+Cross-process work uses a versioned Doxa context envelope. The portable envelope should contain
 only:
 
 - Correlation and causation identifiers.
@@ -249,7 +249,7 @@ export interface PolicyDecision {
 The stable `code` explains the decision to tests, diagnostics, and security audit records without
 exposing sensitive reasoning to the caller.
 
-Canopy should support two policy phases:
+Doxa should support two policy phases:
 
 1. Entry policies run before dispatch for abilities that do not require a loaded resource.
 2. Resource policies run after the resource is loaded, within the action or query execution scope.
@@ -260,22 +260,22 @@ authorization model.
 
 ## Observability contract
 
-Canopy should automatically attach the following low-level fields where the sink permits them:
+Doxa should automatically attach the following low-level fields where the sink permits them:
 
 ```text
-canopy.execution.id
-canopy.correlation.id
-canopy.causation.id
-canopy.actor.kind
-canopy.actor.id
-canopy.initiator.kind
-canopy.initiator.id
-canopy.tenant.id
-canopy.auth.method
-canopy.transport.kind
-canopy.policy.name
-canopy.policy.effect
-canopy.policy.code
+doxa.execution.id
+doxa.correlation.id
+doxa.causation.id
+doxa.actor.kind
+doxa.actor.id
+doxa.initiator.kind
+doxa.initiator.id
+doxa.tenant.id
+doxa.auth.method
+doxa.transport.kind
+doxa.policy.name
+doxa.policy.effect
+doxa.policy.code
 ```
 
 These fields should connect logs, spans, security audits, journal entries, outbox records, jobs, and
@@ -283,7 +283,7 @@ domain-failure reports.
 
 Actor and tenant IDs are high-cardinality and potentially linkable identifiers. They may appear in
 access-controlled logs, traces, and audit records according to policy, but must not become metric
-labels. Canopy should support pseudonymization and field suppression per telemetry sink.
+labels. Doxa should support pseudonymization and field suppression per telemetry sink.
 
 OpenTelemetry trace context should remain standards-compatible. Actor, tenant, session, and
 authorization data should not be placed into automatically propagated baggage; baggage has no
@@ -322,7 +322,7 @@ not dynamically reinterpret history when a user, membership, or policy later cha
 The first-party test application should support:
 
 ```ts
-const app = await CanopyTest.create({ features: [Orders] }).boot()
+const app = await DoxaTest.create({ features: [Orders] }).boot()
 
 await app.actingAs(user).post('/orders', input)
 await app.asService(importer).dispatch(new ImportOrders())
@@ -339,7 +339,7 @@ and policy metadata written to journal and outbox records.
 
 ## Diagnostics
 
-Canopy diagnostics should be able to explain:
+Doxa diagnostics should be able to explain:
 
 - How an identity became the current actor.
 - Which tenant and delegation rules were applied.
@@ -402,7 +402,7 @@ case cannot be expressed through actions, policies, and resources.
 ## References
 
 - [First-party authentication decision](../decisions/0003-first-party-authentication.md)
-- [Canopy Architecture: execution context](../architecture.md#execution-context)
+- [Doxa Architecture: execution context](../architecture.md#execution-context)
 - [OpenTelemetry context propagation](https://opentelemetry.io/docs/concepts/context-propagation/)
 - [OpenTelemetry baggage security](https://opentelemetry.io/docs/concepts/signals/baggage/)
 - [W3C Trace Context](https://www.w3.org/TR/trace-context/)

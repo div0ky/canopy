@@ -1,0 +1,52 @@
+{
+  "name": "@doxajs/theoria",
+  "version": "0.1.0-alpha.0",
+  "description": "The first-party causal execution debugger for Doxa development.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/div0ky/doxajs.git",
+    "directory": "packages/theoria"
+  },
+  "homepage": "https://github.com/div0ky/doxajs#readme",
+  "bugs": {
+    "url": "https://github.com/div0ky/doxajs/issues"
+  },
+  "keywords": [
+    "doxa",
+    "framework",
+    "debugger",
+    "observability",
+    "postgresql"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "migrations",
+    "NOTICE"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/prepare-package.mjs",
+    "postpack": "node ../../scripts/prepare-package.mjs --clean"
+  },
+  "dependencies": {
+    "@doxajs/core": "workspace:*",
+    "pg": "8.22.0"
+  },
+  "devDependencies": {
+    "@types/pg": "8.20.0"
+  }
+}

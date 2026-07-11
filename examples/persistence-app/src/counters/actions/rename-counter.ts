@@ -1,4 +1,4 @@
-import { Action, type ModelChanges } from '@canopy/core'
+import { Action, type ModelChanges } from '@doxajs/core'
 
 import { Counter, type CounterAttributes } from '../models/counter.js'
 

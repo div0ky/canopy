@@ -1,4 +1,4 @@
-import { ActionBus, Auth, Http, type HttpRequest, Route } from '@canopy/core'
+import { ActionBus, Auth, Http, type HttpRequest, Route } from '@doxajs/core'
 
 import { UserRegistered } from '../events/user-registered.js'
 import { credentials } from './credentials.js'
@@ -26,7 +26,7 @@ export class RegisterRoute extends Route {
   }
 }
 
-function publicIdentity(identity: import('@canopy/core').AuthIdentity) {
+function publicIdentity(identity: import('@doxajs/core').AuthIdentity) {
   return {
     id: identity.id,
     email: identity.email,

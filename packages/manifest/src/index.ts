@@ -250,7 +250,7 @@ export interface CommandManifestEntry {
   readonly lifecycle: LifecycleManifestEntry
 }
 
-export interface CanopyManifest {
+export interface DoxaManifest {
   readonly formatVersion: typeof MANIFEST_FORMAT_VERSION
   readonly applicationId: string
   readonly frameworkVersion: string
@@ -290,14 +290,14 @@ export function canonicalJson(value: unknown): string {
   return JSON.stringify(sortCanonicalValue(value), null, 2)
 }
 
-export function assertManifest(value: unknown): asserts value is CanopyManifest {
+export function assertManifest(value: unknown): asserts value is DoxaManifest {
   if (!isRecord(value)) {
-    throw new ManifestCompatibilityError('Canopy manifest must be a JSON object.')
+    throw new ManifestCompatibilityError('Doxa manifest must be a JSON object.')
   }
 
   if (value.formatVersion !== MANIFEST_FORMAT_VERSION) {
     throw new ManifestCompatibilityError(
-      `Unsupported Canopy manifest format ${String(value.formatVersion)}; expected ${MANIFEST_FORMAT_VERSION}.`,
+      `Unsupported Doxa manifest format ${String(value.formatVersion)}; expected ${MANIFEST_FORMAT_VERSION}.`,
     )
   }
 
@@ -309,7 +309,7 @@ export function assertManifest(value: unknown): asserts value is CanopyManifest 
   ] as const) {
     if (typeof value[field] !== 'string' || value[field].length === 0) {
       throw new ManifestCompatibilityError(
-        `Canopy manifest field ${field} must be a non-empty string.`,
+        `Doxa manifest field ${field} must be a non-empty string.`,
       )
     }
   }
@@ -333,7 +333,7 @@ export function assertManifest(value: unknown): asserts value is CanopyManifest 
     !Array.isArray(value.signalHandlers) ||
     !Array.isArray(value.commands)
   ) {
-    throw new ManifestCompatibilityError('Canopy manifest is missing required graph sections.')
+    throw new ManifestCompatibilityError('Doxa manifest is missing required graph sections.')
   }
 }
 

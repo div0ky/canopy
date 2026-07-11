@@ -1,12 +1,12 @@
 # First-class logging
 
-Canopy owns logging as a framework primitive. Logging is not an application-selected provider and it
+Doxa owns logging as a framework primitive. Logging is not an application-selected provider and it
 is not a synonym for metrics or tracing. Every framework role automatically inherits a class-bound
 `this.logger`. `Logger` remains constructor-injectable in ordinary concrete services reached through
 the dependency graph.
 
 ```ts
-import { Logger } from '@canopy/core'
+import { Logger } from '@doxajs/core'
 
 export class SettleInvoice {
   constructor(private readonly logger: Logger) {}
@@ -31,8 +31,8 @@ attributes, execution context, and an optional normalized error. A sink controls
 - production and non-interactive output uses newline-delimited JSON, one record per line;
 - tests use `MemoryLogSink` and make assertions against records rather than captured strings.
 
-Official Canopy hosts enable logging and choose pretty output for a terminal or JSON for a pipe.
-Embedders opt in through `Canopy.boot()` so importing the kernel never silently takes ownership of
+Official Doxa hosts enable logging and choose pretty output for a terminal or JSON for a pipe.
+Embedders opt in through `Doxa.boot()` so importing the kernel never silently takes ownership of
 process output. Hosts may explicitly select format, color, minimum level, destination, or a custom
 sink.
 
@@ -58,5 +58,5 @@ authorization decisions. Application code should not recreate this framework-lev
 - Logging APIs never accept raw request or response bodies implicitly.
 - A logger never starts background work in its constructor.
 
-This is a concrete expression of Canopy's central product promise: opinionated, magical where it is
-safe, trivial for Cultivate to understand, and extremely hard to misuse.
+This is a concrete expression of Doxa's central product promise: opinionated, magical where it is
+safe, trivial for Gnosis to understand, and extremely hard to misuse.

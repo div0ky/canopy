@@ -1,4 +1,4 @@
-import { Schedule } from '@canopy/core'
+import { Schedule } from '@doxajs/core'
 
 import { ProcessCounterJob } from '../jobs/process-counter.job.js'
 

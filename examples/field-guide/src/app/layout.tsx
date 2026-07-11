@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Canopy Field Guide',
-  description: 'A living browser integration check for the Canopy application model.',
+  title: 'Doxa.js Field Guide',
+  description: 'A living browser integration check for the Doxa application model.',
 }
 
 export default function RootLayout({

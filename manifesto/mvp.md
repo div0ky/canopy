@@ -1,11 +1,11 @@
-# Canopy MVP Viability Bar
+# Doxa MVP Viability Bar
 
-Canopy's MVP is the smallest **viable product**, not the smallest executable framework kernel or a
+Doxa's MVP is the smallest **viable product**, not the smallest executable framework kernel or a
 single successful HTTP-to-database demonstration.
 
 The product is not viable unless it expresses the complete application model promised by the
-[Canopy Manifesto](index.md). A developer must be able to build an ordinary production-shaped
-application without assembling a second framework around Canopy.
+[Doxa Manifesto](index.md). A developer must be able to build an ordinary production-shaped
+application without assembling a second framework around Doxa.
 
 ## Product versus proof
 
@@ -36,7 +36,7 @@ The MVP must include:
 
 - Actions and queries with one coherent dispatch model.
 - Validation, stable errors, and resource serialization.
-- Hono-backed HTTP through Canopy-owned declarations.
+- Hono-backed HTTP through Doxa-owned declarations.
 - Domain models, repositories, optimistic concurrency, and units of work.
 - Eloquent-style model hydration, mutation, dirty tracking, lifecycle, and explicit `save()`.
 - PostgreSQL persistence through Drizzle.
@@ -60,7 +60,7 @@ visibility, failure behavior, context propagation, observability, and testing AP
 
 The MVP must include:
 
-- pg-boss on PostgreSQL behind a Canopy-owned job contract.
+- pg-boss on PostgreSQL behind a Doxa-owned job contract.
 - Job declaration, enqueueing, serialization, and worker execution.
 - Delays, retries, backoff, timeouts, uniqueness or deduplication, and terminal failure.
 - Durable actor, initiator, tenant, correlation, causation, and trace propagation.
@@ -71,19 +71,19 @@ The MVP must include:
 - Schedule-to-job dispatch through the same worker and execution-context model.
 
 Queue and scheduling behavior must participate in the same application lifecycle and diagnostics as
-HTTP. A separately assembled worker application is not sufficient unless it is a first-party Canopy
+HTTP. A separately assembled worker application is not sufficient unless it is a first-party Doxa
 runtime produced from the same manifest.
 
 ## Required communications model
 
 The MVP must include:
 
-- A first-party Canopy mail contract with a SendGrid plugin adapter.
-- A first-party Canopy SMS contract with a Twilio Messaging plugin adapter.
+- A first-party Doxa mail contract with a SendGrid plugin adapter.
+- A first-party Doxa SMS contract with a Twilio Messaging plugin adapter.
 - Outbox-backed, queued delivery for email and SMS.
 - Provider response normalization that distinguishes accepted, sent, delivered, undelivered, and
   failed states.
-- Signed delivery-status webhook ingestion through Canopy HTTP declarations.
+- Signed delivery-status webhook ingestion through Doxa HTTP declarations.
 - Correlation of provider message IDs with actor, causation, job, trace, and application message
   IDs.
 - Retry classification that distinguishes transient delivery failures from permanent rejection,
@@ -91,14 +91,14 @@ The MVP must include:
 - First-party mail and SMS fakes and delivery assertions.
 
 Provider SDKs, request types, response types, template objects, and webhook payloads must not leak
-into feature code. Applications use Canopy messages; plugins translate them to provider APIs.
+into feature code. Applications use Doxa messages; plugins translate them to provider APIs.
 
 ## Required security model
 
 The MVP must include:
 
 - First-party email/password registration and authentication.
-- Email verification and password recovery through a Canopy mail contract.
+- Email verification and password recovery through a Doxa mail contract.
 - Opaque, database-backed sessions with rotation and revocation.
 - Opaque, database-backed bearer access tokens for APIs, CLIs, and automation, with rotation and
   revocation.
@@ -130,7 +130,7 @@ developers can explain what ran, under whose authority, in which phase, and why 
 
 The MVP must include:
 
-- `canopy new` for a complete application.
+- `doxa new` for a complete application.
 - Artisan-style generators for features, models, actions, queries, controllers, policies, events,
   listeners, observers, jobs, schedules, migrations, and tests.
 - Database generation, migration, and status commands.
@@ -158,8 +158,8 @@ The MVP reference application should prove one connected business flow:
     status is reconciled through a signed webhook.
 11. A schedule later dispatches related work through the same job system.
 12. Logs, traces, metrics, audits, journal entries, outbox records, jobs, messages, and schedule
-    firings can be correlated and inspected through Canopy tooling.
-13. A test expresses the flow entirely through Canopy-owned fakes and assertions.
+    firings can be correlated and inspected through Doxa tooling.
+13. A test expresses the flow entirely through Doxa-owned fakes and assertions.
 
 The domain may be small. The framework path must be complete.
 
@@ -189,7 +189,7 @@ The MVP is viable when:
 - Events, signals, listeners, and observers have non-overlapping documented meanings.
 - Jobs and schedules behave deterministically under success, retry, concurrency, failure, and
   shutdown.
-- The reference application is created and extended through the Canopy CLI.
+- The reference application is created and extended through the Doxa CLI.
 - The complete reference flow passes production-adapter conformance tests and first-party fake
   tests.
 - Diagnostics make all automatic work and failure states explainable.

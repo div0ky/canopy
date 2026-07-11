@@ -23,14 +23,14 @@ const jobId = await SendWelcomeEmail.dispatch(
 )
 ```
 
-Canopy guarantees at-least-once execution. Jobs should be idempotent and may declare retries,
-backoff, delay, timeout, and overlap behavior. Actor, tenant, authentication, correlation,
-causation, and trace context cross the durable boundary.
+Doxa guarantees at-least-once execution. Jobs should be idempotent and may declare retries, backoff,
+delay, timeout, and overlap behavior. Actor, tenant, authentication, correlation, causation, and
+trace context cross the durable boundary.
 
 ## Schedules
 
 Schedules target Jobs rather than inventing a second execution model. They may use cron or fixed
 interval declarations and define overlap and misfire policy.
 
-`arbor work` consumes queues and admits distributed-safe schedules by default. Advanced deployments
-may run `arbor work --without-scheduler` beside a dedicated `arbor schedule` process.
+`doxa work` consumes queues and admits distributed-safe schedules by default. Advanced deployments
+may run `doxa work --without-scheduler` beside a dedicated `doxa schedule` process.

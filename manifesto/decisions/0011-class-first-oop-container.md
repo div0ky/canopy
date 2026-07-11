@@ -2,11 +2,11 @@
 
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
-- **Decision owners:** Canopy maintainers
+- **Decision owners:** Doxa maintainers
 
 ## Decision
 
-Canopy's primary programming model is class-first and object-oriented. Applications are composed
+Doxa's primary programming model is class-first and object-oriented. Applications are composed
 through an explicit generated manifest. The runtime dependency container is first-party,
 reflection-free, and driven by a dependency graph produced at build time.
 
@@ -25,13 +25,13 @@ The following application concepts should primarily be classes:
 Class-first Feature declarations and small declarative binding helpers compose these objects. They
 do not replace behavior-bearing classes with configuration or closure-based service graphs.
 
-Decorators are not supported as Canopy declaration syntax in the MVP. An optional decorator frontend
-is deferred and may be reconsidered only if it compiles into the identical manifest. Canopy does not
+Decorators are not supported as Doxa declaration syntax in the MVP. An optional decorator frontend
+is deferred and may be reconsidered only if it compiles into the identical manifest. Doxa does not
 depend on legacy decorator metadata or runtime type reflection.
 
 ## Role classes and capability traits
 
-A framework-facing class declares its primary role through a Canopy base class and implements the
+A framework-facing class declares its primary role through a Doxa base class and implements the
 role's intention-revealing handler. Jobs, actions, queries, listeners, observers, policies, and
 other roles should read as application concepts rather than container registrations.
 
@@ -46,16 +46,16 @@ export class SendWelcomeEmail extends Listener<UserRegistered> implements Should
 }
 ```
 
-The Canopy compiler resolves the explicit `implements` clause and records the capability in the
+The Doxa compiler resolves the explicit `implements` clause and records the capability in the
 application manifest. Runtime behavior follows the manifest; it does not require the TypeScript
 interface to survive JavaScript emission.
 
 Base classes define primary roles. Capability interfaces modify categorical execution semantics such
 as queued delivery, uniqueness, or future broadcasting. Values such as queue name, retry limit,
-timeout, and backoff belong in typed class configuration. Canopy must keep capability interfaces
-few, orthogonal, and semantically precise rather than creating marker-interface soup.
+timeout, and backoff belong in typed class configuration. Doxa must keep capability interfaces few,
+orthogonal, and semantically precise rather than creating marker-interface soup.
 
-Canopy will follow Laravel's established distinction for queueing and broadcasting vocabulary and
+Doxa will follow Laravel's established distinction for queueing and broadcasting vocabulary and
 semantics:
 
 - `ShouldQueue` marks work such as a listener for asynchronous queue execution.
@@ -66,8 +66,8 @@ semantics:
 - `dispatch()` submits a job to the queue; `dispatchSync()` executes it synchronously in the current
   process and does not enqueue it.
 
-`ShouldQueueNow` is not part of the Canopy contract. Transaction timing is separate from execution
-mode. In an active Canopy unit of work, ordinary queued delivery remains outbox-backed and becomes
+`ShouldQueueNow` is not part of the Doxa contract. Transaction timing is separate from execution
+mode. In an active Doxa unit of work, ordinary queued delivery remains outbox-backed and becomes
 eligible after commit by default, making `ShouldQueueAfterCommit` an explicit guarantee rather than
 a requirement for ordinary safety. A synchronous operation executes in the current process and
 receives the documented semantics of that execution phase. Broadcasting remains deferred from the
@@ -108,8 +108,8 @@ export class CheckoutService {
 bindings = [bind(PaymentGateway).to(StripePaymentGateway)]
 ```
 
-When an abstract class is inappropriate, Canopy provides a branded typed token with an explicit
-stable ID:
+When an abstract class is inappropriate, Doxa provides a branded typed token with an explicit stable
+ID:
 
 ```ts
 export const CheckoutTimeout = token<Duration>('checkout-timeout')
@@ -132,9 +132,9 @@ export class CheckoutService {
 ```
 
 The compiler records the dependency as optional in the manifest. If one valid, visible, scope-safe
-binding exists, Canopy injects it. If no binding exists, Canopy injects `undefined`. Optionality
-does not suppress competing-binding, private-visibility, invalid-scope, cycle, or construction
-failures; those remain errors.
+binding exists, Doxa injects it. If no binding exists, Doxa injects `undefined`. Optionality does
+not suppress competing-binding, private-visibility, invalid-scope, cycle, or construction failures;
+those remain errors.
 
 Required parameters still fail compilation when unresolved. Optionality applies only to the
 parameter that declares it and does not propagate through its dependency graph.
@@ -214,12 +214,12 @@ compiler cannot prove every possible constructor side effect, so conformance tes
 documentation, and framework diagnostics must reinforce this contract. Framework-owned providers and
 adapters must uphold it without exception.
 
-When construction or startup fails, Canopy unwinds only lifecycle work it can identify. Hidden
+When construction or startup fails, Doxa unwinds only lifecycle work it can identify. Hidden
 constructor effects are therefore contract violations even if they appear locally convenient.
 
 ## Consequences
 
-- Canopy provides Laravel-like scoped role injection and conventional service constructor injection
+- Doxa provides Laravel-like scoped role injection and conventional service constructor injection
   without PHP-style runtime reflection.
 - Build-time manifest generation becomes part of the required framework toolchain.
 - Application boot validates a known graph rather than discovering dependencies opportunistically.
@@ -253,7 +253,7 @@ The MVP must prove:
 18. Resource acquisition occurs only through manifest-visible lifecycle phases.
 19. Deterministic disposal after success, failure, timeout, cancellation, and partial startup.
 20. Actionable missing-binding, ambiguity, scope-leak, and cycle diagnostics.
-21. Test overrides through Canopy APIs without a service locator.
+21. Test overrides through Doxa APIs without a service locator.
 
 ## Revisit when
 
@@ -265,7 +265,7 @@ The MVP must prove:
 
 ## References
 
-- [Canopy Manifesto: Object-oriented by conviction](../index.md#object-oriented-by-conviction)
-- [Canopy Architecture: application manifest](../architecture.md#the-application-manifest)
+- [Doxa Manifesto: Object-oriented by conviction](../index.md#object-oriented-by-conviction)
+- [Doxa Architecture: application manifest](../architecture.md#the-application-manifest)
 - [Runtime-owned deterministic lifecycle](0017-deterministic-runtime-lifecycle.md)
-- [Canopy actor and execution-context specification](../specifications/actor-execution-context-authorization.md)
+- [Doxa actor and execution-context specification](../specifications/actor-execution-context-authorization.md)

@@ -1,6 +1,6 @@
 export {
-  Canopy,
-  CanopyRuntime,
+  Doxa,
+  DoxaRuntime,
   ConfigurationValidationError,
   ExecutionAdmissionError,
   ExecutionCleanupError,
@@ -13,4 +13,4 @@ export {
   type RuntimeState,
 } from './runtime.js'
 
-export { ReadOnlyExecutionError } from '@canopy/core'
+export { ReadOnlyExecutionError } from '@doxajs/core'

@@ -1,4 +1,4 @@
-import { Auth, CurrentExecution, Http, HttpError, type HttpRequest, Route } from '@canopy/core'
+import { Auth, CurrentExecution, Http, HttpError, type HttpRequest, Route } from '@doxajs/core'
 
 export class LogoutRoute extends Route {
   static override readonly id = 'logout'

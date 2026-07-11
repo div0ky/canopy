@@ -3,7 +3,7 @@
 - **Status:** Accepted and implemented
 - **Accepted:** 2026-07-11
 
-Canopy JSON endpoints have one framework-owned response grammar. Application routes return their
+Doxa JSON endpoints have one framework-owned response grammar. Application routes return their
 payload; they do not construct the envelope.
 
 ```ts
@@ -67,5 +67,5 @@ canonical success envelope automatically.
 
 Pagination and collection metadata belong inside successful `data`. Machine clients branch on `ok`
 and `code`, never parse `message`, and never need endpoint-specific error object locations.
-Generated routes, tests, the Field Guide client, and future Cultivate-generated clients must all use
+Generated routes, tests, the Field Guide client, and future Gnosis-generated clients must all use
 this contract.

@@ -6,7 +6,7 @@ import ts from 'typescript'
 import {
   MANIFEST_FORMAT_VERSION,
   canonicalJson,
-  type CanopyManifest,
+  type DoxaManifest,
   type CommandManifestEntry,
   type ConfigurationDefault,
   type ConfigurationManifestEntry,
@@ -26,16 +26,16 @@ import {
   type SignalManifestEntry,
   type SignalHandlerManifestEntry,
   type SourceProvenance,
-} from '@canopy/manifest'
+} from '@doxajs/manifest'
 
-import { CanopyCompilationError } from './errors.js'
+import { DoxaCompilationError } from './errors.js'
 import {
   assertAcyclicProviderGraph,
   assertScopeSafety,
   assertUnique,
 } from './manifest-validation.js'
 
-export { CanopyCompilationError } from './errors.js'
+export { DoxaCompilationError } from './errors.js'
 
 const FRAMEWORK_VERSION = '0.1.0'
 const COMPILER_VERSION = '0.1.0'
@@ -69,7 +69,7 @@ export interface CompileApplicationOptions {
 }
 
 export interface CompileApplicationResult {
-  readonly manifest: CanopyManifest
+  readonly manifest: DoxaManifest
   readonly manifestPath: string
   readonly registryPath: string
 }
@@ -89,7 +89,7 @@ export async function compileApplication(
 
   const applicationSource = program.getSourceFile(normalized.applicationFile)
   if (!applicationSource) {
-    throw new CanopyCompilationError(
+    throw new DoxaCompilationError(
       `Application source is not part of the TypeScript program: ${normalized.applicationFile}`,
     )
   }
@@ -290,7 +290,7 @@ export async function compileApplication(
     ...commands,
   ]) {
     if (entry.access !== 'public' && !policyAbilities.has(entry.access)) {
-      throw new CanopyCompilationError(
+      throw new DoxaCompilationError(
         `${entry.id} requires ability ${entry.access}, but no selected Policy declares it.`,
       )
     }
@@ -301,7 +301,7 @@ export async function compileApplication(
     provider.capabilities.includes('transactions'),
   )
   if (actions.length > 0 && transactionProviders.length !== 1) {
-    throw new CanopyCompilationError(
+    throw new DoxaCompilationError(
       `Applications with actions require exactly one transaction provider; found ${transactionProviders.length}.`,
     )
   }
@@ -310,20 +310,20 @@ export async function compileApplication(
     provider.capabilities.includes('authentication'),
   )
   if (authenticationProviders.length > 1) {
-    throw new CanopyCompilationError(
+    throw new DoxaCompilationError(
       `Applications may declare at most one authentication provider; found ${authenticationProviders.length}.`,
     )
   }
   const cacheProviders = providers.filter((provider) => provider.capabilities.includes('cache'))
   if (cacheProviders.length > 1) {
-    throw new CanopyCompilationError(
+    throw new DoxaCompilationError(
       `Applications may declare at most one cache provider; found ${cacheProviders.length}.`,
     )
   }
   for (const capability of ['mail', 'sms', 'telemetry'] as const) {
     const selected = providers.filter((provider) => provider.capabilities.includes(capability))
     if (selected.length > 1)
-      throw new CanopyCompilationError(
+      throw new DoxaCompilationError(
         `Applications may declare at most one ${capability} provider; found ${selected.length}.`,
       )
   }
@@ -340,7 +340,7 @@ export async function compileApplication(
       communicationProviders.length > 0) &&
     queueProviders.length !== 1
   ) {
-    throw new CanopyCompilationError(
+    throw new DoxaCompilationError(
       `Applications with jobs, schedules, or queued listeners require exactly one queue provider; found ${queueProviders.length}.`,
     )
   }
@@ -375,7 +375,7 @@ export async function compileApplication(
     commands: [...commands].sort(byId),
   }
   const buildHash = createHash('sha256').update(canonicalJson(semanticManifest)).digest('hex')
-  const manifest: CanopyManifest = { ...semanticManifest, buildHash }
+  const manifest: DoxaManifest = { ...semanticManifest, buildHash }
 
   await mkdir(normalized.artifactsDirectory, { recursive: true })
   const manifestPath = path.join(normalized.artifactsDirectory, 'manifest.json')
@@ -1430,7 +1430,7 @@ function normalizeOptions(options: CompileApplicationOptions): NormalizedOptions
 function createProgram(tsconfigPath: string): ts.Program {
   const configFile = ts.readConfigFile(tsconfigPath, ts.sys.readFile)
   if (configFile.error) {
-    throw new CanopyCompilationError(formatDiagnostics([configFile.error]))
+    throw new DoxaCompilationError(formatDiagnostics([configFile.error]))
   }
   const parsed = ts.parseJsonConfigFileContent(
     configFile.config,
@@ -1438,7 +1438,7 @@ function createProgram(tsconfigPath: string): ts.Program {
     path.dirname(tsconfigPath),
   )
   if (parsed.errors.length > 0) {
-    throw new CanopyCompilationError(formatDiagnostics(parsed.errors))
+    throw new DoxaCompilationError(formatDiagnostics(parsed.errors))
   }
   return ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options })
 }
@@ -1446,7 +1446,7 @@ function createProgram(tsconfigPath: string): ts.Program {
 function assertValidProgram(program: ts.Program): void {
   const diagnostics = ts.getPreEmitDiagnostics(program)
   if (diagnostics.length > 0) {
-    throw new CanopyCompilationError(formatDiagnostics(diagnostics))
+    throw new DoxaCompilationError(formatDiagnostics(diagnostics))
   }
 }
 
@@ -1466,7 +1466,7 @@ function findExportedClass(source: ts.SourceFile, exportName: string): ts.ClassD
       hasModifier(statement, ts.SyntaxKind.ExportKeyword),
   )
   if (!declaration) {
-    throw new CanopyCompilationError(
+    throw new DoxaCompilationError(
       `Expected exported Application class ${exportName} in ${source.fileName}.`,
     )
   }
@@ -1701,7 +1701,7 @@ function resolveNamedDeclaration(
 
 function isCoreDeclaration(declaration: ts.Declaration): boolean {
   const source = declaration.getSourceFile().fileName.split(path.sep).join('/')
-  return source.includes('/packages/core/') || source.includes('/@canopy/core/')
+  return source.includes('/packages/core/') || source.includes('/@doxajs/core/')
 }
 
 function builtinIdForDeclaration(declaration: ts.ClassDeclaration): string | undefined {
@@ -1720,17 +1720,17 @@ function builtinIdForDeclaration(declaration: ts.ClassDeclaration): string | und
   )
     return undefined
   const source = declaration.getSourceFile().fileName.split(path.sep).join('/')
-  if (!source.includes('/packages/core/') && !source.includes('/@canopy/core/')) return undefined
-  if (name === 'ActionBus') return 'canopy:action-bus'
-  if (name === 'QueryBus') return 'canopy:query-bus'
-  if (name === 'CurrentExecution') return 'canopy:current-execution'
-  if (name === 'CurrentJob') return 'canopy:current-job'
-  if (name === 'Authorization') return 'canopy:authorization'
-  if (name === 'Mailer') return 'canopy:mailer'
-  if (name === 'Sms') return 'canopy:sms'
-  if (name === 'DeliveryLedger') return 'canopy:delivery-ledger'
-  if (name === 'Logger') return 'canopy:logger'
-  return 'canopy:unit-of-work'
+  if (!source.includes('/packages/core/') && !source.includes('/@doxajs/core/')) return undefined
+  if (name === 'ActionBus') return 'doxa:action-bus'
+  if (name === 'QueryBus') return 'doxa:query-bus'
+  if (name === 'CurrentExecution') return 'doxa:current-execution'
+  if (name === 'CurrentJob') return 'doxa:current-job'
+  if (name === 'Authorization') return 'doxa:authorization'
+  if (name === 'Mailer') return 'doxa:mailer'
+  if (name === 'Sms') return 'doxa:sms'
+  if (name === 'DeliveryLedger') return 'doxa:delivery-ledger'
+  if (name === 'Logger') return 'doxa:logger'
+  return 'doxa:unit-of-work'
 }
 
 function providerCapabilityForDeclaration(
@@ -1749,7 +1749,7 @@ function providerCapabilityForDeclaration(
   )
     return undefined
   const source = declaration.getSourceFile().fileName.split(path.sep).join('/')
-  return source.includes('/packages/core/') || source.includes('/@canopy/core/')
+  return source.includes('/packages/core/') || source.includes('/@doxajs/core/')
     ? name === 'Auth'
       ? 'authentication'
       : name === 'TransactionManager'
@@ -1833,7 +1833,7 @@ function renderRegistry(
     (registration, index) => `  ${JSON.stringify(registration.id)}: C${index},`,
   )
   return [
-    '// Generated by @canopy/compiler. Do not edit.',
+    '// Generated by @doxajs/compiler. Do not edit.',
     ...imports,
     '',
     `export const formatVersion = ${MANIFEST_FORMAT_VERSION}`,
@@ -2015,7 +2015,7 @@ function readJsonLiteral(node: ts.Expression): unknown {
       }),
     )
   }
-  fail(node, 'Schedule input must be a JSON literal so Cultivate and the manifest can inspect it.')
+  fail(node, 'Schedule input must be a JSON literal so Gnosis and the manifest can inspect it.')
 }
 
 function validIdentifier(value: string): boolean {
@@ -2088,7 +2088,7 @@ function propertyName(name: ts.PropertyName): string | undefined {
 }
 
 function requiredClassName(declaration: ts.ClassDeclaration): string {
-  if (!declaration.name) fail(declaration, 'Canopy declarations must use named classes.')
+  if (!declaration.name) fail(declaration, 'Doxa declarations must use named classes.')
   return declaration.name.text
 }
 
@@ -2135,7 +2135,7 @@ function toScreamingSnake(value: string): string {
 function fail(node: ts.Node, message: string): never {
   const source = node.getSourceFile()
   const position = source.getLineAndCharacterOfPosition(node.getStart(source))
-  throw new CanopyCompilationError(
+  throw new DoxaCompilationError(
     `${source.fileName}:${position.line + 1}:${position.character + 1} ${message}`,
   )
 }

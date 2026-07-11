@@ -1,7 +1,7 @@
-# Canopy Implementation Proofs
+# Doxa Implementation Proofs
 
 Implementation proofs record executable evidence for accepted architectural directions. They do not
-silently promote an incomplete specification or vertical slice into the Canopy MVP.
+silently promote an incomplete specification or vertical slice into the Doxa MVP.
 
 The active [MVP completion ledger](mvp-completion-ledger.md) maps every remaining viability
 requirement to its implementation and acceptance evidence.
@@ -41,15 +41,15 @@ requirement to its implementation and acceptance evidence.
 12. [Signals and model observers vertical slice](signals-observers-vertical-slice.md) — immediate
     typed coordination plus Eloquent-style retrieved, persistence, and post-commit lifecycle phases
     with generated metadata and rollback proofs.
-13. [Cache vertical slice](cache-vertical-slice.md) — a Canopy-owned port with deterministic memory
+13. [Cache vertical slice](cache-vertical-slice.md) — a Doxa-owned port with deterministic memory
     behavior and PostgreSQL TTL/atomic-operation proof behind the compiled provider graph.
-14. [Arbor command kernel vertical slice](arbor-command-kernel-vertical-slice.md) — executable
+14. [Praxis command kernel vertical slice](praxis-command-kernel-vertical-slice.md) — executable
     help/build/inspection plus safe generators that automatically maintain Feature declarations.
 15. [Communications adapters vertical slice](communications-adapters-vertical-slice.md) —
     provider-independent contracts and fakes plus SendGrid/Twilio sending, signature verification,
     delivery normalization, and retry classification.
-16. [Arbor runtime and observability vertical slice](arbor-runtime-observability-vertical-slice.md)
-    — complete generators and operations, application commands, independent runtime roles, Cultivate
+16. [Praxis runtime and observability vertical slice](praxis-runtime-observability-vertical-slice.md)
+    — complete generators and operations, application commands, independent runtime roles, Gnosis
     knowledge, structured telemetry, and W3C propagation.
 17. [First-party testing harness vertical slice](testing-harness-vertical-slice.md) — real-manifest
     provider overrides, acting-as identity, in-memory durability, queue/comms fakes, and HTTP,
@@ -59,21 +59,21 @@ requirement to its implementation and acceptance evidence.
     privacy, and user session management.
 19. [Operational control vertical slice](operational-control-vertical-slice.md) — durable schedule
     enablement and manual firing plus journal, outbox, cache, auth, queue, and delivery inspection
-    and recovery through Arbor.
-20. [Generated MVP reference flow](generated-mvp-reference-flow.md) — clean Arbor generation plus
+    and recovery through Praxis.
+20. [Generated MVP reference flow](generated-mvp-reference-flow.md) — clean Praxis generation plus
     real-manifest fake and PostgreSQL acceptance flows spanning every required framework role.
 21. [Existing-table model and authentication mapping](existing-table-mapping-vertical-slice.md) —
     Laravel-like model metadata, explicit first-party auth mappings, mixed external/framework
-    ownership, PostgreSQL conformance, fakes, and operator/Cultivate inspection.
+    ownership, PostgreSQL conformance, fakes, and operator/Gnosis inspection.
 22. [Next.js Field Guide frontend slice](next-field-guide-vertical-slice.md) — external-consumer
     Next.js, Tailwind, and shadcn/ui proof across public HTTP, sessions, bearer tokens, protected
     models, and queued work.
 23. [Development hot reload vertical slice](development-hot-reload-vertical-slice.md) — debounced
     source watching, fail-safe compilation, fresh-process runtime replacement, and recovery without
     manual server restarts.
-24. [Undergrowth development debugger vertical slice](undergrowth-vertical-slice.md) — typed and
-    redacted runtime observations, PostgreSQL causal ordering and retention, one-command Arbor
-    installation, Cultivate knowledge, a read-only loopback explorer, and testing fakes.
+24. [Theoria development debugger vertical slice](theoria-vertical-slice.md) — typed and redacted
+    runtime observations, PostgreSQL causal ordering and retention, one-command Praxis installation,
+    Gnosis knowledge, a read-only loopback explorer, and testing fakes.
 25. [Container deployment vertical slice](container-deployment-vertical-slice.md) — one generated
     immutable image, prebuilt production boot, combined workers and schedules, explicit migrations,
-    advanced scheduler isolation, Compose topology, and Cultivate deployment knowledge.
+    advanced scheduler isolation, Compose topology, and Gnosis deployment knowledge.

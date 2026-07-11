@@ -3,12 +3,12 @@
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
 - **Scope:** MVP
-- **Decision owners:** Canopy maintainers
+- **Decision owners:** Doxa maintainers
 
 ## Decision
 
-Canopy configuration is declared through typed classes, resolved before application-service
-construction, and injected directly as frozen runtime-specific objects. Canopy infers the ordinary
+Doxa configuration is declared through typed classes, resolved before application-service
+construction, and injected directly as frozen runtime-specific objects. Doxa infers the ordinary
 environment contract from class and property names, TypeScript types, optionality, and defaults.
 
 ```ts
@@ -42,7 +42,7 @@ narrowing provide the application-facing DX.
 The Application and selected Features explicitly declare the groups they make available:
 
 ```ts
-export class Application extends CanopyApplication {
+export class Application extends DoxaApplication {
   configs = [AppConfig]
   features = [OrdersFeature, BillingFeature]
 }
@@ -60,7 +60,7 @@ selection, arbitrary executable factories, or runtime registration.
 
 ## Convention-derived environment contract
 
-Canopy derives the default environment name from the configuration class and property:
+Doxa derives the default environment name from the configuration class and property:
 
 - `AppConfig.environment` becomes `APP_ENVIRONMENT`.
 - `AppConfig.port` becomes `APP_PORT`.
@@ -68,8 +68,8 @@ Canopy derives the default environment name from the configuration class and pro
 - `BillingConfig.currency` becomes `BILLING_CURRENCY`.
 
 The `Config` suffix is removed, camel case becomes screaming snake case, and group plus property
-form the complete environment key. Generated documentation, `.env.example`, diagnostics, and
-Cultivate use the same deterministic mapping.
+form the complete environment key. Generated documentation, `.env.example`, diagnostics, and Gnosis
+use the same deterministic mapping.
 
 The compiler infers ordinary validation semantics:
 
@@ -77,10 +77,10 @@ The compiler infers ordinary validation semantics:
 - A literal union selects its allowed values.
 - A property initializer supplies the default.
 - `?` makes the value optional.
-- `Port` applies Canopy's validated port contract.
+- `Port` applies Doxa's validated port contract.
 - `SecretString` marks the value as sensitive and redacted.
 
-Canopy may provide additional first-party semantic scalar types as separately specified public
+Doxa may provide additional first-party semantic scalar types as separately specified public
 contracts. Complex values use the accepted Standard Schema escape hatch:
 
 ```ts
@@ -102,13 +102,13 @@ The official Node host resolves configuration in this precedence order, highest 
 4. Declared property defaults.
 
 The host does not walk arbitrary parent directories looking for `.env`. It reports the exact path it
-checked. Loading `.env` does not mutate `process.env`; Canopy parses it into a private source map
-and resolves only environment keys belonging to declared configuration groups.
+checked. Loading `.env` does not mutate `process.env`; Doxa parses it into a private source map and
+resolves only environment keys belonging to declared configuration groups.
 
 ## Validation and runtime materialization
 
 Configuration resolution occurs after manifest and graph validation but before construction of the
-application singleton graph. Canopy reports all configuration errors together with the group,
+application singleton graph. Doxa reports all configuration errors together with the group,
 property, environment key, declaration source, and value source. Sensitive values are never included
 in errors or diagnostics.
 
@@ -142,7 +142,7 @@ The MVP must prove:
 2. Environment names derive deterministically from group and property names.
 3. Defaults, unions, optional properties, `Port`, and `SecretString` validate correctly.
 4. Process environment overrides `.env`, which overrides defaults.
-5. Only declared environment keys become available through Canopy configuration.
+5. Only declared environment keys become available through Doxa configuration.
 6. Configuration failures occur before singleton construction and report all invalid fields.
 7. Injected configuration instances are typed, frozen, runtime-specific, and directly accessible.
 8. Secrets never appear in manifests, errors, diagnostics, logs, or generated examples.
@@ -151,7 +151,7 @@ The MVP must prove:
 
 ## References
 
-- [Canopy architecture](../architecture.md#configuration)
+- [Doxa architecture](../architecture.md#configuration)
 - [Standard Schema and Zod](0006-standard-schema-zod-validation.md)
 - [Explicit Application and Feature declarations](0014-explicit-features-generated-manifest.md)
 - [Pre-boot test overrides](0020-preboot-test-overrides.md)

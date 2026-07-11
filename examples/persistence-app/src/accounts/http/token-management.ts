@@ -1,4 +1,4 @@
-import { CurrentExecution, HttpError } from '@canopy/core'
+import { CurrentExecution, HttpError } from '@doxajs/core'
 
 export function requirePasswordSession(execution: CurrentExecution): string {
   const authentication = execution.context.authentication
@@ -17,7 +17,7 @@ export function requirePasswordSession(execution: CurrentExecution): string {
   return authentication.identityId
 }
 
-export function publicAccessToken(token: import('@canopy/core').AuthAccessToken) {
+export function publicAccessToken(token: import('@doxajs/core').AuthAccessToken) {
   return {
     id: token.id,
     name: token.name,

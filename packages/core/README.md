@@ -1,15 +1,15 @@
-# `@canopy/core`
+# `@doxajs/core`
 
-The stable, application-facing programming model for Canopy. Application Features import roles,
+The stable, application-facing programming model for Doxa. Application Features import roles,
 models, events, jobs, schedules, policies, configuration, ports, and public contracts from this
 package.
 
 ```sh
-pnpm add @canopy/core
+pnpm add @doxajs/core
 ```
 
 ```ts
-import { Feature, Route, type HttpRequest } from '@canopy/core'
+import { Feature, Route, type HttpRequest } from '@doxajs/core'
 
 export class HealthRoute extends Route {
   static override readonly id = 'health'
@@ -27,4 +27,4 @@ export class AppFeature extends Feature {
 }
 ```
 
-See the [Canopy repository](https://github.com/div0ky/canopy) for documentation and support.
+See the [Doxa repository](https://github.com/div0ky/doxajs) for documentation and support.

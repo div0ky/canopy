@@ -1,4 +1,4 @@
-import { Configuration, SecretString } from '@canopy/core'
+import { Configuration, SecretString } from '@doxajs/core'
 
 export class CommunicationsConfig extends Configuration {
   declare sendGridWebhookPublicKey?: SecretString

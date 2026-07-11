@@ -1,4 +1,4 @@
-import { CurrentExecution, CurrentJob, Listener, type ShouldQueue } from '@canopy/core'
+import { CurrentExecution, CurrentJob, Listener, type ShouldQueue } from '@doxajs/core'
 
 import { CounterNotificationRequested } from '../events/counter-notification-requested.js'
 import { CounterEventRecorder } from '../support/counter-event-recorder.js'

@@ -1,8 +1,8 @@
-import { ConsoleLogSink, Logger, MemoryLogSink, SecretString } from '@canopy/core'
-import { runWithLogContext } from '@canopy/core/runtime'
+import { ConsoleLogSink, Logger, MemoryLogSink, SecretString } from '@doxajs/core'
+import { runWithLogContext } from '@doxajs/core/runtime'
 import { describe, expect, it } from 'vitest'
 
-describe('Canopy logging', () => {
+describe('Doxa logging', () => {
   it('creates structured records with inherited context and recursive redaction', () => {
     const sink = new MemoryLogSink()
     const logger = new Logger({ sink, level: 'debug' }).channel('Billing API')
@@ -96,11 +96,11 @@ describe('Canopy logging', () => {
     const sink = new MemoryLogSink()
     new Logger({ sink }).error(
       'Connection failed for Bearer abc123',
-      new Error('postgresql://canopy:password@localhost/db token=abc123'),
+      new Error('postgresql://doxa:password@localhost/db token=abc123'),
     )
     expect(sink.records[0]?.message).toBe('Connection failed for Bearer [REDACTED]')
     expect(sink.records[0]?.error?.message).toBe(
-      'postgresql://canopy:[REDACTED]@localhost/db token=[REDACTED]',
+      'postgresql://doxa:[REDACTED]@localhost/db token=[REDACTED]',
     )
   })
 })

@@ -3,17 +3,17 @@
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
 - **Scope:** MVP
-- **Decision owners:** Canopy maintainers
+- **Decision owners:** Doxa maintainers
 
 ## Decision
 
-Canopy will provide a Laravel-like, class-first event experience. An event is a named data-bearing
-class that may be dispatched from ordinary application code anywhere a Canopy application is
-running. Listener classes declare the event they consume through their typed `handle` method,
-receive scoped dependencies through `this.inject()`, and opt into queued or after-commit execution
-through the accepted capability interfaces.
+Doxa will provide a Laravel-like, class-first event experience. An event is a named data-bearing
+class that may be dispatched from ordinary application code anywhere a Doxa application is running.
+Listener classes declare the event they consume through their typed `handle` method, receive scoped
+dependencies through `this.inject()`, and opt into queued or after-commit execution through the
+accepted capability interfaces.
 
-The Canopy compiler will turn event, listener, dispatch, transaction, queue, and observability
+The Doxa compiler will turn event, listener, dispatch, transaction, queue, and observability
 relationships into explicit manifest facts. The runtime does not discover listeners through
 reflection or a second event registry.
 
@@ -30,13 +30,13 @@ await OrderShipped.dispatch({ orderId: order.id })
 ```
 
 `dispatch()` is inherited framework behavior. It creates the event with the supplied typed payload
-and routes it through the active Canopy application and execution context. Developers do not need to
+and routes it through the active Doxa application and execution context. Developers do not need to
 inject a dispatcher merely to raise a named event from an action, model method, listener, job,
 schedule, controller, command, or other framework-managed entry point.
 
 Static event dispatch is a narrow framework capability backed by the current execution context, not
-a general service locator. Code running outside a Canopy-managed execution must enter an application
-scope or use the application runtime's event dispatcher explicitly. Canopy must not use one
+a general service locator. Code running outside a Doxa-managed execution must enter an application
+scope or use the application runtime's event dispatcher explicitly. Doxa must not use one
 process-global dispatcher that makes multiple applications or tests interfere.
 
 ## Listener authoring
@@ -80,13 +80,13 @@ Laravel-aligned capability semantics apply:
 - `ShouldBroadcast` requests queued broadcasting.
 - `ShouldBroadcastNow` requests synchronous broadcasting in the current process.
 
-In an active Canopy Unit of Work, ordinary queued listeners and broadcasts are outbox-backed and
+In an active Doxa Unit of Work, ordinary queued listeners and broadcasts are outbox-backed and
 become eligible after commit by default. This makes the safe behavior automatic while preserving the
 explicit capability vocabulary.
 
 Local listener failures propagate through the current dispatch unless a later specification defines
-an explicit rescue capability. Queued listener failures use Canopy's job retry, idempotency,
-timeout, and terminal-failure semantics.
+an explicit rescue capability. Queued listener failures use Doxa's job retry, idempotency, timeout,
+and terminal-failure semantics.
 
 ## Events, domain events, and signals
 
@@ -105,10 +105,10 @@ listener, observer, journal, and outbox semantics without burdening ordinary eve
 ## Serialization
 
 An event used by queued listeners, broadcasting, or durable recording must have a versioned,
-serializable payload represented in the manifest. Canopy models in event payloads receive
-first-party identity serialization and execution-scope rehydration analogous to Laravel's model
-serialization. A queued listener may therefore observe current model state when it runs; an event
-that requires an immutable historical value must carry that value explicitly.
+serializable payload represented in the manifest. Doxa models in event payloads receive first-party
+identity serialization and execution-scope rehydration analogous to Laravel's model serialization. A
+queued listener may therefore observe current model state when it runs; an event that requires an
+immutable historical value must carry that value explicitly.
 
 Provider, database-engine, queue-engine, and transport types must not appear in event payloads.
 
@@ -134,7 +134,7 @@ assertions.
 
 ## Diagnostics and inspection
 
-Canopy must provide an `event:list`-equivalent inspection command showing:
+Doxa must provide an `event:list`-equivalent inspection command showing:
 
 - Event ID, owner, source, and payload schema.
 - Local, after-commit, queued, and broadcast listeners.
@@ -175,7 +175,7 @@ entry-point parity remain required before the complete MVP contract is satisfied
 ## References
 
 - [Laravel events](https://laravel.com/docs/13.x/events)
-- [Canopy MVP viability bar](../mvp.md#required-reactive-model)
-- [Canopy architecture](../architecture.md#durable-side-effects)
+- [Doxa MVP viability bar](../mvp.md#required-reactive-model)
+- [Doxa architecture](../architecture.md#durable-side-effects)
 - [Class roles and capabilities](0011-class-first-oop-container.md#role-classes-and-capability-traits)
 - [Explicit Feature declarations](0014-explicit-features-generated-manifest.md)

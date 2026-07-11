@@ -7,12 +7,12 @@
 
 ## Outcome
 
-The fifth Canopy implementation proves Laravel-like class events across the active execution and
+The fifth Doxa implementation proves Laravel-like class events across the active execution and
 transaction boundary:
 
 ```text
 await CounterIncremented.dispatch({ counterId, amount, value })
-  → execution-local Canopy event dispatcher
+  → execution-local Doxa event dispatcher
   → declared event manifest identity
   → typed listener association
   → role-scoped local listeners
@@ -21,7 +21,7 @@ await CounterIncremented.dispatch({ counterId, amount, value })
 ```
 
 The application does not inject an event dispatcher. `dispatch()` is inherited behavior available
-inside a Canopy-managed execution and is scoped to that runtime, so concurrently booted applications
+inside a Doxa-managed execution and is scoped to that runtime, so concurrently booted applications
 cannot share a process-global event registry accidentally.
 
 ## Authoring experience
@@ -67,7 +67,7 @@ The compiler verifies that:
 - Every listener defines exactly one typed `handle(event)` parameter.
 - The parameter names an event declared by a selected Feature.
 - Role classes are not injected as ordinary dependencies.
-- Listener constructors resolve through normal Canopy dependency rules.
+- Listener constructors resolve through normal Doxa dependency rules.
 - Conflicting local and queued after-commit capabilities fail compilation.
 
 The generated manifest records stable event and listener identities, ownership, sources,
@@ -109,7 +109,7 @@ The complete suite contains thirty-three passing tests. Event-specific conforman
 6. Rollback discards all registered after-commit event work.
 7. Actor and correlation context survive local and after-commit delivery.
 8. An HTTP route dispatches through the identical static event API.
-9. Dispatch outside a Canopy execution fails explicitly.
+9. Dispatch outside a Doxa execution fails explicitly.
 
 ## Deliberate boundary
 

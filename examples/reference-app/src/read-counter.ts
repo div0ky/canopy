@@ -1,4 +1,4 @@
-import { Query } from '@canopy/core'
+import { Query } from '@doxajs/core'
 
 import { ExecutionCounter } from './execution-counter.js'
 

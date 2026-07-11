@@ -83,7 +83,7 @@ export function CounterPanel({ authenticated, value, onIncrement }: CounterPanel
             try {
               await onIncrement(id, amount)
             } catch {
-              /* The shell reports normalized Canopy errors. */
+              /* The shell reports normalized Doxa errors. */
             } finally {
               setPending(false)
             }

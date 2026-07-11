@@ -2,18 +2,18 @@ services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: canopy
-      POSTGRES_PASSWORD: canopy
-      POSTGRES_DB: canopy
+      POSTGRES_USER: doxa
+      POSTGRES_PASSWORD: doxa
+      POSTGRES_DB: doxa
     ports:
       - '54329:5432'
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U canopy']
+      test: ['CMD-SHELL', 'pg_isready -U doxa']
       interval: 2s
       timeout: 2s
       retries: 20
     volumes:
-      - canopy-postgres:/var/lib/postgresql/data
+      - doxa-postgres:/var/lib/postgresql/data
 
 volumes:
-  canopy-postgres:
+  doxa-postgres:

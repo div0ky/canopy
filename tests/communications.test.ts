@@ -1,12 +1,12 @@
 import { generateKeyPairSync, sign, createHmac } from 'node:crypto'
 
-import { FakeMailTransport, FakeSmsTransport } from '@canopy/core'
+import { FakeMailTransport, FakeSmsTransport } from '@doxajs/core'
 import {
   normalizeSendGridEvents,
   SendGridMailTransport,
   verifySendGridWebhook,
-} from '@canopy/sendgrid'
-import { normalizeTwilioStatus, TwilioSmsTransport, verifyTwilioWebhook } from '@canopy/twilio-sms'
+} from '@doxajs/sendgrid'
+import { normalizeTwilioStatus, TwilioSmsTransport, verifyTwilioWebhook } from '@doxajs/twilio-sms'
 import { describe, expect, it, vi } from 'vitest'
 
 describe('communications adapters', () => {
@@ -25,7 +25,7 @@ describe('communications adapters', () => {
     expect(sms.sent[0]?.id).toBe('sms-1')
   })
 
-  it('translates Canopy mail into private-recipient SendGrid requests and treats 202 as accepted', async () => {
+  it('translates Doxa mail into private-recipient SendGrid requests and treats 202 as accepted', async () => {
     const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 202 }))
     const transport = new SendGridMailTransport({ apiKey: 'SG.test', fetch: request })
     expect(
@@ -39,7 +39,7 @@ describe('communications adapters', () => {
     ).toEqual({ messageId: 'mail-2', state: 'accepted' })
     const body = JSON.parse(String(request.mock.calls[0]?.[1]?.body)) as Record<string, unknown>
     expect(body.personalizations).toHaveLength(2)
-    expect(JSON.stringify(body)).toContain('canopy_message_id')
+    expect(JSON.stringify(body)).toContain('doxa_message_id')
   })
 
   it('classifies SendGrid failures and verifies signed batched delivery webhooks', async () => {
@@ -62,7 +62,7 @@ describe('communications adapters', () => {
         event: 'delivered',
         sg_event_id: 'event-1',
         sg_message_id: 'provider-1',
-        canopy_message_id: 'mail-3',
+        doxa_message_id: 'mail-3',
       },
     ])
     const timestamp = '1783733000'
@@ -107,7 +107,7 @@ describe('communications adapters', () => {
     expect(String(request.mock.calls[0]?.[1]?.body)).toContain('MessagingServiceSid=MG123')
 
     const url = 'https://example.test/status'
-    const parameters = { CanopyMessageId: 'sms-2', MessageSid: 'SM123', MessageStatus: 'delivered' }
+    const parameters = { DoxaMessageId: 'sms-2', MessageSid: 'SM123', MessageStatus: 'delivered' }
     const content =
       url +
       Object.keys(parameters)

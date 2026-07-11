@@ -1,4 +1,4 @@
-import { CurrentExecution, SignalHandler } from '@canopy/core'
+import { CurrentExecution, SignalHandler } from '@doxajs/core'
 
 import { CounterTouched } from '../signals/counter-touched.js'
 import { CounterEventRecorder } from '../support/counter-event-recorder.js'

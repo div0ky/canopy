@@ -2,13 +2,13 @@
 
 ## Supported versions
 
-Canopy is currently pre-1.0. Security fixes are provided for the latest published prerelease only.
-No release should be treated as production-stable until the independent review required by the
+Doxa is currently pre-1.0. Security fixes are provided for the latest published prerelease only. No
+release should be treated as production-stable until the independent review required by the
 [security model](manifesto/security.md) is complete.
 
 ## Reporting a vulnerability
 
-Do not open a public issue. Use GitHub private vulnerability reporting for the Canopy repository.
+Do not open a public issue. Use GitHub private vulnerability reporting for the Doxa repository.
 Include the affected version or commit, impact, reproduction, and any known mitigation. Reports will
 be acknowledged within three business days and triaged as quickly as practical.
 

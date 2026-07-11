@@ -1,19 +1,19 @@
 {
-  "name": "@canopy/twilio-sms",
+  "name": "@doxajs/twilio-sms",
   "version": "0.1.0-alpha.0",
-  "description": "The first-party Twilio SMS and callback adapter for Canopy.",
+  "description": "The first-party Twilio SMS and callback adapter for Doxa.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/div0ky/canopy.git",
+    "url": "git+https://github.com/div0ky/doxajs.git",
     "directory": "packages/twilio-sms"
   },
-  "homepage": "https://github.com/div0ky/canopy#readme",
+  "homepage": "https://github.com/div0ky/doxajs#readme",
   "bugs": {
-    "url": "https://github.com/div0ky/canopy/issues"
+    "url": "https://github.com/div0ky/doxajs/issues"
   },
   "keywords": [
-    "canopy",
+    "doxa",
     "framework",
     "twilio",
     "sms"
@@ -41,6 +41,6 @@
     "postpack": "node ../../scripts/prepare-package.mjs --clean"
   },
   "dependencies": {
-    "@canopy/core": "workspace:*"
+    "@doxajs/core": "workspace:*"
   }
 }

@@ -7,14 +7,14 @@
 
 ## Outcome
 
-Canopy now authenticates APIs, CLIs, and automation without misusing browser cookies or adopting
-JWTs as a framework default:
+Doxa now authenticates APIs, CLIs, and automation without misusing browser cookies or adopting JWTs
+as a framework default:
 
 ```text
 password-authenticated session issues token once
-  → canopy_pat_<public-id>_<256-bit-secret>
+  → doxa_pat_<public-id>_<256-bit-secret>
   → PostgreSQL stores only SHA-256 digest and safe metadata
-  → Authorization: Bearer resolves the existing Canopy identity
+  → Authorization: Bearer resolves the existing Doxa identity
   → the same user Actor enters the execution context
   → token constraints follow queued causal work
   → rotation or revocation invalidates the old credential
@@ -39,9 +39,9 @@ POST   /auth/tokens/:id/rotate
 DELETE /auth/tokens/:id
 ```
 
-Supplying a cookie and Authorization header together fails with `ambiguous_credentials`; Canopy
-never silently chooses which authority applies. Malformed, expired, rotated, and revoked tokens
-share one stable invalid-credential response.
+Supplying a cookie and Authorization header together fails with `ambiguous_credentials`; Doxa never
+silently chooses which authority applies. Malformed, expired, rotated, and revoked tokens share one
+stable invalid-credential response.
 
 ## Durable authority propagation
 

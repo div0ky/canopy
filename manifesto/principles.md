@@ -1,13 +1,13 @@
-# Canopy Principles
+# Doxa Principles
 
-These principles are the working tests derived from the [Canopy Manifesto](index.md). They are not a
+These principles are the working tests derived from the [Doxa Manifesto](index.md). They are not a
 second manifesto. They exist to make the manifesto useful when choosing APIs, dependencies, and
 runtime behavior.
 
-## 1. Canopy owns application semantics
+## 1. Doxa owns application semantics
 
-Application code should speak in Canopy and domain vocabulary. A dependency may execute the work,
-but it must not decide what a controller, action, model, job, listener, transaction, or application
+Application code should speak in Doxa and domain vocabulary. A dependency may execute the work, but
+it must not decide what a controller, action, model, job, listener, transaction, or application
 lifecycle means.
 
 If replacing an infrastructure engine requires rewriting feature code, its boundary has leaked.
@@ -37,11 +37,10 @@ Infrastructure assembly belongs at the application boundary.
 
 ## 5. One concept gets one dominant vocabulary
 
-Canopy should not expose several equivalent ways to express routine work. Aliases and parallel
+Doxa should not expose several equivalent ways to express routine work. Aliases and parallel
 abstractions increase the amount a developer must learn and make tooling less decisive.
 
-When the ecosystem uses conflicting terms, Canopy chooses one and translates at the adapter
-boundary.
+When the ecosystem uses conflicting terms, Doxa chooses one and translates at the adapter boundary.
 
 ## 6. Persistence is explicit about durability
 
@@ -62,19 +61,18 @@ Propagation rules must be deterministic, and intentional context changes must be
 ## 8. Boundaries are protected by contracts
 
 An adapter is justified when a dependency's native API would otherwise shape application code. The
-contract should model the capability Canopy promises, not every feature of every possible
+contract should model the capability Doxa promises, not every feature of every possible
 implementation.
 
 Adapters earn their keep through conformance suites, framework fakes, and replaceability.
 
 ## 9. Compatibility is a framework responsibility
 
-A Canopy release is a tested system, not a suggestion that a set of semver ranges might coexist.
+A Doxa release is a tested system, not a suggestion that a set of semver ranges might coexist.
 Dependency selection, version alignment, configuration defaults, failure behavior, and upgrade notes
 belong to the framework release.
 
-Applications upgrade Canopy. They should not independently reconstruct Canopy's compatibility
-matrix.
+Applications upgrade Doxa. They should not independently reconstruct Doxa's compatibility matrix.
 
 ## 10. Tooling is part of the framework
 
@@ -85,8 +83,8 @@ Every major abstraction should answer: how will a developer inspect, generate, f
 
 ## 11. The kernel grows only from demonstrated need
 
-Canopy should implement the smallest application kernel that can uphold its programming model.
-Focused libraries remain preferable for focused technical work.
+Doxa should implement the smallest application kernel that can uphold its programming model. Focused
+libraries remain preferable for focused technical work.
 
 New kernel concepts require an application-level capability that cannot be expressed coherently by
 an existing concept or an adapter.
@@ -94,7 +92,7 @@ an existing concept or an adapter.
 ## 12. Coherence outranks surface area
 
 A smaller set of deeply integrated capabilities is more valuable than a longer feature checklist.
-Canopy should add a capability only when it participates in the same lifecycle, context, failure,
+Doxa should add a capability only when it participates in the same lifecycle, context, failure,
 testing, and observability model as the rest of the framework.
 
 ## 13. Paths organize people, not runtime behavior
@@ -108,33 +106,33 @@ Cross-feature sharing must be intentional rather than emerge from a global servi
 
 ## 14. Opinionated, safe magic is the product
 
-Canopy should decide every routine choice it can decide safely. It should infer behavior when the
+Doxa should decide every routine choice it can decide safely. It should infer behavior when the
 compiler can prove the result, generate repetitive declarations when explicit artifacts are still
 valuable, and fail before boot when an application is ambiguous or unsafe.
 
 The ordinary path must be difficult to misuse and have one consistent shape that is equally clear to
-developers, the compiler, and Cultivate. If Cultivate must guess which of several equivalent
-patterns an application intended, Canopy has failed to be opinionated enough.
+developers, the compiler, and Gnosis. If Gnosis must guess which of several equivalent patterns an
+application intended, Doxa has failed to be opinionated enough.
 
 Magic is good when it removes incidental decisions while remaining deterministic, inspectable, and
-explainable. Ceremony is justified only when it communicates consequential intent that Canopy cannot
+explainable. Ceremony is justified only when it communicates consequential intent that Doxa cannot
 safely infer.
 
 ## A decision test
 
 Before adopting a framework design, ask:
 
-1. Does application code use Canopy and domain vocabulary?
+1. Does application code use Doxa and domain vocabulary?
 2. Is there one obvious path for ordinary work?
 3. Can a developer explain its lifecycle and failure behavior?
 4. Can diagnostics show what the framework resolved or executed?
-5. Can tests replace it through a Canopy-owned fake or override?
+5. Can tests replace it through a Doxa-owned fake or override?
 6. Does it preserve transaction and delivery guarantees?
 7. Does it keep infrastructure types out of feature code?
-8. Can Canopy maintain its compatibility contract over time?
+8. Can Doxa maintain its compatibility contract over time?
 9. Is the capability worth increasing the kernel's conceptual size?
-10. Is the ordinary API obvious, safely magical, hard to misuse, and deterministic enough for
-    Cultivate to understand without guessing?
+10. Is the ordinary API obvious, safely magical, hard to misuse, and deterministic enough for Gnosis
+    to understand without guessing?
 
-A proposal that repeatedly fails these questions is not yet a Canopy design, even if its local API
+A proposal that repeatedly fails these questions is not yet a Doxa design, even if its local API
 looks convenient.

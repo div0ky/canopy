@@ -19,7 +19,7 @@ export interface PasswordParameters {
 }
 
 export const authIdentities = pgTable(
-  'canopy_auth_identities',
+  'doxa_auth_identities',
   {
     id: text('id').primaryKey(),
     email: text('email').notNull(),
@@ -27,10 +27,10 @@ export const authIdentities = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
   },
-  (table) => [uniqueIndex('canopy_auth_identity_email_idx').on(table.email)],
+  (table) => [uniqueIndex('doxa_auth_identity_email_idx').on(table.email)],
 )
 
-export const authPasswords = pgTable('canopy_auth_passwords', {
+export const authPasswords = pgTable('doxa_auth_passwords', {
   identityId: text('identity_id')
     .primaryKey()
     .references(() => authIdentities.id, {
@@ -44,7 +44,7 @@ export const authPasswords = pgTable('canopy_auth_passwords', {
 })
 
 export const authSessions = pgTable(
-  'canopy_auth_sessions',
+  'doxa_auth_sessions',
   {
     id: uuid('id').primaryKey(),
     identityId: text('identity_id').notNull(),
@@ -64,14 +64,14 @@ export const authSessions = pgTable(
     userAgent: text('user_agent'),
   },
   (table) => [
-    uniqueIndex('canopy_auth_session_token_idx').on(table.tokenDigest),
-    index('canopy_auth_session_identity_idx').on(table.identityId, table.revokedAt),
-    index('canopy_auth_session_expiry_idx').on(table.expiresAt, table.idleExpiresAt),
+    uniqueIndex('doxa_auth_session_token_idx').on(table.tokenDigest),
+    index('doxa_auth_session_identity_idx').on(table.identityId, table.revokedAt),
+    index('doxa_auth_session_expiry_idx').on(table.expiresAt, table.idleExpiresAt),
   ],
 )
 
 export const authAccessTokens = pgTable(
-  'canopy_auth_access_tokens',
+  'doxa_auth_access_tokens',
   {
     id: text('id').primaryKey(),
     identityId: text('identity_id').notNull(),
@@ -85,14 +85,14 @@ export const authAccessTokens = pgTable(
     revokedAt: timestamp('revoked_at', { withTimezone: true, mode: 'date' }),
   },
   (table) => [
-    uniqueIndex('canopy_auth_access_token_digest_idx').on(table.tokenDigest),
-    index('canopy_auth_access_token_identity_idx').on(table.identityId, table.revokedAt),
-    index('canopy_auth_access_token_expiry_idx').on(table.expiresAt),
+    uniqueIndex('doxa_auth_access_token_digest_idx').on(table.tokenDigest),
+    index('doxa_auth_access_token_identity_idx').on(table.identityId, table.revokedAt),
+    index('doxa_auth_access_token_expiry_idx').on(table.expiresAt),
   ],
 )
 
 export const authAuditEvents = pgTable(
-  'canopy_auth_audit_events',
+  'doxa_auth_audit_events',
   {
     id: uuid('id').primaryKey(),
     eventType: text('event_type').notNull(),
@@ -101,11 +101,11 @@ export const authAuditEvents = pgTable(
     metadata: jsonb('metadata').$type<Record<string, string | number | boolean | null>>().notNull(),
     occurredAt: timestamp('occurred_at', { withTimezone: true, mode: 'date' }).notNull(),
   },
-  (table) => [index('canopy_auth_audit_identity_idx').on(table.identityId, table.occurredAt)],
+  (table) => [index('doxa_auth_audit_identity_idx').on(table.identityId, table.occurredAt)],
 )
 
 export const authChallenges = pgTable(
-  'canopy_auth_challenges',
+  'doxa_auth_challenges',
   {
     id: uuid('id').primaryKey(),
     identityId: text('identity_id').notNull(),
@@ -116,17 +116,13 @@ export const authChallenges = pgTable(
     consumedAt: timestamp('consumed_at', { withTimezone: true, mode: 'date' }),
   },
   (table) => [
-    uniqueIndex('canopy_auth_challenge_token_idx').on(table.tokenDigest),
-    index('canopy_auth_challenge_identity_idx').on(
-      table.identityId,
-      table.purpose,
-      table.consumedAt,
-    ),
+    uniqueIndex('doxa_auth_challenge_token_idx').on(table.tokenDigest),
+    index('doxa_auth_challenge_identity_idx').on(table.identityId, table.purpose, table.consumedAt),
   ],
 )
 
 export const authRateLimits = pgTable(
-  'canopy_auth_rate_limits',
+  'doxa_auth_rate_limits',
   {
     action: text('action').notNull(),
     bucketKey: text('bucket_key').notNull(),

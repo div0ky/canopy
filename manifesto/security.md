@@ -1,13 +1,13 @@
-# Canopy Security Model and Threat Assessment
+# Doxa Security Model and Threat Assessment
 
-- **Scope:** Canopy MVP server runtime and first-party adapters
+- **Scope:** Doxa MVP server runtime and first-party adapters
 - **Reviewed:** 2026-07-10
 - **Rule:** Framework convenience may remove ceremony, never an authorization or durability
   boundary.
 
 ## Protected assets
 
-Canopy protects password verifiers, session and bearer credentials, verification and recovery
+Doxa protects password verifiers, session and bearer credentials, verification and recovery
 challenges, application secrets, identity and authorization records, tenant boundaries, entity
 state, journal facts, queued work, communications content, provider credentials, and causal
 telemetry. Raw credentials are more sensitive than identifiers and must never enter storage, logs,
@@ -15,7 +15,7 @@ manifests, diagnostics, or error responses.
 
 ## Trust boundaries
 
-Untrusted HTTP input crosses the Hono adapter into a Canopy-admitted execution. Browser cookies,
+Untrusted HTTP input crosses the Hono adapter into a Doxa-admitted execution. Browser cookies,
 bearer headers, signed provider callbacks, queue envelopes, environment configuration, and compiled
 artifacts are separate boundaries. PostgreSQL is trusted for durability but its contents are not
 assumed secret from operators; this is why opaque credentials are stored as digests. SendGrid and

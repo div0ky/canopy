@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 
-import { AuthenticationError, HttpError, type ResolvedHttpAuthentication } from '@canopy/core'
+import { AuthenticationError, HttpError, type ResolvedHttpAuthentication } from '@doxajs/core'
 
 export function digest(value: string): string {
   return createHash('sha256').update(value).digest('hex')

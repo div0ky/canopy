@@ -1,5 +1,5 @@
 export {
-  CanopyCompilationError,
+  DoxaCompilationError,
   compileApplication,
   type CompileApplicationOptions,
   type CompileApplicationResult,

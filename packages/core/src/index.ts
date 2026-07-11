@@ -87,9 +87,9 @@ import type { Job, Schedule } from './queue.js'
 import type { Observer } from './observer.js'
 import type { Command } from './command.js'
 import type { DeliveryTransition, StagedDelivery } from './communications.js'
-import { CanopyRole } from './role.js'
+import { DoxaRole } from './role.js'
 
-export { CanopyRole, RoleInjectionError, type RoleInjector } from './role.js'
+export { DoxaRole, RoleInjectionError, type RoleInjector } from './role.js'
 export type { RoleInjectionToken } from './role-context.js'
 
 export type ConfigurationClass<T extends Configuration = Configuration> = abstract new () => T
@@ -97,16 +97,16 @@ export type ConfigurationClass<T extends Configuration = Configuration> = abstra
 export type FeatureClass<T extends Feature = Feature> = abstract new () => T
 
 /**
- * Compile-time application declaration. Canopy never constructs this class.
+ * Compile-time application declaration. Doxa never constructs this class.
  */
-export abstract class CanopyApplication {
+export abstract class DoxaApplication {
   declare readonly id: string
   declare readonly features: readonly FeatureClass[]
   declare readonly configs?: readonly ConfigurationClass[]
 }
 
 /**
- * Compile-time feature declaration. Canopy never constructs this class.
+ * Compile-time feature declaration. Doxa never constructs this class.
  */
 export abstract class Feature {
   declare readonly id: string
@@ -192,7 +192,7 @@ export { Observer, type ModelObserverDispatcher, type ModelObserverPhase } from 
 import type { Model, ModelAttributes, ModelConstructor } from './model.js'
 
 /**
- * Typed configuration declaration. Canopy materializes instances without invoking constructors
+ * Typed configuration declaration. Doxa materializes instances without invoking constructors
  * or property initializers.
  */
 export abstract class Configuration {}
@@ -226,12 +226,12 @@ export class SecretString {
   }
 }
 
-export abstract class Action<Input = void, Output = void> extends CanopyRole {
+export abstract class Action<Input = void, Output = void> extends DoxaRole {
   static readonly access: string = ''
   abstract handle(input: Input): Output | Promise<Output>
 }
 
-export abstract class Query<Input = void, Output = void> extends CanopyRole {
+export abstract class Query<Input = void, Output = void> extends DoxaRole {
   static readonly access: string = ''
   abstract handle(input: Input): Output | Promise<Output>
 }

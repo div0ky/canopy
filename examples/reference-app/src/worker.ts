@@ -1,4 +1,4 @@
-import type { LifecycleContext } from '@canopy/core'
+import type { LifecycleContext } from '@doxajs/core'
 
 import { DatabaseConnection } from './database-connection.js'
 import { lifecycleLog } from './lifecycle-log.js'

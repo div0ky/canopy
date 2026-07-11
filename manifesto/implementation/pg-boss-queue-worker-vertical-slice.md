@@ -7,21 +7,21 @@
 
 ## Outcome
 
-The seventh Canopy implementation proves one durable asynchronous path end to end:
+The seventh Doxa implementation proves one durable asynchronous path end to end:
 
 ```text
 await ProcessCounterJob.dispatch(input)
-  → active Canopy execution and transaction
-  → canopy.queue outbox intent
+  → active Doxa execution and transaction
+  → doxa.queue outbox intent
   → atomic outbox-to-pg-boss handoff
   → pg-boss claim and attempt
-  → fresh actor-aware Canopy execution scope
+  → fresh actor-aware Doxa execution scope
   → writable job transaction + ModelSession
   → retry or terminal failure
   → graceful worker drain
 ```
 
-Canopy promises at-least-once execution. A stable job ID survives every attempt, while each attempt
+Doxa promises at-least-once execution. A stable job ID survives every attempt, while each attempt
 receives a new execution ID. Handlers must remain idempotent around effects that cannot participate
 in their local transaction.
 
@@ -99,12 +99,12 @@ await ProcessCounterJob.dispatch(input, {
 
 ## Transaction and outbox boundary
 
-Dispatch inside an action or job writes a `canopy.queue` intent into the existing transactional
+Dispatch inside an action or job writes a `doxa.queue` intent into the existing transactional
 outbox. Rollback removes that intent with every other state, journal, and outbox write.
 
 The pg-boss adapter claims committed queue intents with `FOR UPDATE SKIP LOCKED`. Inside the same
 PostgreSQL transaction it inserts the pg-boss job through pg-boss's external database boundary and
-marks the Canopy outbox row dispatched. A crash before commit leaves both operations absent; a
+marks the Doxa outbox row dispatched. A crash before commit leaves both operations absent; a
 successful commit makes both visible. This preserves the semantic distinction between durable
 application intent and queue transport while making their initial PostgreSQL handoff atomic.
 
@@ -122,14 +122,14 @@ Every attempt creates a fresh admitted execution with:
 - Job transport identity.
 - Authentication metadata with session identifiers omitted.
 - Trace, locale, and time-zone context.
-- pg-boss cancellation composed into Canopy cancellation.
+- pg-boss cancellation composed into Doxa cancellation.
 
 `CurrentJob` exposes the stable ID, one-based attempt, maximum attempts, and optional idempotency
 key through constructor injection.
 
-Each declared job attempt opens a Canopy transaction and ModelSession. Job handlers therefore use
-the same hydrated model, dirty tracking, journal, outbox, and optimistic-concurrency APIs as
-actions. A failed attempt rolls its local mutation back before pg-boss applies retry policy.
+Each declared job attempt opens a Doxa transaction and ModelSession. Job handlers therefore use the
+same hydrated model, dirty tracking, journal, outbox, and optimistic-concurrency APIs as actions. A
+failed attempt rolls its local mutation back before pg-boss applies retry policy.
 
 ## Retries, failure, delay, and idempotency
 
@@ -138,9 +138,9 @@ actions. A failed attempt rolls its local mutation back before pg-boss applies r
 - `backoff` selects fixed or exponential pg-boss retry timing.
 - `timeout` controls the pg-boss active-job expiration boundary.
 - Delays are stored as an absolute availability time so outbox polling does not extend them.
-- Terminally failed jobs remain inspectable with normalized Canopy job state.
+- Terminally failed jobs remain inspectable with normalized Doxa job state.
 
-Idempotency keys deterministically derive the Canopy job UUID from the job type and key. Repeated
+Idempotency keys deterministically derive the Doxa job UUID from the job type and key. Repeated
 dispatches therefore return the same job identity. The atomic handoff treats an existing transport
 record with that ID as success and marks every corresponding outbox intent dispatched. This
 deduplicates admission; handlers still need idempotency for non-transactional effects under
@@ -148,8 +148,8 @@ at-least-once delivery.
 
 ## Queued listeners
 
-`ShouldQueue` and `ShouldQueueAfterCommit` listeners now become normal Canopy queue envelopes. When
-an event is raised inside a transaction, queued listener intent is always outbox-backed and cannot
+`ShouldQueue` and `ShouldQueueAfterCommit` listeners now become normal Doxa queue envelopes. When an
+event is raised inside a transaction, queued listener intent is always outbox-backed and cannot
 become eligible before commit. This also remains true for an event implementing
 `ShouldDispatchAfterCommit`: queued listener intent is staged before commit, while its local
 listeners remain delayed until durability.

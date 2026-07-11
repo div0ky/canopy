@@ -1,4 +1,4 @@
-import { Auth, CurrentExecution, Http, type HttpRequest, Route } from '@canopy/core'
+import { Auth, CurrentExecution, Http, type HttpRequest, Route } from '@doxajs/core'
 import { z } from 'zod'
 
 import { publicAccessToken, requirePasswordSession } from './token-management.js'

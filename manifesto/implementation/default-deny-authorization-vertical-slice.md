@@ -8,7 +8,7 @@
 
 ## Outcome
 
-Authorization is now one Canopy runtime service rather than transport middleware:
+Authorization is now one Doxa runtime service rather than transport middleware:
 
 ```text
 Feature policies = [AccountPolicy, CounterPolicy]
@@ -49,7 +49,7 @@ constructor or handler runs.
 ## Decisions and denial
 
 All decisions contain `effect`, canonical manifest policy ID, and a stable code. An undeclared
-ability returns `canopy:default-deny / policy_missing`. `authorize()` throws a normalized error for
+ability returns `doxa:default-deny / policy_missing`. `authorize()` throws a normalized error for
 denial; `decide()` supports tests, diagnostics, and deliberate conditional behavior.
 
 Missing authentication becomes HTTP 401 without exposing policy detail. Other denial becomes a
@@ -58,9 +58,9 @@ stable HTTP 403. Internal decisions retain the precise policy and code.
 ## Bearer constraints
 
 An access token's constraints are upper bounds, never grants. Exact ability, global `*`, and named
-prefix wildcards are supported. If a constrained bearer lacks the requested ability, Canopy denies
-through `canopy:credential-constraints` before application policy can allow it. Constraints remain
-in queue execution envelopes so asynchronous work cannot gain authority through transport.
+prefix wildcards are supported. If a constrained bearer lacks the requested ability, Doxa denies
+through `doxa:credential-constraints` before application policy can allow it. Constraints remain in
+queue execution envelopes so asynchronous work cannot gain authority through transport.
 
 ## Entry and resource phases
 
@@ -86,7 +86,7 @@ prior slices.
 
 ## Remaining authorization work
 
-- Compiled access declarations for future command entry roles when Arbor commands arrive.
+- Compiled access declarations for future command entry roles when Praxis commands arrive.
 - Durable delegation grants, impersonation, tenant selection, and revalidation.
 - Policy decision capture in journal/outbox metadata in addition to the security audit.
 - Authorization fakes/assertions, diagnostics, metrics, and concurrent isolation conformance.

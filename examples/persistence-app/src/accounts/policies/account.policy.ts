@@ -1,4 +1,4 @@
-import { allow, deny, Policy, type PolicyDecision, type PolicyRequest } from '@canopy/core'
+import { allow, deny, Policy, type PolicyDecision, type PolicyRequest } from '@doxajs/core'
 
 export class AccountPolicy extends Policy {
   static override readonly id = 'account'

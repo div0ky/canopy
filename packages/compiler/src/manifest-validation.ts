@@ -1,6 +1,6 @@
-import type { ProviderManifestEntry } from '@canopy/manifest'
+import type { ProviderManifestEntry } from '@doxajs/manifest'
 
-import { CanopyCompilationError } from './errors.js'
+import { DoxaCompilationError } from './errors.js'
 
 export function assertUnique<T>(
   items: readonly T[],
@@ -10,7 +10,7 @@ export function assertUnique<T>(
   const seen = new Set<string>()
   for (const item of items) {
     const id = identity(item)
-    if (seen.has(id)) throw new CanopyCompilationError(`Duplicate ${label}: ${id}`)
+    if (seen.has(id)) throw new DoxaCompilationError(`Duplicate ${label}: ${id}`)
     seen.add(id)
   }
 }
@@ -22,7 +22,7 @@ export function assertAcyclicProviderGraph(providers: readonly ProviderManifestE
 
   const visit = (id: string, path: readonly string[]): void => {
     if (visiting.has(id)) {
-      throw new CanopyCompilationError(`Dependency cycle: ${[...path, id].join(' -> ')}`)
+      throw new DoxaCompilationError(`Dependency cycle: ${[...path, id].join(' -> ')}`)
     }
     if (visited.has(id)) return
     const provider = byId.get(id)
@@ -58,7 +58,7 @@ export function assertScopeSafety(providers: readonly ProviderManifestEntry[]): 
     if (provider.scope !== 'singleton') continue
     for (const dependency of provider.dependencies) {
       if (dependency.targetId && reachesExecutionScope(dependency.targetId, new Set())) {
-        throw new CanopyCompilationError(
+        throw new DoxaCompilationError(
           `Singleton ${provider.id} cannot depend on execution-scoped ${dependency.targetId}.`,
         )
       }

@@ -1,4 +1,4 @@
-import { Telemetry, type TelemetryRecord } from '@canopy/core'
+import { Telemetry, type TelemetryRecord } from '@doxajs/core'
 
 export const telemetryRecords: TelemetryRecord[] = []
 export function resetTelemetryRecords(): void {

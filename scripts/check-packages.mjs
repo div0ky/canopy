@@ -8,7 +8,7 @@ import { promisify } from 'node:util'
 const execute = promisify(execFile)
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packagesRoot = path.join(root, 'packages')
-const temporary = await mkdtemp(path.join(os.tmpdir(), 'canopy-packages-'))
+const temporary = await mkdtemp(path.join(os.tmpdir(), 'doxa-packages-'))
 const archivesDirectory = path.join(temporary, 'archives')
 const packageDirectories = (await readdir(packagesRoot, { withFileTypes: true }))
   .filter((entry) => entry.isDirectory())
@@ -76,7 +76,7 @@ try {
     path.join(consumer, 'package.json'),
     `${JSON.stringify(
       {
-        name: 'canopy-packed-consumer',
+        name: 'doxa-packed-consumer',
         private: true,
         type: 'module',
         dependencies: packedDependencies,
@@ -99,24 +99,24 @@ try {
     ],
     { cwd: consumer },
   )
-  await execute(path.join(consumer, 'node_modules/.bin/arbor'), ['--help'], { cwd: consumer })
+  await execute(path.join(consumer, 'node_modules/.bin/doxa'), ['--help'], { cwd: consumer })
 
   const runtimeConsumer = path.join(temporary, 'runtime-consumer')
   await execute('mkdir', ['-p', runtimeConsumer])
   const runtimePackageNames = [
-    '@canopy/arbor',
-    '@canopy/auth-postgres',
-    '@canopy/core',
-    '@canopy/http-hono',
-    '@canopy/postgres-drizzle',
-    '@canopy/queue-pg-boss',
-    '@canopy/runtime',
+    '@doxajs/praxis',
+    '@doxajs/auth-postgres',
+    '@doxajs/core',
+    '@doxajs/http-hono',
+    '@doxajs/postgres-drizzle',
+    '@doxajs/queue-pg-boss',
+    '@doxajs/runtime',
   ]
   await writeFile(
     path.join(runtimeConsumer, 'package.json'),
     `${JSON.stringify(
       {
-        name: 'canopy-packed-runtime-consumer',
+        name: 'doxa-packed-runtime-consumer',
         private: true,
         type: 'module',
         dependencies: Object.fromEntries(
@@ -133,12 +133,7 @@ try {
     maxBuffer: 20 * 1024 * 1024,
   })
   const productionStoreEntries = await readdir(path.join(runtimeConsumer, 'node_modules/.pnpm'))
-  for (const forbidden of [
-    '@canopy/compiler',
-    '@canopy/undergrowth',
-    'drizzle-kit',
-    'typescript',
-  ]) {
+  for (const forbidden of ['@doxajs/compiler', '@doxajs/theoria', 'drizzle-kit', 'typescript']) {
     const storePrefix = `${forbidden.replace('/', '+')}@`
     if (
       (await exists(path.join(runtimeConsumer, 'node_modules', ...forbidden.split('/')))) ||
@@ -147,10 +142,10 @@ try {
       throw new Error(`Production dependency closure contains ${forbidden}.`)
     }
   }
-  await execute(path.join(runtimeConsumer, 'node_modules/.bin/arbor'), ['--help'], {
+  await execute(path.join(runtimeConsumer, 'node_modules/.bin/doxa'), ['--help'], {
     cwd: runtimeConsumer,
   })
-  console.log(`Package audit passed for ${packageDirectories.length} Canopy packages.`)
+  console.log(`Package audit passed for ${packageDirectories.length} Doxa packages.`)
 } finally {
   await rm(temporary, { recursive: true, force: true })
 }

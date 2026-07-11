@@ -3,16 +3,16 @@
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
 - **Scope:** MVP
-- **Decision owners:** Canopy maintainers
+- **Decision owners:** Doxa maintainers
 
 ## Decision
 
-Canopy applications will be composed from explicit, class-first feature boundaries. The application
+Doxa applications will be composed from explicit, class-first feature boundaries. The application
 root explicitly selects its features, and each feature explicitly declares its framework-facing
-classes in role-based arrays. Canopy's build-time compiler automatically follows and wires the
+classes in role-based arrays. Doxa's build-time compiler automatically follows and wires the
 concrete dependency graph beneath those declarations. The compiler will produce one versioned,
 framework-owned application manifest consumed by runtime boot, adapters, tests, diagnostics, the
-CLI, and Cultivate.
+CLI, and Gnosis.
 
 This direction is summarized as:
 
@@ -43,7 +43,7 @@ export class AccountsFeature extends Feature {
   routes = [AccountRoutes]
 }
 
-export class Application extends CanopyApplication {
+export class Application extends DoxaApplication {
   features = [AccountsFeature, BillingFeature, NotificationsFeature]
 }
 ```
@@ -69,18 +69,18 @@ reject unsupported members and expressions with source-aware diagnostics.
 
 Booting an Application produces a separate runtime instance. That runtime owns lifecycle state,
 admission, execution scopes, infrastructure instances, readiness, draining, shutdown, and disposal.
-`Canopy.boot(Application)` produces that runtime and resolves only at readiness; the declaration
+`Doxa.boot(Application)` produces that runtime and resolves only at readiness; the declaration
 object and mutable runtime are never the same object.
 
 ## Declaration-only Feature classes
 
-A Feature class is compile-time application metadata. Canopy's compiler reads its supported
+A Feature class is compile-time application metadata. Doxa's compiler reads its supported
 declarative fields, but neither the compiler nor runtime constructs the Feature or executes
 application code to discover its contents.
 
 Feature classes must not define constructors, `register()` methods, `boot()` methods, dynamic
 registration, environment-dependent branching, or arbitrary executable configuration. A Feature body
-is limited to the declarative fields and binding expressions recognized by the Canopy compiler.
+is limited to the declarative fields and binding expressions recognized by the Doxa compiler.
 
 Startup, readiness, draining, shutdown, and disposal behavior belongs to explicitly declared
 provider or adapter classes. Their dependencies and lifecycle phases must appear in the manifest.
@@ -89,12 +89,12 @@ application graph during boot.
 
 ## Feature boundaries
 
-Features are ownership and composition boundaries, not Nest-style module namespaces. Canopy will not
+Features are ownership and composition boundaries, not Nest-style module namespaces. Doxa will not
 create chains of module imports and exports that indirectly control provider visibility.
 
 Injectable classes and tokens remain private to their Feature by default. A Feature exposes an
 intentional cross-Feature API through `provides`, which accepts concrete classes, abstract-class
-ports, and typed Canopy tokens equally:
+ports, and typed Doxa tokens equally:
 
 ```ts
 export class AccountsFeature extends Feature {
@@ -151,29 +151,29 @@ infrastructure implementations may be selected through explicit, statically repr
 contracts, but the existence and identity of application capabilities must not change through hidden
 runtime branching.
 
-Unsupported or ambiguous expressions receive source-aware diagnostics. Canopy must not fall back to
+Unsupported or ambiguous expressions receive source-aware diagnostics. Doxa must not fall back to
 boot-time reflection, filesystem scanning, opportunistic registration, or a partial best-effort
 manifest.
 
 ## Semantic TypeScript compilation
 
 Canonical artifact emission requires a semantically valid strict TypeScript application project. The
-Canopy compiler uses TypeScript's Program, symbol graph, module resolution, and type checker to
+Doxa compiler uses TypeScript's Program, symbol graph, module resolution, and type checker to
 resolve class identity, inheritance, constructor dependencies, abstract ports, capability
 interfaces, listener handler parameters, Feature role arrays, generic public types, and package
 ownership.
 
 Regexes, filename inference, syntax-only scanning, and textual type-name matching are not valid
 sources of manifest semantics. Syntax errors, unresolved symbols, and semantic TypeScript errors in
-the application project prevent canonical artifact emission. Canopy diagnostics are reported
-alongside TypeScript diagnostics with source locations and remediation.
+the application project prevent canonical artifact emission. Doxa diagnostics are reported alongside
+TypeScript diagnostics with source locations and remediation.
 
 Watch mode may retain the last known-good artifacts for inspection, but it must mark them stale and
 must not boot them as though they describe the current source. TypeScript project references may
 isolate unrelated workspace packages from the application compilation while preserving complete
 semantic checking of the application graph.
 
-The TypeScript version is pinned by the Canopy release compatibility contract. Compiler behavior is
+The TypeScript version is pinned by the Doxa release compatibility contract. Compiler behavior is
 not supported against arbitrary application-selected TypeScript versions.
 
 ## One application manifest
@@ -193,8 +193,8 @@ must be versioned and must include, where applicable:
 - Sensitivity, mutability, and diagnostic metadata.
 
 The runtime consumes this manifest; it does not reconstruct a second application graph. The CLI,
-tests, diagnostics, and Cultivate may expose different views, but their facts must derive from the
-same representation.
+tests, diagnostics, and Gnosis may expose different views, but their facts must derive from the same
+representation.
 
 ## Immutable application graph
 
@@ -247,13 +247,13 @@ computed ID expressions before emitting the manifest.
 The compiler emits two artifacts representing one logical application graph:
 
 ```text
-.canopy/
+.doxa/
 ├── manifest.json
 └── registry.mjs
 ```
 
 `manifest.json` is the canonical semantic manifest. It must be deterministic, versioned,
-serializable, and safe for the CLI, diagnostics, tests, and Cultivate to read without importing or
+serializable, and safe for the CLI, diagnostics, tests, and Gnosis to read without importing or
 executing application code.
 
 `registry.mjs` is a constructor-only linkage table. It may import compiled application classes and
@@ -268,8 +268,8 @@ new application code.
 The registry is not a second manifest. All behavior represented through its constructors must be
 authorized by a corresponding canonical manifest entry.
 
-The `.canopy/` directory is reproducible build output and is not committed to source control.
-Development watch mode, builds, tests, packaging, CLI inspection, and Cultivate generate or require
+The `.doxa/` directory is reproducible build output and is not committed to source control.
+Development watch mode, builds, tests, packaging, CLI inspection, and Gnosis generate or require
 current artifacts. Production artifacts include the generated files required by runtime boot.
 
 Developers must never hand-edit the manifest or registry. CI verifies deterministic generation.
@@ -278,15 +278,15 @@ generated application graph does not.
 
 ## Compilation ownership
 
-Canopy tooling owns compilation before runtime:
+Doxa tooling owns compilation before runtime:
 
-- `canopy dev` performs an initial compile and watches application source.
-- `canopy build` compiles before packaging.
-- `canopy test` compiles the test application before execution.
-- `canopy inspect:*` and Cultivate compile or verify artifact freshness before inspection.
+- `doxa dev` performs an initial compile and watches application source.
+- `doxa build` compiles before packaging.
+- `doxa test` compiles the test application before execution.
+- `doxa inspect:*` and Gnosis compile or verify artifact freshness before inspection.
 - CI regenerates artifacts and verifies deterministic output.
 
-`Canopy.boot()` consumes and validates existing artifacts only. It never imports the compiler,
+`Doxa.boot()` consumes and validates existing artifacts only. It never imports the compiler,
 analyzes TypeScript, repairs stale output, or emits a manifest. Production runtime images do not
 require compiler or TypeScript packages.
 
@@ -296,7 +296,7 @@ pipeline.
 
 ## Manifest format compatibility
 
-The manifest format is versioned independently from Canopy package releases. Every manifest must
+The manifest format is versioned independently from Doxa package releases. Every manifest must
 identify at least:
 
 ```json
@@ -313,7 +313,7 @@ identify at least:
 adapter, and application package versions provide provenance but do not substitute for format
 compatibility.
 
-Runtime, CLI, tests, diagnostics, and Cultivate must explicitly declare the format versions they
+Runtime, CLI, tests, diagnostics, and Gnosis must explicitly declare the format versions they
 support and reject unknown newer or otherwise incompatible manifests. Consumers must not guess,
 partially interpret, or silently downgrade an unsupported application graph.
 
@@ -369,12 +369,12 @@ The MVP must prove:
     identity rather than textual names.
 12. Moving or renaming a declaration preserves its canonical manifest ID while updating source
     provenance.
-13. Runtime boot, CLI inspection, tests, diagnostics, and Cultivate-compatible inspection report
-    facts from the same versioned manifest.
+13. Runtime boot, CLI inspection, tests, diagnostics, and Gnosis-compatible inspection report facts
+    from the same versioned manifest.
 14. Runtime attempts to register or rebind graph capabilities fail with an immutable-graph
     diagnostic.
 15. Development reload produces a newly compiled graph and replacement runtime.
-16. CLI and Cultivate-compatible inspection can read `manifest.json` without importing application
+16. CLI and Gnosis-compatible inspection can read `manifest.json` without importing application
     code.
 17. Repeated compilation from identical source produces byte-stable gitignored artifacts.
 18. Production runtime boots without compiler or TypeScript packages installed.
@@ -398,8 +398,8 @@ The MVP must prove:
 
 ## References
 
-- [Canopy architecture](../architecture.md#the-application-manifest)
-- [Canopy specification roadmap](../specifications.md#foundation)
+- [Doxa architecture](../architecture.md#the-application-manifest)
+- [Doxa specification roadmap](../specifications.md#foundation)
 - [Class-first OOP and container decision](0011-class-first-oop-container.md)
 - [Path-independent structure and autowired services](0016-path-independent-structure-autowired-services.md)
-- [Cultivate decision](0013-first-party-ai-engineering-mcp.md)
+- [Gnosis decision](0013-first-party-ai-engineering-mcp.md)

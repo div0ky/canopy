@@ -80,13 +80,13 @@ export interface ResolvedHttpAuthentication {
 }
 
 export interface AuthStorageDescription {
-  readonly kind: 'canopy-owned' | 'mapped' | 'custom'
-  readonly identities?: { readonly table: string; readonly ownership: 'canopy' | 'external' }
-  readonly passwords?: { readonly table: string; readonly ownership: 'canopy' | 'external' }
-  readonly sessions?: { readonly table: string; readonly ownership: 'canopy' | 'external' }
-  readonly accessTokens?: { readonly table: string; readonly ownership: 'canopy' | 'external' }
-  readonly challenges?: { readonly table: string; readonly ownership: 'canopy' | 'external' }
-  readonly audit?: { readonly table: string; readonly ownership: 'canopy' | 'external' }
+  readonly kind: 'doxa-owned' | 'mapped' | 'custom'
+  readonly identities?: { readonly table: string; readonly ownership: 'doxa' | 'external' }
+  readonly passwords?: { readonly table: string; readonly ownership: 'doxa' | 'external' }
+  readonly sessions?: { readonly table: string; readonly ownership: 'doxa' | 'external' }
+  readonly accessTokens?: { readonly table: string; readonly ownership: 'doxa' | 'external' }
+  readonly challenges?: { readonly table: string; readonly ownership: 'doxa' | 'external' }
+  readonly audit?: { readonly table: string; readonly ownership: 'doxa' | 'external' }
 }
 
 export class AuthenticationError extends Error {
@@ -114,7 +114,7 @@ export class AuthenticationRateLimitError extends Error {
   }
 }
 
-/** Canopy-owned identity and browser-session boundary. */
+/** Doxa-owned identity and browser-session boundary. */
 export abstract class Auth {
   storage(): AuthStorageDescription {
     return { kind: 'custom' }

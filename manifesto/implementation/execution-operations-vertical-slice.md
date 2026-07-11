@@ -7,7 +7,7 @@
 
 ## Outcome
 
-The second Canopy implementation proves this path end to end:
+The second Doxa implementation proves this path end to end:
 
 ```text
 entry adapter admits immutable execution context
@@ -130,7 +130,7 @@ The compiler now:
 
 - Discovers all action, query, and provider roots before resolving any dependency, so array order
   has no semantic effect.
-- Verifies Canopy role identity by TypeScript symbol provenance rather than class-name matching.
+- Verifies Doxa role identity by TypeScript symbol provenance rather than class-name matching.
 - Requires concrete role classes and one `handle(input)` method.
 - Rejects operation classes injected directly as dependencies and directs callers to the buses.
 - Emits action/query transaction semantics and dependency graphs in the canonical manifest.

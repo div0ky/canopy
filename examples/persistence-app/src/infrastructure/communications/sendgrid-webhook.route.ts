@@ -1,5 +1,5 @@
-import { ActionBus, HttpError, type HttpRequest, Route } from '@canopy/core'
-import { normalizeSendGridEvents, verifySendGridWebhook } from '@canopy/sendgrid'
+import { ActionBus, HttpError, type HttpRequest, Route } from '@doxajs/core'
+import { normalizeSendGridEvents, verifySendGridWebhook } from '@doxajs/sendgrid'
 
 import { CommunicationsConfig } from './communications-config.js'
 import { RecordDeliveryUpdates } from './record-delivery-updates.js'

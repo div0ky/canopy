@@ -1,4 +1,4 @@
-import { Model, type ModelAttributes } from '@canopy/core'
+import { Model, type ModelAttributes } from '@doxajs/core'
 
 export interface LegacyNoteAttributes extends ModelAttributes {
   id: string

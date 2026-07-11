@@ -1,6 +1,6 @@
 import path from 'node:path'
 
-import { compileApplication } from '@canopy/compiler'
+import { compileApplication } from '@doxajs/compiler'
 
 const workspace = process.cwd()
 const applicationRoot = path.join(workspace, 'examples/persistence-app')
@@ -10,5 +10,5 @@ await compileApplication({
   applicationFile: path.join(applicationRoot, 'src/application.ts'),
   sourceRoot: path.join(applicationRoot, 'src'),
   outputRoot: path.join(applicationRoot, 'dist'),
-  artifactsDirectory: path.join(workspace, '.canopy/dev'),
+  artifactsDirectory: path.join(workspace, '.doxa/dev'),
 })

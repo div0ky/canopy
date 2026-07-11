@@ -16,12 +16,12 @@ import {
   type ScheduleDefinition,
   type Starts,
   type Stops,
-} from '@canopy/core'
+} from '@doxajs/core'
 
-const QUEUE_NAME = 'canopy-jobs'
-const SERIAL_SCHEDULE_QUEUE = 'canopy-schedules-serial'
-const PARALLEL_SCHEDULE_QUEUE = 'canopy-schedules-parallel'
-const OUTBOX_MESSAGE_TYPE = 'canopy.queue'
+const QUEUE_NAME = 'doxa-jobs'
+const SERIAL_SCHEDULE_QUEUE = 'doxa-schedules-serial'
+const PARALLEL_SCHEDULE_QUEUE = 'doxa-schedules-parallel'
+const OUTBOX_MESSAGE_TYPE = 'doxa.queue'
 
 export interface PgBossQueueOptions {
   readonly connectionString: string
@@ -52,28 +52,28 @@ export class PgBossQueueManager extends QueueManager implements Starts, Drains, 
   }
 
   bind(handler: QueueDeliveryHandler): void {
-    if (this.#handler) throw new Error('The Canopy queue delivery handler is already bound.')
-    if (this.#started) throw new Error('The Canopy queue handler must be bound before startup.')
+    if (this.#handler) throw new Error('The Doxa queue delivery handler is already bound.')
+    if (this.#started) throw new Error('The Doxa queue handler must be bound before startup.')
     this.#handler = handler
   }
 
   override selectRoles(roles: QueueRuntimeRoles): void {
-    if (this.#started) throw new Error('Canopy queue roles must be selected before startup.')
+    if (this.#started) throw new Error('Doxa queue roles must be selected before startup.')
     this.#roles = { ...roles }
   }
 
   reconcileSchedules(schedules: readonly ScheduleDefinition[]): void {
-    if (this.#started) throw new Error('Canopy schedules must be reconciled before queue startup.')
+    if (this.#started) throw new Error('Doxa schedules must be reconciled before queue startup.')
     this.#schedules = Object.freeze([...schedules])
   }
 
   async start(context: LifecycleContext): Promise<void> {
     if (context.signal.aborted) throw context.signal.reason
     const handler = this.#handler
-    if (!handler) throw new Error('The Canopy runtime did not bind a queue delivery handler.')
+    if (!handler) throw new Error('The Doxa runtime did not bind a queue delivery handler.')
     const boss = new PgBoss({
       connectionString: this.options.connectionString,
-      application_name: this.options.applicationName ?? 'canopy-queue',
+      application_name: this.options.applicationName ?? 'doxa-queue',
       createSchema: false,
       migrate: false,
       schedule: this.#roles.scheduler,
@@ -83,7 +83,7 @@ export class PgBossQueueManager extends QueueManager implements Starts, Drains, 
     })
     const pool = new Pool({
       connectionString: this.options.connectionString,
-      application_name: `${this.options.applicationName ?? 'canopy-queue'}-outbox`,
+      application_name: `${this.options.applicationName ?? 'doxa-queue'}-outbox`,
     })
     try {
       await pool.query('select 1')
@@ -151,7 +151,7 @@ export class PgBossQueueManager extends QueueManager implements Starts, Drains, 
     const id = await boss.send(QUEUE_NAME, envelope, sendOptions(envelope))
     if (!id) {
       const [existing] = await boss.findJobs<QueueEnvelope>(QUEUE_NAME, { id: envelope.id })
-      if (!existing) throw new Error(`pg-boss rejected Canopy job ${envelope.id}.`)
+      if (!existing) throw new Error(`pg-boss rejected Doxa job ${envelope.id}.`)
     }
     return envelope.id
   }
@@ -262,12 +262,12 @@ export class PgBossQueueManager extends QueueManager implements Starts, Drains, 
     const pool = this.#pool!
     for (const schedule of this.#schedules) {
       await pool.query(
-        `INSERT INTO canopy_schedule_controls (schedule_id, enabled) VALUES ($1, true) ON CONFLICT (schedule_id) DO NOTHING`,
+        `INSERT INTO doxa_schedule_controls (schedule_id, enabled) VALUES ($1, true) ON CONFLICT (schedule_id) DO NOTHING`,
         [schedule.id],
       )
     }
     const result = await pool.query<{ schedule_id: string }>(
-      'SELECT schedule_id FROM canopy_schedule_controls WHERE enabled = true',
+      'SELECT schedule_id FROM doxa_schedule_controls WHERE enabled = true',
     )
     this.#enabledSchedules = new Set(result.rows.map((row) => row.schedule_id))
   }
@@ -317,7 +317,7 @@ export class PgBossQueueManager extends QueueManager implements Starts, Drains, 
       }>(
         `
         SELECT id, payload
-        FROM canopy_outbox_messages
+        FROM doxa_outbox_messages
         WHERE status = 'pending'
           AND message_type = $1
           AND available_at <= now()
@@ -346,7 +346,7 @@ export class PgBossQueueManager extends QueueManager implements Starts, Drains, 
         }
         await client.query(
           `
-          UPDATE canopy_outbox_messages
+          UPDATE doxa_outbox_messages
           SET status = 'dispatched'
           WHERE id = $1
         `,
@@ -376,7 +376,7 @@ export class PgBossQueueManager extends QueueManager implements Starts, Drains, 
   }
 
   #requireBoss(): PgBoss {
-    if (!this.#boss) throw new Error('The Canopy pg-boss queue manager is not started.')
+    if (!this.#boss) throw new Error('The Doxa pg-boss queue manager is not started.')
     return this.#boss
   }
 }
@@ -389,7 +389,7 @@ export async function installQueueSchema(connectionString: string): Promise<void
   try {
     await pool.query(
       await readFile(
-        new URL('../migrations/0001_canopy_schedule_controls.sql', import.meta.url),
+        new URL('../migrations/0001_doxa_schedule_controls.sql', import.meta.url),
         'utf8',
       ),
     )
@@ -479,14 +479,14 @@ export async function listQueueJobs(
 export async function retryQueueJob(connectionString: string, id: string): Promise<void> {
   const job = await inspectQueueJob(connectionString, id)
   if (!job || job.state !== 'failed')
-    throw new Error(`Only a failed Canopy queue job may be retried: ${id}.`)
+    throw new Error(`Only a failed Doxa queue job may be retried: ${id}.`)
   await queueCommand(connectionString, (boss) => boss.retry(QUEUE_NAME, id))
 }
 
 export async function cancelQueueJob(connectionString: string, id: string): Promise<void> {
   const job = await inspectQueueJob(connectionString, id)
   if (!job || !['created', 'retry', 'active'].includes(job.state))
-    throw new Error(`Only a pending or active Canopy queue job may be cancelled: ${id}.`)
+    throw new Error(`Only a pending or active Doxa queue job may be cancelled: ${id}.`)
   await queueCommand(connectionString, (boss) => boss.cancel(QUEUE_NAME, id))
 }
 
@@ -539,12 +539,12 @@ function scheduleEnvelope(id: string, schedule: ScheduleDefinition): QueueEnvelo
       sourceExecutionId: id,
       correlationId: id,
       causationId: schedule.id,
-      actor: { kind: 'system', id: 'canopy:scheduler' },
-      initiator: { kind: 'system', id: 'canopy:scheduler' },
+      actor: { kind: 'system', id: 'doxa:scheduler' },
+      initiator: { kind: 'system', id: 'doxa:scheduler' },
       delegation: [],
       authentication: {
         state: 'authenticated',
-        identityId: 'canopy:scheduler',
+        identityId: 'doxa:scheduler',
         method: 'schedule',
       },
       trace: {},

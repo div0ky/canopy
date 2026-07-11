@@ -1,4 +1,4 @@
-import { Feature } from '@canopy/core'
+import { Feature } from '@doxajs/core'
 
 import { CaptureCounter } from './actions/capture-counter.js'
 import { CreateCounter } from './actions/create-counter.js'

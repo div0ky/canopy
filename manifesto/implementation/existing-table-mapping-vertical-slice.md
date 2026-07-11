@@ -8,10 +8,10 @@
 
 ## Outcome
 
-Canopy can adopt an existing PostgreSQL schema without replacing authoritative domain or user
-tables. The ordinary experience stays class-first and Laravel-like: a model declares physical
-metadata, then uses the same `find()`, mutation, `save()`, `refresh()`, and `delete()` APIs as any
-other Canopy model.
+Doxa can adopt an existing PostgreSQL schema without replacing authoritative domain or user tables.
+The ordinary experience stays class-first and Laravel-like: a model declares physical metadata, then
+uses the same `find()`, mutation, `save()`, `refresh()`, and `delete()` APIs as any other Doxa
+model.
 
 ```ts
 export class Customer extends Model<CustomerAttributes> {
@@ -36,7 +36,7 @@ canonical manifest; folders and runtime reflection remain irrelevant.
 The PostgreSQL adapter quotes every compiler-validated identifier and retains the normal model
 contract: execution identity, hydration, dirty tracking, observers, journal/outbox staging,
 transactional commit, and optimistic-concurrency failures. It never copies mapped state into
-`canopy_entity_states`.
+`doxa_entity_states`.
 
 ## Authentication mapping
 
@@ -68,20 +68,20 @@ new PostgresAuth({
 
 Identity IDs are opaque text rather than assumed UUIDs. Identity and password data may share one
 external table or use separate external tables. Browser sessions, bearer tokens, challenges, abuse
-controls, and audit records remain in Canopy-owned tables, preserving secure framework semantics
+controls, and audit records remain in Doxa-owned tables, preserving secure framework semantics
 without forcing an established application to replace its users table.
 
 Mapped columns are checked during lifecycle readiness. Identifiers are validated before any SQL is
 issued, missing columns prevent readiness, unknown password record formats fail closed, and
-registration across separate identity and password tables uses one PostgreSQL transaction. Canopy
+registration across separate identity and password tables uses one PostgreSQL transaction. Doxa
 never migrates the external tables implicitly.
 
 ## Inspection and AI knowledge
 
-`arbor model:list` reports each model's physical table, ownership, key, and concurrency source.
-`arbor auth:storage` reports which auth records are externally mapped and which remain Canopy-owned.
-The model storage contract is also emitted in `.canopy/cultivate.json`, so Cultivate can make safe
-changes without inferring persistence from filenames or application code.
+`doxa model:list` reports each model's physical table, ownership, key, and concurrency source.
+`doxa auth:storage` reports which auth records are externally mapped and which remain Doxa-owned.
+The model storage contract is also emitted in `.doxa/gnosis.json`, so Gnosis can make safe changes
+without inferring persistence from filenames or application code.
 
 ## Executable evidence
 
@@ -94,7 +94,7 @@ The PostgreSQL conformance suite proves:
    audit work with an arbitrary external text identity ID.
 5. Missing mapped columns fail before readiness.
 6. The first-party memory transaction manager preserves the logical mapped-model contract.
-7. Arbor and Cultivate expose storage ownership and mapping metadata.
+7. Praxis and Gnosis expose storage ownership and mapping metadata.
 
 Advanced multi-record model mappers, legacy password-hasher adapters, deeper database type and
 uniqueness diagnostics, and first-party permission storage remain explicit future work.

@@ -6,7 +6,7 @@
 
 ## Outcome
 
-The first Canopy implementation proves this path end to end:
+The first Doxa implementation proves this path end to end:
 
 ```text
 declaration-only Application and Features
@@ -19,8 +19,8 @@ declaration-only Application and Features
   → reverse-ordered, idempotent shutdown
 ```
 
-This is a foundational proof, not the Canopy MVP. HTTP, execution scopes, actions, queries,
-persistence, events, queues, scheduling, auth, observability, the CLI, and Cultivate remain to be
+This is a foundational proof, not the Doxa MVP. HTTP, execution scopes, actions, queries,
+persistence, events, queues, scheduling, auth, observability, the CLI, and Gnosis remain to be
 implemented.
 
 ## Developer-facing proof
@@ -34,7 +34,7 @@ export class OperationsFeature extends Feature {
   providers = [DatabaseConnection, Worker]
 }
 
-export class Application extends CanopyApplication {
+export class Application extends DoxaApplication {
   id = 'reference-app'
   configs = [AppConfig]
   features = [OperationsFeature]
@@ -54,7 +54,7 @@ export class DatabaseConnection {
 }
 ```
 
-Canopy derives `APP_ENVIRONMENT` and `APP_PORT`, validates values before singleton construction,
+Doxa derives `APP_ENVIRONMENT` and `APP_PORT`, validates values before singleton construction,
 materializes the configuration without executing its field initializers, and injects a frozen
 instance.
 
@@ -74,8 +74,8 @@ The compiler:
 - Emits deterministic JSON semantics separately from constructor linkage.
 
 The implementation is pinned to TypeScript 6.0.2. TypeScript 7 exposes its replacement native
-compiler API through an explicitly unstable entry point; Canopy will migrate only through a
-deliberate compatibility release and conformance pass.
+compiler API through an explicitly unstable entry point; Doxa will migrate only through a deliberate
+compatibility release and conformance pass.
 
 ## Runtime proof
 
@@ -84,7 +84,7 @@ The runtime:
 - Reads generated artifacts and never imports the compiler or analyzes application source.
 - Fails closed on unsupported formats, stale hashes, and registry ID mismatches.
 - Recomputes the canonical semantic manifest hash rather than trusting declared hash fields.
-- Verifies that `Canopy.boot(Application)` receives the exact declaration linked by the registry.
+- Verifies that `Doxa.boot(Application)` receives the exact declaration linked by the registry.
 - Resolves configuration from overrides, environment, an exact `.env` path, then defaults.
 - Aggregates configuration failures before constructing singleton services.
 - Constructs dependencies before dependents and invokes lifecycle startup in that order.

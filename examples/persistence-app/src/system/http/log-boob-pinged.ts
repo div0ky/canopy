@@ -1,4 +1,4 @@
-import { CurrentExecution, Listener, type ShouldHandleEventsAfterCommit } from '@canopy/core'
+import { CurrentExecution, Listener, type ShouldHandleEventsAfterCommit } from '@doxajs/core'
 import type { BoobPinged } from './boob.event.js'
 
 export class BoobPingDoThingListener

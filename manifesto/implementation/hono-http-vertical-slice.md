@@ -7,12 +7,12 @@
 
 ## Outcome
 
-The sixth Canopy implementation proves a real HTTP request through the complete implemented stack:
+The sixth Doxa implementation proves a real HTTP request through the complete implemented stack:
 
 ```text
 Node HTTP request
   → private Hono router
-  → declared Canopy Route
+  → declared Doxa Route
   → anonymous actor-aware execution context
   → Standard Schema request validation
   → transactional ActionBus dispatch
@@ -22,7 +22,7 @@ Node HTTP request
 ```
 
 Hono 4.12.29 and `@hono/node-server` 2.0.8 are pinned implementation engines. Application code
-imports only `@canopy/core`; Hono contexts, middleware types, validators, exceptions, and route
+imports only `@doxajs/core`; Hono contexts, middleware types, validators, exceptions, and route
 builders do not enter the Feature, route, action, model, event, or listener source.
 
 ## Authoring experience
@@ -49,7 +49,7 @@ export class IncrementCounterRoute extends Route {
 ```
 
 The Feature declares `routes = [IncrementCounterRoute]`. Folder names remain irrelevant. Routes
-receive scoped dependencies through `this.inject()` and normally return only their payload. Canopy
+receive scoped dependencies through `this.inject()` and normally return only their payload. Doxa
 wraps every JSON-compatible value in the canonical `{ ok: true, data }` envelope. `undefined`
 produces a 204; an explicit `Response` is the visible escape hatch for streams, files, redirects,
 webhooks, or unusual protocol behavior.
@@ -64,11 +64,11 @@ The semantic compiler verifies each declared route's concrete role, stable ID, H
 path, single `handle(request)` method, dependency graph, and lifecycle restrictions. It rejects
 duplicate method/path pairs before boot.
 
-The generated manifest is the only route table consumed by `@canopy/http-hono`. The adapter
+The generated manifest is the only route table consumed by `@doxajs/http-hono`. The adapter
 registers those facts with Hono and calls back into the runtime by stable route ID. It never scans
 application files or reconstructs ownership.
 
-The transport-neutral `HttpEngine` contract lives in `@canopy/core`:
+The transport-neutral `HttpEngine` contract lives in `@doxajs/core`:
 
 ```ts
 interface HttpEngine {
@@ -78,12 +78,12 @@ interface HttpEngine {
 
 `HonoHttpEngine` implements that boundary for direct/serverless fetch usage. `HonoHttpHost` binds a
 real Node server, exposes its address, stops admission by closing the listener, waits for active
-connections, then shuts down the Canopy runtime. Shutdown is idempotent. It installs no
-process-global signal handlers.
+connections, then shuts down the Doxa runtime. Shutdown is idempotent. It installs no process-global
+signal handlers.
 
 ## Context and errors
 
-Each matched request creates one Canopy execution scope. In this original proof the HTTP adapter
+Each matched request creates one Doxa execution scope. In this original proof the HTTP adapter
 established an anonymous actor and never trusted identity headers. The later
 [email and password authentication vertical slice](email-password-auth-vertical-slice.md) now asks
 the runtime to resolve a first-party session before admission. The request signal participates in

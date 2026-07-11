@@ -1,4 +1,4 @@
-import type { HttpRequest } from '@canopy/core'
+import type { HttpRequest } from '@doxajs/core'
 import { z } from 'zod'
 
 const Credentials = z.object({

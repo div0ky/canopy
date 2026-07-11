@@ -3,9 +3,9 @@ import { createHmac, generateKeyPairSync, randomUUID, sign } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import { compileApplication } from '@canopy/compiler'
-import { runArbor } from '@canopy/arbor'
-import { installAuthSchema, PostgresAuth } from '@canopy/auth-postgres'
+import { compileApplication } from '@doxajs/compiler'
+import { runPraxis } from '@doxajs/praxis'
+import { installAuthSchema, PostgresAuth } from '@doxajs/auth-postgres'
 import {
   AfterCommitError,
   AuthorizationError,
@@ -21,22 +21,17 @@ import {
   StaleUnitOfWorkError,
   StaleModelError,
   type UnitOfWork,
-} from '@canopy/core'
+} from '@doxajs/core'
 import {
   installPersistenceSchema,
   installCacheSchema,
   installCommunicationsSchema,
   PostgresTransactionManager,
-} from '@canopy/postgres-drizzle'
-import { clearQueueJobs, inspectQueueJob, installQueueSchema } from '@canopy/queue-pg-boss'
-import { HonoHttpEngine, HonoHttpHost } from '@canopy/http-hono'
-import { Canopy, type CanopyRuntime } from '@canopy/runtime'
-import {
-  installUndergrowthSchema,
-  listenUndergrowth,
-  pruneUndergrowth,
-  UndergrowthStore,
-} from '@canopy/undergrowth'
+} from '@doxajs/postgres-drizzle'
+import { clearQueueJobs, inspectQueueJob, installQueueSchema } from '@doxajs/queue-pg-boss'
+import { HonoHttpEngine, HonoHttpHost } from '@doxajs/http-hono'
+import { Doxa, type DoxaRuntime } from '@doxajs/runtime'
+import { installTheoriaSchema, listenTheoria, pruneTheoria, TheoriaStore } from '@doxajs/theoria'
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
 import { Pool } from 'pg'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -86,7 +81,7 @@ import {
   resetTelemetryRecords,
   telemetryRecords,
 } from '../examples/persistence-app/dist/infrastructure/telemetry/reference-telemetry.js'
-import { registerCompilationAndUndergrowthTests } from './persistence/compilation-and-undergrowth.js'
+import { registerCompilationAndTheoriaTests } from './persistence/compilation-and-theoria.js'
 
 const workspace = path.resolve(import.meta.dirname, '..')
 const { privateKey: sendGridPrivateKey, publicKey: sendGridPublicKey } = generateKeyPairSync('ec', {
@@ -97,7 +92,7 @@ const { privateKey: sendGridPrivateKey, publicKey: sendGridPublicKey } = generat
 const twilioAuthToken = 'test-twilio-auth-token'
 const persistenceApplication = path.join(workspace, 'examples/persistence-app')
 const temporaryDirectories: string[] = []
-const runtimes: CanopyRuntime[] = []
+const runtimes: DoxaRuntime[] = []
 const hosts: HonoHttpHost[] = []
 let container: StartedPostgreSqlContainer
 let connectionString: string
@@ -113,7 +108,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     await installCommunicationsSchema(connectionString)
     await installAuthSchema(connectionString)
     await installQueueSchema(connectionString)
-    await installUndergrowthSchema(connectionString)
+    await installTheoriaSchema(connectionString)
     pool = new Pool({ connectionString })
     await pool.query(`
       CREATE TABLE legacy_customers (
@@ -148,23 +143,23 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     await clearQueueJobs(connectionString)
     await pool.query(`
       TRUNCATE
-        canopy_auth_audit_events,
-        canopy_auth_rate_limits,
-        canopy_auth_challenges,
-        canopy_auth_access_tokens,
-        canopy_auth_sessions,
-        canopy_auth_passwords,
-        canopy_auth_identities,
-        canopy_outbox_messages,
-        canopy_journal_entries,
-        canopy_entity_states
-        , canopy_cache_entries,
-        canopy_delivery_events,
-        canopy_delivery_messages
+        doxa_auth_audit_events,
+        doxa_auth_rate_limits,
+        doxa_auth_challenges,
+        doxa_auth_access_tokens,
+        doxa_auth_sessions,
+        doxa_auth_passwords,
+        doxa_auth_identities,
+        doxa_outbox_messages,
+        doxa_journal_entries,
+        doxa_entity_states
+        , doxa_cache_entries,
+        doxa_delivery_events,
+        doxa_delivery_messages
         , legacy_customers
         , legacy_auth_users
         , legacy_notes
-        , canopy_undergrowth_observations
+        , doxa_theoria_observations
     `)
   })
 
@@ -186,7 +181,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     await container?.stop()
   })
 
-  registerCompilationAndUndergrowthTests({
+  registerCompilationAndTheoriaTests({
     pool: () => pool,
     connectionString: () => connectionString,
     sendGridPublicKey,
@@ -235,16 +230,16 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const entity = await pool.query<{
       state: { value: number }
       version: number
-    }>(`SELECT state, version FROM canopy_entity_states WHERE entity_id = 'counter-1'`)
+    }>(`SELECT state, version FROM doxa_entity_states WHERE entity_id = 'counter-1'`)
     const journal = await pool.query<{
       fact_type: string
       context: Record<string, unknown>
-    }>('SELECT fact_type, context FROM canopy_journal_entries')
+    }>('SELECT fact_type, context FROM doxa_journal_entries')
     const outbox = await pool.query<{
       message_type: string
       status: string
       context: Record<string, unknown>
-    }>('SELECT message_type, status, context FROM canopy_outbox_messages')
+    }>('SELECT message_type, status, context FROM doxa_outbox_messages')
 
     expect(entity.rows).toEqual([{ state: { id: 'counter-1', value: 2 }, version: 1 }])
     expect(journal.rows).toEqual([expect.objectContaining({ fact_type: 'counter.incremented' })])
@@ -395,7 +390,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     await waitFor(async () => {
       const rows = await pool.query<{ state: string }>(
         `
-        SELECT state FROM canopy_delivery_messages WHERE id = ANY($1::uuid[]) ORDER BY channel
+        SELECT state FROM doxa_delivery_messages WHERE id = ANY($1::uuid[]) ORDER BY channel
       `,
         [[result.mailId, result.smsId]],
       )
@@ -407,7 +402,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       context: { actor: { kind: string }; correlationId: string }
     }>(
       `
-      SELECT channel, state, context FROM canopy_delivery_messages WHERE id = ANY($1::uuid[]) ORDER BY channel
+      SELECT channel, state, context FROM doxa_delivery_messages WHERE id = ANY($1::uuid[]) ORDER BY channel
     `,
       [[result.mailId, result.smsId]],
     )
@@ -430,9 +425,9 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     await expect(runAction(runtime, QueueNotifications, { failAfterQueue: true })).rejects.toThrow(
       'failed after queuing communications',
     )
-    expect((await pool.query('SELECT 1 FROM canopy_delivery_messages')).rowCount).toBe(0)
+    expect((await pool.query('SELECT 1 FROM doxa_delivery_messages')).rowCount).toBe(0)
     expect(
-      (await pool.query(`SELECT 1 FROM canopy_outbox_messages WHERE message_type = 'canopy.queue'`))
+      (await pool.query(`SELECT 1 FROM doxa_outbox_messages WHERE message_type = 'doxa.queue'`))
         .rowCount,
     ).toBe(0)
   })
@@ -444,7 +439,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       async () =>
         (
           await pool.query(
-            `SELECT 1 FROM canopy_delivery_messages WHERE id = $1 AND state = 'accepted'`,
+            `SELECT 1 FROM doxa_delivery_messages WHERE id = $1 AND state = 'accepted'`,
             [queued.mailId],
           )
         ).rowCount === 1,
@@ -457,7 +452,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         event: 'delivered',
         sg_event_id: 'sendgrid-event-1',
         sg_message_id: 'sendgrid-message-1',
-        canopy_message_id: queued.mailId,
+        doxa_message_id: queued.mailId,
       },
     ])
     const mailSignature = sign(
@@ -466,7 +461,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       sendGridPrivateKey,
     ).toString('base64')
     const sendGridResponse = await http.fetch(
-      new Request('http://canopy.test/webhooks/sendgrid', {
+      new Request('http://doxa.test/webhooks/sendgrid', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -478,7 +473,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     )
     expect(sendGridResponse.status).toBe(204)
 
-    const twilioUrl = `http://canopy.test/webhooks/twilio/sms?canopy_message_id=${queued.smsId}`
+    const twilioUrl = `http://doxa.test/webhooks/twilio/sms?doxa_message_id=${queued.smsId}`
     const form = { MessageSid: 'SM-delivery-1', MessageStatus: 'delivered' }
     const formBody = new URLSearchParams(form).toString()
     const twilioSignature = createHmac('sha1', twilioAuthToken)
@@ -503,7 +498,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(twilioResponse.status).toBe(204)
 
     const duplicate = await http.fetch(
-      new Request('http://canopy.test/webhooks/sendgrid', {
+      new Request('http://doxa.test/webhooks/sendgrid', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -516,7 +511,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(duplicate.status).toBe(204)
     const rows = await pool.query<{ id: string; state: string; provider_message_id: string }>(
       `
-      SELECT id, state, provider_message_id FROM canopy_delivery_messages
+      SELECT id, state, provider_message_id FROM doxa_delivery_messages
       WHERE id = ANY($1::uuid[]) ORDER BY channel
     `,
       [[queued.mailId, queued.smsId]],
@@ -526,12 +521,12 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       { id: queued.smsId, state: 'delivered', provider_message_id: 'SM-delivery-1' },
     ])
     expect(
-      (await pool.query(`SELECT 1 FROM canopy_delivery_events WHERE event_id = 'sendgrid-event-1'`))
+      (await pool.query(`SELECT 1 FROM doxa_delivery_events WHERE event_id = 'sendgrid-event-1'`))
         .rowCount,
     ).toBe(1)
 
     const rejected = await http.fetch(
-      new Request('http://canopy.test/webhooks/sendgrid', {
+      new Request('http://doxa.test/webhooks/sendgrid', {
         method: 'POST',
         headers: {
           'x-twilio-email-event-webhook-timestamp': timestamp,
@@ -543,26 +538,26 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(rejected.status).toBe(403)
   })
 
-  it('inspects and safely redrives failed communications through Arbor', async () => {
+  it('inspects and safely redrives failed communications through Praxis', async () => {
     const runtime = await bootPersistenceRuntime()
     const queued = await runAction(runtime, QueueNotifications, undefined)
     await waitFor(
       async () =>
         (
           await pool.query(
-            `SELECT 1 FROM canopy_delivery_messages WHERE id = $1 AND state = 'accepted'`,
+            `SELECT 1 FROM doxa_delivery_messages WHERE id = $1 AND state = 'accepted'`,
             [queued.mailId],
           )
         ).rowCount === 1,
     )
     await pool.query(
-      `UPDATE canopy_delivery_messages SET state = 'undelivered', failure_kind = 'transient', failure_code = 'test' WHERE id = $1`,
+      `UPDATE doxa_delivery_messages SET state = 'undelivered', failure_kind = 'transient', failure_code = 'test' WHERE id = $1`,
       [queued.mailId],
     )
     const output: string[] = []
     const errors: string[] = []
     expect(
-      await runArbor(['delivery:list', `--database=${connectionString}`], workspace, {
+      await runPraxis(['delivery:list', `--database=${connectionString}`], workspace, {
         out: (message) => output.push(message),
         error: (message) => errors.push(message),
       }),
@@ -571,7 +566,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       output.some((line) => line.includes(queued.mailId) && line.includes('undelivered')),
     ).toBe(true)
     expect(
-      await runArbor(
+      await runPraxis(
         ['delivery:retry', queued.mailId, `--database=${connectionString}`],
         workspace,
         {
@@ -584,14 +579,14 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       async () =>
         (
           await pool.query(
-            `SELECT 1 FROM canopy_delivery_messages WHERE id = $1 AND state = 'accepted'`,
+            `SELECT 1 FROM doxa_delivery_messages WHERE id = $1 AND state = 'accepted'`,
             [queued.mailId],
           )
         ).rowCount === 1,
     )
     expect(errors).toEqual([])
     expect(
-      await runArbor(
+      await runPraxis(
         ['delivery:retry', queued.mailId, `--database=${connectionString}`],
         workspace,
         {
@@ -604,43 +599,43 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
   })
 
   it('applies ordered framework and application migrations with status and drift protection', async () => {
-    await pool.query('DROP TABLE IF EXISTS canopy_migrations')
+    await pool.query('DROP TABLE IF EXISTS doxa_migrations')
     const root = await temporaryDirectory()
     await mkdir(path.join(root, 'migrations'))
-    const migration = path.join(root, 'migrations/20260710_create_arbor_proof.sql')
-    await writeFile(migration, 'CREATE TABLE arbor_migration_proof (id text PRIMARY KEY);\n')
+    const migration = path.join(root, 'migrations/20260710_create_praxis_proof.sql')
+    await writeFile(migration, 'CREATE TABLE praxis_migration_proof (id text PRIMARY KEY);\n')
     const output: string[] = []
     const errors: string[] = []
     const io = {
       out: (message: string) => output.push(message),
       error: (message: string) => errors.push(message),
     }
-    expect(await runArbor(['migrate', `--database=${connectionString}`], root, io)).toBe(0)
+    expect(await runPraxis(['migrate', `--database=${connectionString}`], root, io)).toBe(0)
     expect(
-      output.some((line) => line.includes('application/20260710_create_arbor_proof.sql')),
+      output.some((line) => line.includes('application/20260710_create_praxis_proof.sql')),
     ).toBe(true)
     output.length = 0
-    expect(await runArbor(['migrate:status', `--database=${connectionString}`], root, io)).toBe(0)
+    expect(await runPraxis(['migrate:status', `--database=${connectionString}`], root, io)).toBe(0)
     expect(
       output.some(
         (line) =>
-          line.includes('applied') && line.includes('application/20260710_create_arbor_proof.sql'),
+          line.includes('applied') && line.includes('application/20260710_create_praxis_proof.sql'),
       ),
     ).toBe(true)
-    await writeFile(migration, 'CREATE TABLE arbor_migration_proof (id uuid PRIMARY KEY);\n')
+    await writeFile(migration, 'CREATE TABLE praxis_migration_proof (id uuid PRIMARY KEY);\n')
     output.length = 0
-    expect(await runArbor(['migrate:status', `--database=${connectionString}`], root, io)).toBe(0)
+    expect(await runPraxis(['migrate:status', `--database=${connectionString}`], root, io)).toBe(0)
     expect(
       output.some(
         (line) =>
-          line.includes('drifted') && line.includes('application/20260710_create_arbor_proof.sql'),
+          line.includes('drifted') && line.includes('application/20260710_create_praxis_proof.sql'),
       ),
     ).toBe(true)
-    expect(await runArbor(['migrate', `--database=${connectionString}`], root, io)).toBe(1)
+    expect(await runPraxis(['migrate', `--database=${connectionString}`], root, io)).toBe(1)
     expect(errors.at(-1)).toContain('has changed; create a new migration instead')
   })
 
-  it('exposes model and auth storage ownership to Arbor and Cultivate', async () => {
+  it('exposes model and auth storage ownership to Praxis and Gnosis', async () => {
     const output: string[] = []
     const errors: string[] = []
     const io = {
@@ -648,10 +643,10 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       error: (message: string) => errors.push(message),
     }
 
-    expect(await runArbor(['model:list'], persistenceApplication, io)).toBe(0)
+    expect(await runPraxis(['model:list'], persistenceApplication, io)).toBe(0)
     expect(output).toEqual(
       expect.arrayContaining([
-        expect.stringContaining('model:counters/counter canopy canopy_entity_states'),
+        expect.stringContaining('model:counters/counter doxa doxa_entity_states'),
         expect.stringContaining(
           'model:counters/legacy-customer external legacy_customers key=customer_id version=lock_version',
         ),
@@ -660,15 +655,14 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         ),
       ]),
     )
-    const cultivate = JSON.parse(
-      await readFile(path.join(persistenceApplication, '.canopy/cultivate.json'), 'utf8'),
+    const gnosis = JSON.parse(
+      await readFile(path.join(persistenceApplication, '.doxa/gnosis.json'), 'utf8'),
     ) as {
       roles: { models: Array<{ id: string; storage: unknown }> }
-      arbor: { inspect: string[] }
+      praxis: { inspect: string[] }
     }
     expect(
-      cultivate.roles.models.find((model) => model.id === 'model:counters/legacy-customer')
-        ?.storage,
+      gnosis.roles.models.find((model) => model.id === 'model:counters/legacy-customer')?.storage,
     ).toEqual(
       expect.objectContaining({
         kind: 'table',
@@ -676,11 +670,11 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         primaryKey: 'customer_id',
       }),
     )
-    expect(cultivate.arbor.inspect).toEqual(expect.arrayContaining(['model:list', 'auth:storage']))
+    expect(gnosis.praxis.inspect).toEqual(expect.arrayContaining(['model:list', 'auth:storage']))
 
     output.length = 0
     expect(
-      await runArbor(
+      await runPraxis(
         ['auth:storage', `--database=${connectionString}`],
         persistenceApplication,
         io,
@@ -688,9 +682,9 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     ).toBe(0)
     expect(output).toEqual(
       expect.arrayContaining([
-        'authentication canopy-owned',
+        'authentication doxa-owned',
         expect.stringContaining('identities'),
-        expect.stringContaining('canopy_auth_identities'),
+        expect.stringContaining('doxa_auth_identities'),
       ]),
     )
     expect(errors).toEqual([])
@@ -704,7 +698,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       COMMUNICATIONS_SEND_GRID_WEBHOOK_PUBLIC_KEY: sendGridPublicKey,
       COMMUNICATIONS_TWILIO_AUTH_TOKEN: twilioAuthToken,
     }
-    const producer = await Canopy.boot(Application, {
+    const producer = await Doxa.boot(Application, {
       artifactsDirectory,
       dotenvPath: false,
       environment,
@@ -720,13 +714,13 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(
       (
         await pool.query(
-          `SELECT 1 FROM canopy_outbox_messages WHERE payload->>'id' = $1 AND status = 'pending'`,
+          `SELECT 1 FROM doxa_outbox_messages WHERE payload->>'id' = $1 AND status = 'pending'`,
           [jobId],
         )
       ).rowCount,
     ).toBe(1)
 
-    const scheduler = await Canopy.boot(Application, {
+    const scheduler = await Doxa.boot(Application, {
       artifactsDirectory,
       dotenvPath: false,
       environment,
@@ -736,7 +730,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     await new Promise((resolve) => setTimeout(resolve, 150))
     expect(await inspectQueueJob(connectionString, jobId)).toBeUndefined()
 
-    const worker = await Canopy.boot(Application, {
+    const worker = await Doxa.boot(Application, {
       artifactsDirectory,
       dotenvPath: false,
       environment,
@@ -753,11 +747,11 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const runtime = await bootPersistenceRuntime()
     await runtime.admit(
       {
-        actor: { kind: 'system', id: 'canopy:arbor' },
-        authentication: { state: 'authenticated', identityId: 'canopy:arbor', method: 'console' },
-        transport: { kind: 'console', name: 'canopy:describe' },
+        actor: { kind: 'system', id: 'doxa:praxis' },
+        authentication: { state: 'authenticated', identityId: 'doxa:praxis', method: 'console' },
+        transport: { kind: 'console', name: 'doxa:describe' },
       },
-      () => runtime.dispatchCommand('canopy:describe', ['--verbose']),
+      () => runtime.dispatchCommand('doxa:describe', ['--verbose']),
     )
     expect(commandLog).toEqual([{ arguments: ['--verbose'], actor: 'system' }])
   })
@@ -767,7 +761,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const http = new HonoHttpEngine(runtime)
     const traceId = '0123456789abcdef0123456789abcdef'
     const response = await http.fetch(
-      new Request('http://canopy.test/', {
+      new Request('http://doxa.test/', {
         headers: { traceparent: `00-${traceId}-0123456789abcdef-01` },
       }),
     )
@@ -779,15 +773,15 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       expect.arrayContaining([
         expect.objectContaining({ kind: 'log', event: 'execution.started' }),
         expect.objectContaining({ kind: 'log', event: 'execution.completed' }),
-        expect.objectContaining({ kind: 'metric', name: 'canopy.execution.admitted', value: 1 }),
-        expect.objectContaining({ kind: 'metric', name: 'canopy.execution.duration' }),
+        expect.objectContaining({ kind: 'metric', name: 'doxa.execution.admitted', value: 1 }),
+        expect.objectContaining({ kind: 'metric', name: 'doxa.execution.duration' }),
         expect.objectContaining({ kind: 'span', traceId, status: 'ok' }),
       ]),
     )
     expect(JSON.stringify(telemetryRecords)).not.toContain('test-twilio-auth-token')
 
     const invalid = await http.fetch(
-      new Request('http://canopy.test/', { headers: { traceparent: 'invalid' } }),
+      new Request('http://doxa.test/', { headers: { traceparent: 'invalid' } }),
     )
     expect(invalid.status).toBe(400)
     expect(await responseFailure(invalid)).toEqual(
@@ -875,7 +869,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     ])
   })
 
-  it('rejects signal dispatch outside a Canopy execution', () => {
+  it('rejects signal dispatch outside a Doxa execution', () => {
     expect(() => CounterTouched.dispatch({ counterId: 'outside' })).toThrow(SignalDispatchError)
   })
 
@@ -921,14 +915,14 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     )
     const jobCounter = await pool.query<{ state: { value: number }; version: number }>(`
       SELECT state, version
-      FROM canopy_entity_states
+      FROM doxa_entity_states
       WHERE entity_id = 'job-counter'
     `)
     expect(jobCounter.rows).toEqual([{ state: { id: 'job-counter', value: 1 }, version: 1 }])
     const outbox = await pool.query<{ status: string; payload: { id: string } }>(`
       SELECT status, payload
-      FROM canopy_outbox_messages
-      WHERE message_type = 'canopy.queue'
+      FROM doxa_outbox_messages
+      WHERE message_type = 'doxa.queue'
     `)
     expect(outbox.rows).toEqual([
       { status: 'dispatched', payload: expect.objectContaining({ id: jobId }) },
@@ -964,15 +958,15 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(recordedJobAttempts).toEqual([])
     const rolledBackOutbox = await pool.query<{ count: string }>(`
       SELECT count(*)
-      FROM canopy_outbox_messages
-      WHERE message_type = 'canopy.queue'
+      FROM doxa_outbox_messages
+      WHERE message_type = 'doxa.queue'
         AND payload->>'targetId' = 'job:counters/process-counter'
         AND payload->'payload'->>'key' = 'rolled-back'
     `)
     expect(Number(rolledBackOutbox.rows[0]!.count)).toBe(0)
   })
 
-  it('lists, retries, and cancels durable jobs through Arbor operator commands', async () => {
+  it('lists, retries, and cancels durable jobs through Praxis operator commands', async () => {
     const runtime = await bootPersistenceRuntime()
     const jobId = await runAction(runtime, DispatchProcessCounter, {
       key: 'operator',
@@ -986,22 +980,22 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       out: (message: string) => output.push(message),
       error: (message: string) => errors.push(message),
     }
-    expect(await runArbor(['queue:failed', `--database=${connectionString}`], workspace, io)).toBe(
+    expect(await runPraxis(['queue:failed', `--database=${connectionString}`], workspace, io)).toBe(
       0,
     )
     expect(output.some((line) => line.includes(jobId) && line.includes('failed'))).toBe(true)
     expect(
-      await runArbor(['queue:retry', jobId, `--database=${connectionString}`], workspace, io),
+      await runPraxis(['queue:retry', jobId, `--database=${connectionString}`], workspace, io),
     ).toBe(0)
     expect((await inspectQueueJob(connectionString, jobId))?.state).toMatch(/created|retry/)
     expect(
-      await runArbor(['queue:cancel', jobId, `--database=${connectionString}`], workspace, io),
+      await runPraxis(['queue:cancel', jobId, `--database=${connectionString}`], workspace, io),
     ).toBe(0)
     expect((await inspectQueueJob(connectionString, jobId))?.state).toBe('cancelled')
     expect(errors).toEqual([])
   })
 
-  it('deduplicates one declared job by a stable Canopy idempotency key', async () => {
+  it('deduplicates one declared job by a stable Doxa idempotency key', async () => {
     const runtime = await bootPersistenceRuntime()
     const [first, second] = await Promise.all([
       runAction(runtime, DispatchProcessCounter, {
@@ -1024,8 +1018,8 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       SELECT
         count(*) AS count,
         count(*) FILTER (WHERE status = 'dispatched') AS dispatched
-      FROM canopy_outbox_messages
-      WHERE message_type = 'canopy.queue'
+      FROM doxa_outbox_messages
+      WHERE message_type = 'doxa.queue'
     `)
     expect(outbox.rows[0]).toEqual({ count: '2', dispatched: '2' })
   })
@@ -1100,7 +1094,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     }>(`
       SELECT key, cron, timezone
       FROM pgboss.schedule
-      WHERE name = 'canopy-schedules-serial'
+      WHERE name = 'doxa-schedules-serial'
     `)
     expect(schedules.rows).toEqual([
       expect.objectContaining({
@@ -1113,7 +1107,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const interval = await pool.query<{ id: string }>(`
       UPDATE pgboss.job
       SET start_after = now()
-      WHERE name = 'canopy-schedules-serial'
+      WHERE name = 'doxa-schedules-serial'
         AND data ->> 'id' = 'schedule:counters/process-counters'
       RETURNING id
     `)
@@ -1130,9 +1124,33 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         attempt: 1,
       }),
     )
+    const scheduledExecution = await pool.query<{
+      kind: string
+      transport: string
+      phase: string
+    }>(`
+      SELECT kind, transport, phase
+      FROM doxa_theoria_observations
+      WHERE execution_id = (
+        SELECT execution_id
+        FROM doxa_theoria_observations
+        WHERE kind = 'schedule' AND name = 'schedule:counters/process-counters'
+        ORDER BY occurred_at DESC
+        LIMIT 1
+      ) AND kind IN ('execution', 'job', 'schedule')
+      ORDER BY occurred_at
+    `)
+    expect(scheduledExecution.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'schedule', transport: 'job', phase: 'occurred' }),
+        expect.objectContaining({ kind: 'job', transport: 'job', phase: 'completed' }),
+        expect.objectContaining({ kind: 'execution', transport: 'job', phase: 'completed' }),
+      ]),
+    )
+    expect(scheduledExecution.rows.some((entry) => entry.transport === 'schedule')).toBe(false)
   })
 
-  it('inspects journal/outbox/cache and controls schedules through Arbor', async () => {
+  it('inspects journal/outbox/cache and controls schedules through Praxis', async () => {
     const runtime = await bootPersistenceRuntime()
     await runAction(runtime, SaveCounter, { id: 'operator-state', amount: 1 })
     await runAction(runtime, ExerciseCache, 'operator-cache')
@@ -1143,26 +1161,26 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       error: (message: string) => errors.push(message),
     }
     for (const command of ['journal:list', 'outbox:list', 'cache:list'] as const) {
-      expect(await runArbor([command, `--database=${connectionString}`], workspace, io)).toBe(0)
+      expect(await runPraxis([command, `--database=${connectionString}`], workspace, io)).toBe(0)
     }
     expect(output.some((line) => line.includes('counter.incremented'))).toBe(true)
     expect(output.some((line) => line.includes('counter.changed'))).toBe(true)
     expect(output.some((line) => line.includes('operator-cache:counter'))).toBe(true)
     expect(
-      await runArbor(
+      await runPraxis(
         ['cache:forget', 'operator-cache:counter', `--database=${connectionString}`],
         workspace,
         io,
       ),
     ).toBe(0)
     expect(
-      (await pool.query(`SELECT 1 FROM canopy_cache_entries WHERE key = 'operator-cache:counter'`))
+      (await pool.query(`SELECT 1 FROM doxa_cache_entries WHERE key = 'operator-cache:counter'`))
         .rowCount,
     ).toBe(0)
 
     output.length = 0
     expect(
-      await runArbor(
+      await runPraxis(
         ['schedule:status', `--database=${connectionString}`],
         persistenceApplication,
         io,
@@ -1170,7 +1188,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     ).toBe(0)
     expect(output.some((line) => line.includes('schedule:counters/process-counters'))).toBe(true)
     expect(
-      await runArbor(
+      await runPraxis(
         ['schedule:disable', 'process-counters', `--database=${connectionString}`],
         persistenceApplication,
         io,
@@ -1179,12 +1197,12 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(
       (
         await pool.query<{ enabled: boolean }>(
-          `SELECT enabled FROM canopy_schedule_controls WHERE schedule_id = 'schedule:counters/process-counters'`,
+          `SELECT enabled FROM doxa_schedule_controls WHERE schedule_id = 'schedule:counters/process-counters'`,
         )
       ).rows[0]?.enabled,
     ).toBe(false)
     expect(
-      await runArbor(
+      await runPraxis(
         ['schedule:enable', 'process-counters', `--database=${connectionString}`],
         persistenceApplication,
         io,
@@ -1192,7 +1210,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     ).toBe(0)
     resetRecordedJobAttempts()
     expect(
-      await runArbor(
+      await runPraxis(
         ['schedule:run', 'process-counters', `--database=${connectionString}`],
         persistenceApplication,
         io,
@@ -1212,7 +1230,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const email = 'mvp-flow@example.com'
 
     const registration = await http.fetch(
-      jsonRequest('http://canopy.test/auth/register', {
+      jsonRequest('http://doxa.test/auth/register', {
         email,
         password: 'complete reference flow password',
       }),
@@ -1223,34 +1241,34 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       async () =>
         (
           await pool.query(
-            `SELECT 1 FROM canopy_delivery_messages WHERE payload->>'subject' = 'Verify your email'`,
+            `SELECT 1 FROM doxa_delivery_messages WHERE payload->>'subject' = 'Verify your email'`,
           )
         ).rowCount === 1,
     )
     const verification = await pool.query<{ text: string }>(`
-      SELECT payload->>'text' AS text FROM canopy_delivery_messages
+      SELECT payload->>'text' AS text FROM doxa_delivery_messages
       WHERE payload->>'subject' = 'Verify your email' ORDER BY created_at DESC LIMIT 1
     `)
     const verificationToken = verification.rows[0]!.text.split(': ')[1]!
     expect(
       (
         await http.fetch(
-          jsonRequest('http://canopy.test/auth/email/verify', { token: verificationToken }),
+          jsonRequest('http://doxa.test/auth/email/verify', { token: verificationToken }),
         )
       ).status,
     ).toBe(200)
 
     const login = await http.fetch(
-      jsonRequest('http://canopy.test/auth/login', {
+      jsonRequest('http://doxa.test/auth/login', {
         email,
         password: 'complete reference flow password',
       }),
     )
     const cookie = login.headers.get('set-cookie')!.split(';', 1)[0]!
     const tokenResponse = await http.fetch(
-      new Request('http://canopy.test/auth/tokens', {
+      new Request('http://doxa.test/auth/tokens', {
         method: 'POST',
-        headers: { cookie, origin: 'http://canopy.test', 'content-type': 'application/json' },
+        headers: { cookie, origin: 'http://doxa.test', 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'reference-flow',
           constraints: ['counters.write', 'counters.update'],
@@ -1261,11 +1279,11 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const bearer = (await responseData<{ token: string }>(tokenResponse)).token
 
     const anonymous = await http.fetch(
-      jsonRequest('http://canopy.test/secure/counters/reference-flow/increment', { amount: 2 }),
+      jsonRequest('http://doxa.test/secure/counters/reference-flow/increment', { amount: 2 }),
     )
     expect(anonymous.status).toBe(401)
     const incremented = await http.fetch(
-      new Request('http://canopy.test/secure/counters/reference-flow/increment', {
+      new Request('http://doxa.test/secure/counters/reference-flow/increment', {
         method: 'POST',
         headers: { authorization: `Bearer ${bearer}`, 'content-type': 'application/json' },
         body: JSON.stringify({ amount: 2 }),
@@ -1282,13 +1300,13 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
 
     await waitFor(async () => {
       const entity = await pool.query<{ state: { value: number } }>(`
-        SELECT state FROM canopy_entity_states WHERE entity_type = 'model:counters/counter' AND entity_id = 'reference-flow'
+        SELECT state FROM doxa_entity_states WHERE entity_type = 'model:counters/counter' AND entity_id = 'reference-flow'
       `)
       return entity.rows[0]?.state.value === 3
     })
     await waitFor(
       async () =>
-        ((await pool.query(`SELECT 1 FROM canopy_delivery_messages WHERE state = 'accepted'`))
+        ((await pool.query(`SELECT 1 FROM doxa_delivery_messages WHERE state = 'accepted'`))
           .rowCount ?? 0) >= 3,
     )
     expect(recordedEvents).toEqual(
@@ -1323,14 +1341,14 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     )
 
     const facts = await pool.query(
-      `SELECT 1 FROM canopy_journal_entries WHERE entity_id = 'reference-flow' AND fact_type = 'counter.incremented'`,
+      `SELECT 1 FROM doxa_journal_entries WHERE entity_id = 'reference-flow' AND fact_type = 'counter.incremented'`,
     )
     const handoffs = await pool.query(
-      `SELECT 1 FROM canopy_outbox_messages WHERE context->'actor'->>'id' = $1`,
+      `SELECT 1 FROM doxa_outbox_messages WHERE context->'actor'->>'id' = $1`,
       [identityId],
     )
     const audit = await pool.query(
-      `SELECT 1 FROM canopy_auth_audit_events WHERE identity_id = $1 AND event_type = 'authorization.decided'`,
+      `SELECT 1 FROM doxa_auth_audit_events WHERE identity_id = $1 AND event_type = 'authorization.decided'`,
       [identityId],
     )
     expect(facts.rowCount).toBeGreaterThan(0)
@@ -1338,16 +1356,16 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(audit.rowCount).toBeGreaterThan(0)
     expect(telemetryRecords).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ kind: 'metric', name: 'canopy.authorization.decisions' }),
-        expect.objectContaining({ kind: 'metric', name: 'canopy.persistence.transaction.total' }),
-        expect.objectContaining({ kind: 'metric', name: 'canopy.queue.delivery.total' }),
+        expect.objectContaining({ kind: 'metric', name: 'doxa.authorization.decisions' }),
+        expect.objectContaining({ kind: 'metric', name: 'doxa.persistence.transaction.total' }),
+        expect.objectContaining({ kind: 'metric', name: 'doxa.queue.delivery.total' }),
         expect.objectContaining({ kind: 'span', status: 'ok' }),
       ]),
     )
 
     resetRecordedJobAttempts()
     expect(
-      await runArbor(
+      await runPraxis(
         ['schedule:run', 'process-counters', `--database=${connectionString}`],
         persistenceApplication,
         { out: () => undefined, error: () => undefined },
@@ -1364,7 +1382,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const runtime = await bootPersistenceRuntime()
     const http = new HonoHttpEngine(runtime)
     const register = (email: string, password: string) =>
-      http.fetch(jsonRequest('http://canopy.test/auth/register', { email, password }))
+      http.fetch(jsonRequest('http://doxa.test/auth/register', { email, password }))
 
     const tooShort = await register('seven@example.com', '1234567')
     expect(tooShort.status).toBe(422)
@@ -1384,7 +1402,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const http = new HonoHttpEngine(runtime)
 
     const registered = await http.fetch(
-      jsonRequest('http://canopy.test/auth/register', {
+      jsonRequest('http://doxa.test/auth/register', {
         email: '  Ada@Example.COM ',
         password: 'correct horse battery staple',
       }),
@@ -1414,7 +1432,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     }>(
       `
       SELECT version, salt, hash, parameters
-      FROM canopy_auth_passwords
+      FROM doxa_auth_passwords
       WHERE identity_id = $1
     `,
       [registration.identity.id],
@@ -1432,7 +1450,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(JSON.stringify(storedPassword.rows[0])).not.toContain('correct horse battery staple')
 
     const duplicate = await http.fetch(
-      jsonRequest('http://canopy.test/auth/register', {
+      jsonRequest('http://doxa.test/auth/register', {
         email: 'ada@example.com',
         password: 'another valid password',
       }),
@@ -1446,13 +1464,13 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     })
 
     const wrongPassword = await http.fetch(
-      jsonRequest('http://canopy.test/auth/login', {
+      jsonRequest('http://doxa.test/auth/login', {
         email: 'ada@example.com',
         password: 'wrong password value',
       }),
     )
     const unknownIdentity = await http.fetch(
-      jsonRequest('http://canopy.test/auth/login', {
+      jsonRequest('http://doxa.test/auth/login', {
         email: 'nobody@example.com',
         password: 'wrong password value',
       }),
@@ -1462,14 +1480,14 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(await wrongPassword.json()).toEqual(await unknownIdentity.json())
 
     const loggedIn = await http.fetch(
-      jsonRequest('http://canopy.test/auth/login', {
+      jsonRequest('http://doxa.test/auth/login', {
         email: 'ADA@example.com',
         password: 'correct horse battery staple',
       }),
     )
     expect(loggedIn.status).toBe(200)
     const setCookie = loggedIn.headers.get('set-cookie')
-    expect(setCookie).toContain('canopy_session=')
+    expect(setCookie).toContain('doxa_session=')
     expect(setCookie).toContain('HttpOnly')
     expect(setCookie).toContain('SameSite=Lax')
     expect(setCookie).toContain('Path=/')
@@ -1483,7 +1501,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     }>(
       `
       SELECT token_digest, revoked_at
-      FROM canopy_auth_sessions
+      FROM doxa_auth_sessions
       WHERE identity_id = $1
     `,
       [registration.identity.id],
@@ -1499,7 +1517,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     )
 
     const me = await http.fetch(
-      new Request('http://canopy.test/auth/me', {
+      new Request('http://doxa.test/auth/me', {
         headers: { cookie },
       }),
     )
@@ -1519,11 +1537,11 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     )
 
     const rotated = await http.fetch(
-      new Request('http://canopy.test/auth/login', {
+      new Request('http://doxa.test/auth/login', {
         method: 'POST',
         headers: {
           cookie,
-          origin: 'http://canopy.test',
+          origin: 'http://doxa.test',
           'content-type': 'application/json',
         },
         body: JSON.stringify({
@@ -1536,14 +1554,14 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const rotatedCookie = rotated.headers.get('set-cookie')!.split(';', 1)[0]!
     expect(rotatedCookie).not.toBe(cookie)
     const replaced = await http.fetch(
-      new Request('http://canopy.test/auth/me', {
+      new Request('http://doxa.test/auth/me', {
         headers: { cookie },
       }),
     )
     expect(replaced.status).toBe(401)
 
     const rejectedCsrf = await http.fetch(
-      new Request('http://canopy.test/auth/logout', {
+      new Request('http://doxa.test/auth/logout', {
         method: 'POST',
         headers: { cookie: rotatedCookie, origin: 'https://attacker.example' },
       }),
@@ -1554,16 +1572,16 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     )
 
     const loggedOut = await http.fetch(
-      new Request('http://canopy.test/auth/logout', {
+      new Request('http://doxa.test/auth/logout', {
         method: 'POST',
-        headers: { cookie: rotatedCookie, origin: 'http://canopy.test' },
+        headers: { cookie: rotatedCookie, origin: 'http://doxa.test' },
       }),
     )
     expect(loggedOut.status).toBe(204)
     expect(loggedOut.headers.get('set-cookie')).toContain('Max-Age=0')
 
     const afterLogout = await http.fetch(
-      new Request('http://canopy.test/auth/me', {
+      new Request('http://doxa.test/auth/me', {
         headers: { cookie: rotatedCookie },
       }),
     )
@@ -1573,7 +1591,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     )
 
     const audit = await pool.query<{ event_type: string }>(`
-      SELECT event_type FROM canopy_auth_audit_events ORDER BY occurred_at, event_type
+      SELECT event_type FROM doxa_auth_audit_events ORDER BY occurred_at, event_type
     `)
     expect(audit.rows.map((row) => row.event_type)).toEqual(
       expect.arrayContaining([
@@ -1589,7 +1607,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const runtime = await bootPersistenceRuntime()
     const http = new HonoHttpEngine(runtime)
     const registered = await http.fetch(
-      jsonRequest('http://canopy.test/auth/register', {
+      jsonRequest('http://doxa.test/auth/register', {
         email: 'security@example.com',
         password: 'initial secure password',
       }),
@@ -1600,21 +1618,21 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       async () =>
         (
           await pool.query(
-            `SELECT 1 FROM canopy_delivery_messages WHERE payload->>'text' LIKE 'Verification token:%'`,
+            `SELECT 1 FROM doxa_delivery_messages WHERE payload->>'text' LIKE 'Verification token:%'`,
           )
         ).rowCount === 1,
     )
     const verificationMail = await pool.query<{ text: string }>(
-      `SELECT payload->>'text' AS text FROM canopy_delivery_messages WHERE payload->>'text' LIKE 'Verification token:%' ORDER BY created_at DESC LIMIT 1`,
+      `SELECT payload->>'text' AS text FROM doxa_delivery_messages WHERE payload->>'text' LIKE 'Verification token:%' ORDER BY created_at DESC LIMIT 1`,
     )
     const verificationToken = verificationMail.rows[0]!.text.split(': ')[1]!
     expect(verificationToken).toMatch(/^[A-Za-z0-9_-]{43}$/)
     const challenge = await pool.query<{ token_digest: string }>(
-      `SELECT token_digest FROM canopy_auth_challenges WHERE purpose = 'email_verification'`,
+      `SELECT token_digest FROM doxa_auth_challenges WHERE purpose = 'email_verification'`,
     )
     expect(challenge.rows[0]!.token_digest).not.toBe(verificationToken)
     const verified = await http.fetch(
-      jsonRequest('http://canopy.test/auth/email/verify', { token: verificationToken }),
+      jsonRequest('http://doxa.test/auth/email/verify', { token: verificationToken }),
     )
     expect(verified.status).toBe(200)
     expect(await responseData(verified)).toEqual(
@@ -1625,16 +1643,16 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(
       (
         await http.fetch(
-          jsonRequest('http://canopy.test/auth/email/verify', { token: verificationToken }),
+          jsonRequest('http://doxa.test/auth/email/verify', { token: verificationToken }),
         )
       ).status,
     ).toBe(422)
 
     const knownReset = await http.fetch(
-      jsonRequest('http://canopy.test/auth/password/forgot', { email: 'security@example.com' }),
+      jsonRequest('http://doxa.test/auth/password/forgot', { email: 'security@example.com' }),
     )
     const unknownReset = await http.fetch(
-      jsonRequest('http://canopy.test/auth/password/forgot', { email: 'unknown@example.com' }),
+      jsonRequest('http://doxa.test/auth/password/forgot', { email: 'unknown@example.com' }),
     )
     expect([knownReset.status, unknownReset.status]).toEqual([202, 202])
     expect(await knownReset.text()).toBe(await unknownReset.text())
@@ -1642,18 +1660,18 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       async () =>
         (
           await pool.query(
-            `SELECT 1 FROM canopy_delivery_messages WHERE payload->>'text' LIKE 'Password reset token:%'`,
+            `SELECT 1 FROM doxa_delivery_messages WHERE payload->>'text' LIKE 'Password reset token:%'`,
           )
         ).rowCount === 1,
     )
     const resetMail = await pool.query<{ text: string }>(
-      `SELECT payload->>'text' AS text FROM canopy_delivery_messages WHERE payload->>'text' LIKE 'Password reset token:%' ORDER BY created_at DESC LIMIT 1`,
+      `SELECT payload->>'text' AS text FROM doxa_delivery_messages WHERE payload->>'text' LIKE 'Password reset token:%' ORDER BY created_at DESC LIMIT 1`,
     )
     const resetToken = resetMail.rows[0]!.text.split(': ')[1]!
     expect(
       (
         await http.fetch(
-          jsonRequest('http://canopy.test/auth/password/reset', {
+          jsonRequest('http://doxa.test/auth/password/reset', {
             token: resetToken,
             password: 'reset secure password',
           }),
@@ -1663,7 +1681,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(
       (
         await http.fetch(
-          jsonRequest('http://canopy.test/auth/login', {
+          jsonRequest('http://doxa.test/auth/login', {
             email: 'security@example.com',
             password: 'initial secure password',
           }),
@@ -1671,7 +1689,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       ).status,
     ).toBe(401)
     const loggedIn = await http.fetch(
-      jsonRequest('http://canopy.test/auth/login', {
+      jsonRequest('http://doxa.test/auth/login', {
         email: 'security@example.com',
         password: 'reset secure password',
       }),
@@ -1679,9 +1697,9 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(loggedIn.status).toBe(200)
     const cookie = loggedIn.headers.get('set-cookie')!.split(';', 1)[0]!
     const changed = await http.fetch(
-      new Request('http://canopy.test/auth/password', {
+      new Request('http://doxa.test/auth/password', {
         method: 'POST',
-        headers: { cookie, origin: 'http://canopy.test', 'content-type': 'application/json' },
+        headers: { cookie, origin: 'http://doxa.test', 'content-type': 'application/json' },
         body: JSON.stringify({
           currentPassword: 'reset secure password',
           newPassword: 'final secure password',
@@ -1691,14 +1709,14 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(changed.status).toBe(204)
     expect(changed.headers.get('set-cookie')).toContain('Max-Age=0')
     expect(
-      (await http.fetch(new Request('http://canopy.test/auth/me', { headers: { cookie } }))).status,
+      (await http.fetch(new Request('http://doxa.test/auth/me', { headers: { cookie } }))).status,
     ).toBe(401)
 
     for (let attempt = 1; attempt <= 5; attempt += 1) {
       expect(
         (
           await http.fetch(
-            jsonRequest('http://canopy.test/auth/login', {
+            jsonRequest('http://doxa.test/auth/login', {
               email: 'abuse@example.com',
               password: 'wrong password value',
             }),
@@ -1707,7 +1725,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       ).toBe(401)
     }
     const limited = await http.fetch(
-      jsonRequest('http://canopy.test/auth/login', {
+      jsonRequest('http://doxa.test/auth/login', {
         email: 'abuse@example.com',
         password: 'wrong password value',
       }),
@@ -1720,13 +1738,13 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const runtime = await bootPersistenceRuntime()
     const http = new HonoHttpEngine(runtime)
     await http.fetch(
-      jsonRequest('http://canopy.test/auth/register', {
+      jsonRequest('http://doxa.test/auth/register', {
         email: 'bearer@example.com',
         password: 'correct horse battery staple',
       }),
     )
     const login = await http.fetch(
-      jsonRequest('http://canopy.test/auth/login', {
+      jsonRequest('http://doxa.test/auth/login', {
         email: 'bearer@example.com',
         password: 'correct horse battery staple',
       }),
@@ -1734,11 +1752,11 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const cookie = login.headers.get('set-cookie')!.split(';', 1)[0]!
 
     const issued = await http.fetch(
-      new Request('http://canopy.test/auth/tokens', {
+      new Request('http://doxa.test/auth/tokens', {
         method: 'POST',
         headers: {
           cookie,
-          origin: 'http://canopy.test',
+          origin: 'http://doxa.test',
           'content-type': 'application/json',
         },
         body: JSON.stringify({
@@ -1752,7 +1770,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       accessToken: { id: string; displayPrefix: string; constraints: string[] }
       token: string
     }>(issued)
-    expect(issuance.token).toMatch(/^canopy_pat_[A-Za-z0-9_-]{16}_[A-Za-z0-9_-]{43}$/)
+    expect(issuance.token).toMatch(/^doxa_pat_[A-Za-z0-9_-]{16}_[A-Za-z0-9_-]{43}$/)
     expect(issuance.accessToken).toEqual(
       expect.objectContaining({
         constraints: ['accounts.view-self', 'counters.read', 'counters.write'],
@@ -1760,7 +1778,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     )
     const stored = await pool.query<{ token_digest: string }>(
       `
-      SELECT token_digest FROM canopy_auth_access_tokens WHERE id = $1
+      SELECT token_digest FROM doxa_auth_access_tokens WHERE id = $1
     `,
       [issuance.accessToken.id],
     )
@@ -1768,7 +1786,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(stored.rows[0]?.token_digest).not.toContain(issuance.token)
 
     const bearerMe = await http.fetch(
-      new Request('http://canopy.test/auth/me', {
+      new Request('http://doxa.test/auth/me', {
         headers: { authorization: `Bearer ${issuance.token}` },
       }),
     )
@@ -1785,7 +1803,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     )
 
     const ambiguous = await http.fetch(
-      new Request('http://canopy.test/auth/me', {
+      new Request('http://doxa.test/auth/me', {
         headers: { cookie, authorization: `Bearer ${issuance.token}` },
       }),
     )
@@ -1795,49 +1813,49 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     )
 
     const bearerCannotManage = await http.fetch(
-      new Request('http://canopy.test/auth/tokens', {
+      new Request('http://doxa.test/auth/tokens', {
         headers: { authorization: `Bearer ${issuance.token}` },
       }),
     )
     expect(bearerCannotManage.status).toBe(403)
 
     const rotated = await http.fetch(
-      new Request(`http://canopy.test/auth/tokens/${issuance.accessToken.id}/rotate`, {
+      new Request(`http://doxa.test/auth/tokens/${issuance.accessToken.id}/rotate`, {
         method: 'POST',
-        headers: { cookie, origin: 'http://canopy.test' },
+        headers: { cookie, origin: 'http://doxa.test' },
       }),
     )
     expect(rotated.status).toBe(200)
     const rotation = await responseData<{ accessToken: { id: string }; token: string }>(rotated)
     expect(rotation.accessToken.id).not.toBe(issuance.accessToken.id)
     const oldToken = await http.fetch(
-      new Request('http://canopy.test/auth/me', {
+      new Request('http://doxa.test/auth/me', {
         headers: { authorization: `Bearer ${issuance.token}` },
       }),
     )
     expect(oldToken.status).toBe(401)
     const newToken = await http.fetch(
-      new Request('http://canopy.test/auth/me', {
+      new Request('http://doxa.test/auth/me', {
         headers: { authorization: `Bearer ${rotation.token}` },
       }),
     )
     expect(newToken.status).toBe(200)
 
     const revoked = await http.fetch(
-      new Request(`http://canopy.test/auth/tokens/${rotation.accessToken.id}`, {
+      new Request(`http://doxa.test/auth/tokens/${rotation.accessToken.id}`, {
         method: 'DELETE',
-        headers: { cookie, origin: 'http://canopy.test' },
+        headers: { cookie, origin: 'http://doxa.test' },
       }),
     )
     expect(revoked.status).toBe(204)
     const afterRevoke = await http.fetch(
-      new Request('http://canopy.test/auth/me', {
+      new Request('http://doxa.test/auth/me', {
         headers: { authorization: `Bearer ${rotation.token}` },
       }),
     )
     expect(afterRevoke.status).toBe(401)
     const audit = await pool.query<{ event_type: string }>(`
-      SELECT event_type FROM canopy_auth_audit_events WHERE event_type LIKE 'access_token.%'
+      SELECT event_type FROM doxa_auth_audit_events WHERE event_type LIKE 'access_token.%'
     `)
     expect(audit.rows.map((row) => row.event_type)).toEqual(
       expect.arrayContaining([
@@ -1848,34 +1866,34 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     )
   })
 
-  it('inspects and revokes sessions and bearer tokens through Arbor without credential leakage', async () => {
+  it('inspects and revokes sessions and bearer tokens through Praxis without credential leakage', async () => {
     const runtime = await bootPersistenceRuntime()
     const http = new HonoHttpEngine(runtime)
     const registration = await http.fetch(
-      jsonRequest('http://canopy.test/auth/register', {
+      jsonRequest('http://doxa.test/auth/register', {
         email: 'operator-auth@example.com',
         password: 'operator secure password',
       }),
     )
     const identityId = (await responseData<{ identity: { id: string } }>(registration)).identity.id
     const login = await http.fetch(
-      jsonRequest('http://canopy.test/auth/login', {
+      jsonRequest('http://doxa.test/auth/login', {
         email: 'operator-auth@example.com',
         password: 'operator secure password',
       }),
     )
     const cookie = login.headers.get('set-cookie')!.split(';', 1)[0]!
     const issued = await http.fetch(
-      new Request('http://canopy.test/auth/tokens', {
+      new Request('http://doxa.test/auth/tokens', {
         method: 'POST',
-        headers: { cookie, origin: 'http://canopy.test', 'content-type': 'application/json' },
+        headers: { cookie, origin: 'http://doxa.test', 'content-type': 'application/json' },
         body: JSON.stringify({ name: 'operator-proof' }),
       }),
     )
     const tokenGrant = await responseData<{ accessToken: { id: string }; token: string }>(issued)
     const sessionId = (
       await pool.query<{ id: string }>(
-        `SELECT id FROM canopy_auth_sessions WHERE identity_id = $1 AND revoked_at IS NULL`,
+        `SELECT id FROM doxa_auth_sessions WHERE identity_id = $1 AND revoked_at IS NULL`,
         [identityId],
       )
     ).rows[0]!.id
@@ -1887,7 +1905,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     }
     for (const command of ['auth:identities', 'auth:sessions', 'auth:tokens'] as const) {
       expect(
-        await runArbor(
+        await runPraxis(
           [command, `--identity=${identityId}`, `--database=${connectionString}`],
           workspace,
           io,
@@ -1900,26 +1918,26 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(output.join('\n')).not.toContain(tokenGrant.token)
     expect(output.join('\n')).not.toMatch(/[a-f0-9]{64}/)
     expect(
-      await runArbor(
+      await runPraxis(
         ['auth:revoke-session', sessionId, `--database=${connectionString}`],
         workspace,
         io,
       ),
     ).toBe(0)
     expect(
-      await runArbor(
+      await runPraxis(
         ['auth:revoke-token', tokenGrant.accessToken.id, `--database=${connectionString}`],
         workspace,
         io,
       ),
     ).toBe(0)
     expect(
-      (await http.fetch(new Request('http://canopy.test/auth/me', { headers: { cookie } }))).status,
+      (await http.fetch(new Request('http://doxa.test/auth/me', { headers: { cookie } }))).status,
     ).toBe(401)
     expect(
       (
         await http.fetch(
-          new Request('http://canopy.test/auth/me', {
+          new Request('http://doxa.test/auth/me', {
             headers: { authorization: `Bearer ${tokenGrant.token}` },
           }),
         )
@@ -1977,7 +1995,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     )
     expect(missing).toEqual({
       effect: 'deny',
-      policy: 'canopy:default-deny',
+      policy: 'doxa:default-deny',
       code: 'policy_missing',
     })
 
@@ -1996,14 +2014,14 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     )
     expect(constrained).toEqual({
       effect: 'deny',
-      policy: 'canopy:credential-constraints',
+      policy: 'doxa:credential-constraints',
       code: 'credential_constraint_denied',
     })
     const audits = await pool.query<{
       metadata: { ability: string; effect: string; policy: string; code: string }
     }>(`
       SELECT metadata
-      FROM canopy_auth_audit_events
+      FROM doxa_auth_audit_events
       WHERE event_type = 'authorization.decided'
       ORDER BY occurred_at
     `)
@@ -2032,25 +2050,25 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const runtime = await bootPersistenceRuntime()
     const http = new HonoHttpEngine(runtime)
 
-    const home = await http.fetch(new Request('http://canopy.test/'))
+    const home = await http.fetch(new Request('http://doxa.test/'))
     expect(home.status).toBe(200)
     expect(await responseData(home)).toEqual(
       expect.objectContaining({
-        name: 'Canopy',
+        name: 'Doxa',
         status: 'growing',
       }),
     )
 
-    const health = await http.fetch(new Request('http://canopy.test/health'))
+    const health = await http.fetch(new Request('http://doxa.test/health'))
     expect(health.status).toBe(200)
     expect(await responseData(health)).toEqual({ status: 'ok' })
 
-    const hello = await http.fetch(new Request('http://canopy.test/hello/Ada?greeting=Welcome'))
+    const hello = await http.fetch(new Request('http://doxa.test/hello/Ada?greeting=Welcome'))
     expect(hello.status).toBe(200)
     expect(await responseData(hello)).toEqual({ message: 'Welcome, Ada!' })
 
     const incremented = await http.fetch(
-      new Request('http://canopy.test/counters/http-counter/increment', {
+      new Request('http://doxa.test/counters/http-counter/increment', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -2090,7 +2108,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     ])
 
     const pinged = await http.fetch(
-      new Request('http://canopy.test/ping', {
+      new Request('http://doxa.test/ping', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ message: 'hello' }),
@@ -2106,7 +2124,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     )
 
     const invalid = await http.fetch(
-      new Request('http://canopy.test/counters/http-counter/increment', {
+      new Request('http://doxa.test/counters/http-counter/increment', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ amount: 0 }),
@@ -2118,7 +2136,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     )
 
     const failed = await http.fetch(
-      new Request('http://canopy.test/counters/rejected-http-event/increment', {
+      new Request('http://doxa.test/counters/rejected-http-event/increment', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ amount: 13 }),
@@ -2132,12 +2150,12 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       data: null,
     })
     const rejectedEntity = await pool.query<{ count: string }>(`
-      SELECT count(*) FROM canopy_entity_states WHERE entity_id = 'rejected-http-event'
+      SELECT count(*) FROM doxa_entity_states WHERE entity_id = 'rejected-http-event'
     `)
     expect(Number(rejectedEntity.rows[0]!.count)).toBe(0)
 
     const malformed = await http.fetch(
-      new Request('http://canopy.test/counters/http-counter/increment', {
+      new Request('http://doxa.test/counters/http-counter/increment', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: '{',
@@ -2152,7 +2170,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     })
 
     const afterCommitFailed = await http.fetch(
-      new Request('http://canopy.test/counters/after-commit-http/increment', {
+      new Request('http://doxa.test/counters/after-commit-http/increment', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ amount: 7 }),
@@ -2166,12 +2184,12 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       data: null,
     })
     const committedDespiteListener = await pool.query<{ count: string }>(`
-      SELECT count(*) FROM canopy_entity_states WHERE entity_id = 'after-commit-http'
+      SELECT count(*) FROM doxa_entity_states WHERE entity_id = 'after-commit-http'
     `)
     expect(Number(committedDespiteListener.rows[0]!.count)).toBe(1)
 
     const missing = await http.fetch(
-      new Request('http://canopy.test/counters/missing', {
+      new Request('http://doxa.test/counters/missing', {
         method: 'DELETE',
       }),
     )
@@ -2180,7 +2198,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       expect.objectContaining({ code: 'model_not_found' }),
     )
 
-    const notFound = await http.fetch(new Request('http://canopy.test/nope'))
+    const notFound = await http.fetch(new Request('http://doxa.test/nope'))
     expect(notFound.status).toBe(404)
     expect(await responseFailure(notFound)).toEqual(
       expect.objectContaining({ code: 'route_not_found' }),
@@ -2214,7 +2232,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(process.listenerCount('SIGTERM')).toBe(signalListeners.sigterm)
 
     const unavailable = await host.engine.fetch(
-      new Request('http://canopy.test/ping', {
+      new Request('http://doxa.test/ping', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ message: 'late' }),
@@ -2272,21 +2290,21 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(
       (
         await pool.query(
-          `SELECT 1 FROM canopy_entity_states WHERE entity_type = 'model:counters/legacy-customer'`,
+          `SELECT 1 FROM doxa_entity_states WHERE entity_type = 'model:counters/legacy-customer'`,
         )
       ).rowCount,
     ).toBe(0)
     expect(
       (
         await pool.query(
-          `SELECT 1 FROM canopy_journal_entries WHERE entity_type = 'model:counters/legacy-customer' AND entity_id = 'legacy-existing'`,
+          `SELECT 1 FROM doxa_journal_entries WHERE entity_type = 'model:counters/legacy-customer' AND entity_id = 'legacy-existing'`,
         )
       ).rowCount,
     ).toBe(1)
     expect(
       (
         await pool.query(
-          `SELECT 1 FROM canopy_outbox_messages WHERE message_type = 'legacy-customer.changed'`,
+          `SELECT 1 FROM doxa_outbox_messages WHERE message_type = 'legacy-customer.changed'`,
         )
       ).rowCount,
     ).toBe(1)
@@ -2383,7 +2401,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       changes: { label: undefined },
     })
     const entity = await pool.query<{ state: Record<string, unknown> }>(
-      `SELECT state FROM canopy_entity_states WHERE entity_id = 'optional'`,
+      `SELECT state FROM doxa_entity_states WHERE entity_id = 'optional'`,
     )
     expect(entity.rows[0]?.state).toEqual({ id: 'optional', value: 1 })
   })
@@ -2477,7 +2495,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       reason: expect.any(OptimisticConcurrencyError),
     })
     const entity = await pool.query<{ version: number; state: { value: number } }>(
-      `SELECT version, state FROM canopy_entity_states WHERE entity_id = 'contended'`,
+      `SELECT version, state FROM doxa_entity_states WHERE entity_id = 'contended'`,
     )
     expect(entity.rows[0]?.version).toBe(2)
     expect([3, 4]).toContain(entity.rows[0]?.state.value)
@@ -2500,7 +2518,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         })
         unitOfWork.afterCommit(async () => {
           const result = await pool.query<{ count: string }>(`
-            SELECT count(*) FROM canopy_entity_states WHERE entity_id = 'after-commit'
+            SELECT count(*) FROM doxa_entity_states WHERE entity_id = 'after-commit'
           `)
           visibleAfterCommit = Number(result.rows[0]!.count) === 1
         })
@@ -2538,7 +2556,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       ).rejects.toBeInstanceOf(AfterCommitError)
 
       const durable = await pool.query<{ count: string }>(`
-        SELECT count(*) FROM canopy_entity_states WHERE entity_id = 'after-commit-failure'
+        SELECT count(*) FROM doxa_entity_states WHERE entity_id = 'after-commit-failure'
       `)
       expect(Number(durable.rows[0]!.count)).toBe(1)
     } finally {
@@ -2550,7 +2568,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const auth = new PostgresAuth({
       connectionString,
       secureCookies: false,
-      trustedOrigins: ['http://canopy.test'],
+      trustedOrigins: ['http://doxa.test'],
       sessionRenewalSeconds: 0,
       sessionRotationGraceSeconds: 30,
     })
@@ -2561,32 +2579,32 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       const grant = await auth.login({ email, password: 'rotation secure password' })
       const oldToken = grant.token.reveal()
       const rotated = await auth.resolveHttp(
-        new Request('http://canopy.test/auth/me', {
-          headers: { cookie: `canopy_session=${oldToken}` },
+        new Request('http://doxa.test/auth/me', {
+          headers: { cookie: `doxa_session=${oldToken}` },
         }),
       )
       expect(rotated.authentication.state).toBe('authenticated')
       const replacementCookie = rotated.responseHeaders?.['set-cookie']
-      expect(replacementCookie).toContain('canopy_session=')
-      const replacement = replacementCookie!.match(/canopy_session=([^;]+)/)![1]!
+      expect(replacementCookie).toContain('doxa_session=')
+      const replacement = replacementCookie!.match(/doxa_session=([^;]+)/)![1]!
       expect(replacement).not.toBe(oldToken)
 
       const concurrentOld = await auth.resolveHttp(
-        new Request('http://canopy.test/auth/me', {
-          headers: { cookie: `canopy_session=${oldToken}` },
+        new Request('http://doxa.test/auth/me', {
+          headers: { cookie: `doxa_session=${oldToken}` },
         }),
       )
       expect(concurrentOld.authentication.state).toBe('authenticated')
       expect(concurrentOld.responseHeaders).toBeUndefined()
       await pool.query(
-        `UPDATE canopy_auth_sessions SET previous_token_expires_at = now() - interval '1 second' WHERE id = $1`,
+        `UPDATE doxa_auth_sessions SET previous_token_expires_at = now() - interval '1 second' WHERE id = $1`,
         [grant.session.id],
       )
       expect(
         (
           await auth.resolveHttp(
-            new Request('http://canopy.test/auth/me', {
-              headers: { cookie: `canopy_session=${oldToken}` },
+            new Request('http://doxa.test/auth/me', {
+              headers: { cookie: `doxa_session=${oldToken}` },
             }),
           )
         ).authentication.state,
@@ -2594,8 +2612,8 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       expect(
         (
           await auth.resolveHttp(
-            new Request('http://canopy.test/auth/me', {
-              headers: { cookie: `canopy_session=${replacement}` },
+            new Request('http://doxa.test/auth/me', {
+              headers: { cookie: `doxa_session=${replacement}` },
             }),
           )
         ).authentication.state,
@@ -2609,7 +2627,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const auth = new PostgresAuth({
       connectionString,
       secureCookies: false,
-      trustedOrigins: ['http://canopy.test'],
+      trustedOrigins: ['http://doxa.test'],
       identityId: () => 'employee-42',
       tables: {
         identities: {
@@ -2632,10 +2650,10 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       kind: 'mapped',
       identities: { table: 'legacy_auth_users', ownership: 'external' },
       passwords: { table: 'legacy_auth_users', ownership: 'external' },
-      sessions: { table: 'canopy_auth_sessions', ownership: 'canopy' },
-      accessTokens: { table: 'canopy_auth_access_tokens', ownership: 'canopy' },
-      challenges: { table: 'canopy_auth_challenges', ownership: 'canopy' },
-      audit: { table: 'canopy_auth_audit_events', ownership: 'canopy' },
+      sessions: { table: 'doxa_auth_sessions', ownership: 'doxa' },
+      accessTokens: { table: 'doxa_auth_access_tokens', ownership: 'doxa' },
+      challenges: { table: 'doxa_auth_challenges', ownership: 'doxa' },
+      audit: { table: 'doxa_auth_audit_events', ownership: 'doxa' },
     })
     await auth.start(lifecycleContext())
     try {
@@ -2663,9 +2681,9 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
           email_address: 'legacy@example.com',
         }),
       )
-      expect(legacy.rows[0]!.password_record).toMatch(/^canopy-argon2id:/)
-      expect((await pool.query(`SELECT 1 FROM canopy_auth_identities`)).rowCount).toBe(0)
-      expect((await pool.query(`SELECT 1 FROM canopy_auth_passwords`)).rowCount).toBe(0)
+      expect(legacy.rows[0]!.password_record).toMatch(/^doxa-argon2id:/)
+      expect((await pool.query(`SELECT 1 FROM doxa_auth_identities`)).rowCount).toBe(0)
+      expect((await pool.query(`SELECT 1 FROM doxa_auth_passwords`)).rowCount).toBe(0)
 
       const verification = await auth.issueEmailVerification(identity.id)
       expect((await auth.verifyEmail(verification.token.reveal())).emailVerified).toBe(true)
@@ -2685,8 +2703,8 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       expect(
         (
           await auth.resolveHttp(
-            new Request('http://canopy.test/auth/me', {
-              headers: { cookie: `canopy_session=${grant.token.reveal()}` },
+            new Request('http://doxa.test/auth/me', {
+              headers: { cookie: `doxa_session=${grant.token.reveal()}` },
             }),
           )
         ).actor,
@@ -2699,7 +2717,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       expect(
         (
           await auth.resolveHttp(
-            new Request('http://canopy.test/auth/me', {
+            new Request('http://doxa.test/auth/me', {
               headers: { authorization: `Bearer ${access.token.reveal()}` },
             }),
           )
@@ -2734,11 +2752,8 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         },
       )
       expect(
-        (
-          await pool.query(
-            `SELECT 1 FROM canopy_auth_audit_events WHERE identity_id = 'employee-42'`,
-          )
-        ).rowCount,
+        (await pool.query(`SELECT 1 FROM doxa_auth_audit_events WHERE identity_id = 'employee-42'`))
+          .rowCount,
       ).toBeGreaterThan(0)
     } finally {
       await auth.dispose(lifecycleContext())
@@ -2749,7 +2764,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const auth = new PostgresAuth({
       connectionString,
       secureCookies: false,
-      trustedOrigins: ['http://canopy.test'],
+      trustedOrigins: ['http://doxa.test'],
       tables: {
         identities: {
           table: 'legacy_auth_users',
@@ -2771,10 +2786,10 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
   })
 })
 
-async function bootPersistenceRuntime(): Promise<CanopyRuntime> {
+async function bootPersistenceRuntime(): Promise<DoxaRuntime> {
   const artifactsDirectory = await temporaryDirectory()
   await compilePersistenceApplication(artifactsDirectory)
-  const runtime = await Canopy.boot(Application, {
+  const runtime = await Doxa.boot(Application, {
     artifactsDirectory,
     dotenvPath: false,
     environment: {
@@ -2788,7 +2803,7 @@ async function bootPersistenceRuntime(): Promise<CanopyRuntime> {
 }
 
 function runAction<Input, Output>(
-  runtime: CanopyRuntime,
+  runtime: DoxaRuntime,
   action: ActionClass<Input, Output>,
   input: Input,
 ): Promise<Awaited<Output>> {
@@ -2813,7 +2828,7 @@ async function compilePersistenceApplication(artifactsDirectory: string) {
 }
 
 async function temporaryDirectory(): Promise<string> {
-  const directory = await mkdtemp(path.join(tmpdir(), 'canopy-persistence-'))
+  const directory = await mkdtemp(path.join(tmpdir(), 'doxa-persistence-'))
   temporaryDirectories.push(directory)
   return directory
 }
@@ -2829,9 +2844,9 @@ async function durableRowCounts(): Promise<{
     outbox: string
   }>(`
     SELECT
-      (SELECT count(*) FROM canopy_entity_states) AS entities,
-      (SELECT count(*) FROM canopy_journal_entries) AS journal,
-      (SELECT count(*) FROM canopy_outbox_messages) AS outbox
+      (SELECT count(*) FROM doxa_entity_states) AS entities,
+      (SELECT count(*) FROM doxa_journal_entries) AS journal,
+      (SELECT count(*) FROM doxa_outbox_messages) AS outbox
   `)
   const counts = result.rows[0]!
   return {

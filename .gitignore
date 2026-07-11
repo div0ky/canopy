@@ -7,7 +7,7 @@ node_modules/
 !.env.example
 
 dist/
-.canopy/
+.doxa/
 coverage/
 .next/
 *.tsbuildinfo

@@ -15,42 +15,42 @@ importers:
       '@arethetypeswrong/cli':
         specifier: 0.18.5
         version: 0.18.5
-      '@canopy/arbor':
+      '@doxajs/praxis':
         specifier: workspace:*
-        version: link:packages/arbor
-      '@canopy/auth-postgres':
+        version: link:packages/praxis
+      '@doxajs/auth-postgres':
         specifier: workspace:*
         version: link:packages/auth-postgres
-      '@canopy/compiler':
+      '@doxajs/compiler':
         specifier: workspace:*
         version: link:packages/compiler
-      '@canopy/core':
+      '@doxajs/core':
         specifier: workspace:*
         version: link:packages/core
-      '@canopy/http-hono':
+      '@doxajs/http-hono':
         specifier: workspace:*
         version: link:packages/http-hono
-      '@canopy/postgres-drizzle':
+      '@doxajs/postgres-drizzle':
         specifier: workspace:*
         version: link:packages/postgres-drizzle
-      '@canopy/queue-pg-boss':
+      '@doxajs/queue-pg-boss':
         specifier: workspace:*
         version: link:packages/queue-pg-boss
-      '@canopy/runtime':
+      '@doxajs/runtime':
         specifier: workspace:*
         version: link:packages/runtime
-      '@canopy/sendgrid':
+      '@doxajs/sendgrid':
         specifier: workspace:*
         version: link:packages/sendgrid
-      '@canopy/testing':
+      '@doxajs/testing':
         specifier: workspace:*
         version: link:packages/testing
-      '@canopy/twilio-sms':
+      '@doxajs/twilio-sms':
         specifier: workspace:*
         version: link:packages/twilio-sms
-      '@canopy/undergrowth':
+      '@doxajs/theoria':
         specifier: workspace:*
-        version: link:packages/undergrowth
+        version: link:packages/theoria
       '@changesets/cli':
         specifier: 2.31.0
         version: 2.31.0(@types/node@24.13.3)
@@ -160,43 +160,43 @@ importers:
 
   examples/persistence-app:
     dependencies:
-      '@canopy/auth-postgres':
+      '@doxajs/auth-postgres':
         specifier: workspace:*
         version: link:../../packages/auth-postgres
-      '@canopy/core':
+      '@doxajs/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@canopy/postgres-drizzle':
+      '@doxajs/postgres-drizzle':
         specifier: workspace:*
         version: link:../../packages/postgres-drizzle
-      '@canopy/queue-pg-boss':
+      '@doxajs/queue-pg-boss':
         specifier: workspace:*
         version: link:../../packages/queue-pg-boss
-      '@canopy/undergrowth':
+      '@doxajs/theoria':
         specifier: workspace:*
-        version: link:../../packages/undergrowth
+        version: link:../../packages/theoria
       zod:
         specifier: 4.4.3
         version: 4.4.3
 
   examples/reference-app:
     dependencies:
-      '@canopy/core':
+      '@doxajs/core':
         specifier: workspace:*
         version: link:../../packages/core
 
-  packages/arbor:
+  packages/praxis:
     dependencies:
-      '@canopy/core':
+      '@doxajs/core':
         specifier: workspace:*
         version: link:../core
-      '@canopy/http-hono':
+      '@doxajs/http-hono':
         specifier: workspace:*
         version: link:../http-hono
-      '@canopy/queue-pg-boss':
+      '@doxajs/queue-pg-boss':
         specifier: workspace:*
         version: link:../queue-pg-boss
-      '@canopy/runtime':
+      '@doxajs/runtime':
         specifier: workspace:*
         version: link:../runtime
       pg:
@@ -207,19 +207,19 @@ importers:
         specifier: 8.20.0
         version: 8.20.0
     optionalDependencies:
-      '@canopy/compiler':
+      '@doxajs/compiler':
         specifier: workspace:*
         version: link:../compiler
-      '@canopy/undergrowth':
+      '@doxajs/theoria':
         specifier: workspace:*
-        version: link:../undergrowth
+        version: link:../theoria
       drizzle-kit:
         specifier: 0.31.10
         version: 0.31.10
 
   packages/auth-postgres:
     dependencies:
-      '@canopy/core':
+      '@doxajs/core':
         specifier: workspace:*
         version: link:../core
       drizzle-orm:
@@ -235,7 +235,7 @@ importers:
 
   packages/compiler:
     dependencies:
-      '@canopy/manifest':
+      '@doxajs/manifest':
         specifier: workspace:*
         version: link:../manifest
       typescript:
@@ -246,10 +246,10 @@ importers:
 
   packages/http-hono:
     dependencies:
-      '@canopy/core':
+      '@doxajs/core':
         specifier: workspace:*
         version: link:../core
-      '@canopy/runtime':
+      '@doxajs/runtime':
         specifier: workspace:*
         version: link:../runtime
       '@hono/node-server':
@@ -263,7 +263,7 @@ importers:
 
   packages/postgres-drizzle:
     dependencies:
-      '@canopy/core':
+      '@doxajs/core':
         specifier: workspace:*
         version: link:../core
       drizzle-orm:
@@ -279,7 +279,7 @@ importers:
 
   packages/queue-pg-boss:
     dependencies:
-      '@canopy/core':
+      '@doxajs/core':
         specifier: workspace:*
         version: link:../core
       pg:
@@ -295,40 +295,40 @@ importers:
 
   packages/runtime:
     dependencies:
-      '@canopy/core':
+      '@doxajs/core':
         specifier: workspace:*
         version: link:../core
-      '@canopy/manifest':
+      '@doxajs/manifest':
         specifier: workspace:*
         version: link:../manifest
 
   packages/sendgrid:
     dependencies:
-      '@canopy/core':
+      '@doxajs/core':
         specifier: workspace:*
         version: link:../core
 
   packages/testing:
     dependencies:
-      '@canopy/core':
+      '@doxajs/core':
         specifier: workspace:*
         version: link:../core
-      '@canopy/http-hono':
+      '@doxajs/http-hono':
         specifier: workspace:*
         version: link:../http-hono
-      '@canopy/runtime':
+      '@doxajs/runtime':
         specifier: workspace:*
         version: link:../runtime
 
   packages/twilio-sms:
     dependencies:
-      '@canopy/core':
+      '@doxajs/core':
         specifier: workspace:*
         version: link:../core
 
-  packages/undergrowth:
+  packages/theoria:
     dependencies:
-      '@canopy/core':
+      '@doxajs/core':
         specifier: workspace:*
         version: link:../core
       pg:

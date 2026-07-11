@@ -1,4 +1,4 @@
-import { CurrentExecution, Listener } from '@canopy/core'
+import { CurrentExecution, Listener } from '@doxajs/core'
 
 import { UserLoggedIn } from '../events/user-logged-in.js'
 import { AccountEventRecorder } from '../support/account-event-recorder.js'

@@ -1,10 +1,10 @@
-# `@canopy/http-hono`
+# `@doxajs/http-hono`
 
-Canopy's first-party Hono-backed HTTP engine and lifecycle-coordinated Node host. Hono remains an
-adapter implementation detail; applications declare routes through `@canopy/core`.
+Doxa's first-party Hono-backed HTTP engine and lifecycle-coordinated Node host. Hono remains an
+adapter implementation detail; applications declare routes through `@doxajs/core`.
 
 ```sh
-pnpm add @canopy/http-hono
+pnpm add @doxajs/http-hono
 ```
 
-Most applications receive this adapter through the Arbor-generated composition boundary.
+Most applications receive this adapter through the Praxis-generated composition boundary.

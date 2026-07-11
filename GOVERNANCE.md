@@ -1,6 +1,6 @@
 # Governance
 
-Canopy currently uses a maintainer-led governance model.
+Doxa currently uses a maintainer-led governance model.
 
 Maintainers are responsible for roadmap direction, accepted architectural decisions, release
 quality, security response, and stewardship of the package and repository namespaces. Decisions

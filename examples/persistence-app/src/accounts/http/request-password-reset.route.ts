@@ -1,4 +1,4 @@
-import { ActionBus, Auth, Http, type HttpRequest, Route } from '@canopy/core'
+import { ActionBus, Auth, Http, type HttpRequest, Route } from '@doxajs/core'
 
 import { SendAuthEmail } from '../actions/send-auth-email.js'
 

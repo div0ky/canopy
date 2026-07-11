@@ -1,18 +1,18 @@
 import path from 'node:path'
 
-import { HonoHttpHost } from '@canopy/http-hono'
-import { Canopy } from '@canopy/runtime'
+import { HonoHttpHost } from '@doxajs/http-hono'
+import { Doxa } from '@doxajs/runtime'
 
 import { Application } from '../examples/persistence-app/dist/application.js'
 
 const workspace = process.cwd()
-const artifactsDirectory = path.join(workspace, '.canopy/dev')
+const artifactsDirectory = path.join(workspace, '.doxa/dev')
 const connectionString =
-  process.env.DATABASE_CONNECTION_STRING ?? 'postgresql://canopy:canopy@127.0.0.1:54329/canopy'
+  process.env.DATABASE_CONNECTION_STRING ?? 'postgresql://doxa:doxa@127.0.0.1:54329/doxa'
 const port = numberFromEnvironment('PORT', 3000)
 const hostname = process.env.HOST ?? '127.0.0.1'
 
-const runtime = await Canopy.boot(Application, {
+const runtime = await Doxa.boot(Application, {
   artifactsDirectory,
   dotenvPath: false,
   environment: {

@@ -1,4 +1,4 @@
-import { CurrentExecution, CurrentJob, Job } from '@canopy/core'
+import { CurrentExecution, CurrentJob, Job } from '@doxajs/core'
 
 import { recordedJobAttempts } from '../../support/job-attempts.js'
 import { Counter } from '../models/counter.js'

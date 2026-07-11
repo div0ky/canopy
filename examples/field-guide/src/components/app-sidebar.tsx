@@ -35,7 +35,7 @@ export function AppSidebar() {
       <SidebarHeader className="px-3 py-5">
         <div className="flex items-center gap-3 px-1 text-primary">
           <LeafIcon aria-hidden="true" className="size-7 stroke-[1.4]" />
-          <span className="font-display text-3xl group-data-[collapsible=icon]:hidden">Canopy</span>
+          <span className="font-display text-3xl group-data-[collapsible=icon]:hidden">Doxa</span>
         </div>
       </SidebarHeader>
       <SidebarContent>

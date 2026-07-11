@@ -7,7 +7,7 @@ updates:
       day: monday
     open-pull-requests-limit: 10
     groups:
-      canopy-tooling:
+      doxa-tooling:
         patterns:
           [
             '@types/*',

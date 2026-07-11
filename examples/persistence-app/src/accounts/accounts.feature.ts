@@ -1,4 +1,4 @@
-import { Feature } from '@canopy/core'
+import { Feature } from '@doxajs/core'
 
 import { UserLoggedIn } from './events/user-logged-in.js'
 import { UserRegistered } from './events/user-registered.js'

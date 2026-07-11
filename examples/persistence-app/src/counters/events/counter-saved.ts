@@ -1,4 +1,4 @@
-import { Event, type ShouldDispatchAfterCommit } from '@canopy/core'
+import { Event, type ShouldDispatchAfterCommit } from '@doxajs/core'
 
 export class CounterSaved
   extends Event<{ counterId: string; value: number }>

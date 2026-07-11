@@ -1,5 +1,5 @@
 import { currentJobDispatcher } from './queue-context.js'
-import { CanopyRole } from './role.js'
+import { DoxaRole } from './role.js'
 import type { ActorRef, JsonValue, TenantRef, TraceContext } from './index.js'
 
 export interface JobDispatchOptions {
@@ -16,7 +16,7 @@ export class JobDispatchError extends Error {
   override readonly name = 'JobDispatchError'
 }
 
-export abstract class Job<Input = unknown, Output = void> extends CanopyRole {
+export abstract class Job<Input = unknown, Output = void> extends DoxaRole {
   static readonly id: string = ''
   static readonly access: string = ''
   static readonly retries: number = 3
@@ -31,7 +31,7 @@ export abstract class Job<Input = unknown, Output = void> extends CanopyRole {
   ): Promise<string> {
     const dispatcher = currentJobDispatcher()
     if (!dispatcher) {
-      throw new JobDispatchError('Job dispatch requires an active Canopy-managed execution.')
+      throw new JobDispatchError('Job dispatch requires an active Doxa-managed execution.')
     }
     return dispatcher.dispatch(this, input, options)
   }
@@ -43,7 +43,7 @@ export type ScheduleOverlapPolicy = 'allow' | 'serialize'
 export type ScheduleMisfirePolicy = 'skip'
 
 /**
- * Compile-time schedule declaration. Canopy never constructs this class.
+ * Compile-time schedule declaration. Doxa never constructs this class.
  * A schedule owns timing; its target Job continues to own execution.
  */
 export abstract class Schedule<Input = unknown> {

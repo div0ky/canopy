@@ -1,4 +1,4 @@
-import { CurrentExecution, Listener, type ShouldHandleEventsAfterCommit } from '@canopy/core'
+import { CurrentExecution, Listener, type ShouldHandleEventsAfterCommit } from '@doxajs/core'
 
 import { CounterIncremented } from '../events/counter-incremented.js'
 import { CounterEventRecorder } from '../support/counter-event-recorder.js'

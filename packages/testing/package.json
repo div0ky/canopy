@@ -1,19 +1,19 @@
 {
-  "name": "@canopy/testing",
+  "name": "@doxajs/testing",
   "version": "0.1.0-alpha.0",
-  "description": "First-party test harnesses, fakes, and assertions for Canopy applications.",
+  "description": "First-party test harnesses, fakes, and assertions for Doxa applications.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/div0ky/canopy.git",
+    "url": "git+https://github.com/div0ky/doxajs.git",
     "directory": "packages/testing"
   },
-  "homepage": "https://github.com/div0ky/canopy#readme",
+  "homepage": "https://github.com/div0ky/doxajs#readme",
   "bugs": {
-    "url": "https://github.com/div0ky/canopy/issues"
+    "url": "https://github.com/div0ky/doxajs/issues"
   },
   "keywords": [
-    "canopy",
+    "doxa",
     "framework",
     "testing",
     "vitest",
@@ -42,8 +42,8 @@
     "postpack": "node ../../scripts/prepare-package.mjs --clean"
   },
   "dependencies": {
-    "@canopy/core": "workspace:*",
-    "@canopy/http-hono": "workspace:*",
-    "@canopy/runtime": "workspace:*"
+    "@doxajs/core": "workspace:*",
+    "@doxajs/http-hono": "workspace:*",
+    "@doxajs/runtime": "workspace:*"
   }
 }

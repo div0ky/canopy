@@ -2,14 +2,14 @@
 
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
-- **Decision owners:** Canopy maintainers
+- **Decision owners:** Doxa maintainers
 
 ## Decision
 
 The MVP specifications will use these defaults:
 
 - Each action or query has exactly one handler.
-- Actions open a Canopy unit of work and database transaction by default.
+- Actions open a Doxa unit of work and database transaction by default.
 - Queries are non-mutating and do not publish domain events.
 - Nested action dispatch is prohibited in the MVP.
 - Domain events are collected during action execution.
@@ -47,7 +47,7 @@ await actions.execute(CreateOrder, input)
 ```
 
 This keeps the Feature declaration concise, removes routine constructor and `super()` ceremony,
-makes one handler obvious to humans and Cultivate, and avoids separate command and handler
+makes one handler obvious to humans and Gnosis, and avoids separate command and handler
 registration. The compiler records the exact operation, dependency graph, scope, and transaction
 semantics in the manifest. Ordinary services beneath the operation continue to use constructor
 injection.

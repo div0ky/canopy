@@ -2,12 +2,12 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import { HotReloadSupervisor } from '@canopy/arbor/hot-reload'
+import { HotReloadSupervisor } from '@doxajs/praxis/hot-reload'
 import { afterEach, describe, expect, it } from 'vitest'
 
 const directories: string[] = []
 
-describe('Canopy hot reload', () => {
+describe('Doxa hot reload', () => {
   afterEach(async () => {
     await Promise.all(
       directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
@@ -88,7 +88,7 @@ describe('Canopy hot reload', () => {
 })
 
 async function temporaryDirectory(): Promise<string> {
-  const directory = await mkdtemp(path.join(tmpdir(), 'canopy-hot-reload-'))
+  const directory = await mkdtemp(path.join(tmpdir(), 'doxa-hot-reload-'))
   directories.push(directory)
   return directory
 }

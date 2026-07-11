@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible problem in Canopy
+description: Report a reproducible problem in Doxa
 title: '[Bug]: '
 labels: [bug, needs-triage]
 body:
@@ -9,7 +9,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: Canopy version or commit
+      label: Doxa version or commit
       placeholder: 0.1.0-alpha.1 or commit SHA
     validations:
       required: true

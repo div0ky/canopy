@@ -1,4 +1,4 @@
-import { ActionBus, type HttpRequest, Route } from '@canopy/core'
+import { ActionBus, type HttpRequest, Route } from '@doxajs/core'
 import { z } from 'zod'
 
 import { SaveCounter } from '../actions/save-counter.js'

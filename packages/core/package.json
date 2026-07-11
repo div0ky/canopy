@@ -1,19 +1,20 @@
 {
-  "name": "@canopy/core",
+  "name": "@doxajs/core",
   "version": "0.1.0-alpha.0",
-  "description": "The application-facing programming model and contracts for the Canopy framework.",
+  "description": "The application-facing programming model and contracts for the Doxa.js framework.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/div0ky/canopy.git",
+    "url": "git+https://github.com/div0ky/doxajs.git",
     "directory": "packages/core"
   },
-  "homepage": "https://github.com/div0ky/canopy#readme",
+  "homepage": "https://github.com/div0ky/doxajs#readme",
   "bugs": {
-    "url": "https://github.com/div0ky/canopy/issues"
+    "url": "https://github.com/div0ky/doxajs/issues"
   },
   "keywords": [
-    "canopy",
+    "doxa",
+    "doxajs",
     "framework",
     "typescript",
     "backend",

@@ -1,19 +1,19 @@
 {
-  "name": "@canopy/compiler",
+  "name": "@doxajs/compiler",
   "version": "0.1.0-alpha.0",
-  "description": "The fail-closed semantic TypeScript compiler for Canopy applications.",
+  "description": "The fail-closed semantic TypeScript compiler for Doxa applications.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/div0ky/canopy.git",
+    "url": "git+https://github.com/div0ky/doxajs.git",
     "directory": "packages/compiler"
   },
-  "homepage": "https://github.com/div0ky/canopy#readme",
+  "homepage": "https://github.com/div0ky/doxajs#readme",
   "bugs": {
-    "url": "https://github.com/div0ky/canopy/issues"
+    "url": "https://github.com/div0ky/doxajs/issues"
   },
   "keywords": [
-    "canopy",
+    "doxa",
     "framework",
     "compiler",
     "typescript"
@@ -41,7 +41,7 @@
     "postpack": "node ../../scripts/prepare-package.mjs --clean"
   },
   "dependencies": {
-    "@canopy/manifest": "workspace:*",
+    "@doxajs/manifest": "workspace:*",
     "typescript": "6.0.2"
   }
 }

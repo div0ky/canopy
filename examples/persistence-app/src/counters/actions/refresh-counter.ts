@@ -1,4 +1,4 @@
-import { Action } from '@canopy/core'
+import { Action } from '@doxajs/core'
 
 import { Counter } from '../models/counter.js'
 

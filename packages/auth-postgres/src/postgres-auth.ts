@@ -22,7 +22,7 @@ import {
   type PolicyDecision,
   SecretString,
   type Starts,
-} from '@canopy/core'
+} from '@doxajs/core'
 import { and, eq, gt, isNull, or } from 'drizzle-orm'
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres'
 import { Pool, type PoolClient, type QueryResultRow } from 'pg'
@@ -65,8 +65,8 @@ import {
   serializeCookie,
 } from './request-auth.js'
 
-const DEVELOPMENT_COOKIE_NAME = 'canopy_session'
-const PRODUCTION_COOKIE_NAME = '__Host-canopy_session'
+const DEVELOPMENT_COOKIE_NAME = 'doxa_session'
+const PRODUCTION_COOKIE_NAME = '__Host-doxa_session'
 
 type Database = NodePgDatabase<typeof authSchema>
 
@@ -100,7 +100,7 @@ export interface AuthIdentityTableMapping {
 export interface AuthPasswordTableMapping {
   readonly table: string
   readonly identityId: string
-  /** One text column containing Canopy's versioned Argon2id record. */
+  /** One text column containing Doxa's versioned Argon2id record. */
   readonly password: string
   readonly updatedAt: string
 }
@@ -134,19 +134,19 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
 
   override storage(): AuthStorageDescription {
     return Object.freeze({
-      kind: this.options.tables ? 'mapped' : 'canopy-owned',
+      kind: this.options.tables ? 'mapped' : 'doxa-owned',
       identities: {
-        table: this.options.tables?.identities.table ?? 'canopy_auth_identities',
-        ownership: this.options.tables ? 'external' : 'canopy',
+        table: this.options.tables?.identities.table ?? 'doxa_auth_identities',
+        ownership: this.options.tables ? 'external' : 'doxa',
       },
       passwords: {
-        table: this.options.tables?.passwords.table ?? 'canopy_auth_passwords',
-        ownership: this.options.tables ? 'external' : 'canopy',
+        table: this.options.tables?.passwords.table ?? 'doxa_auth_passwords',
+        ownership: this.options.tables ? 'external' : 'doxa',
       },
-      sessions: { table: 'canopy_auth_sessions', ownership: 'canopy' },
-      accessTokens: { table: 'canopy_auth_access_tokens', ownership: 'canopy' },
-      challenges: { table: 'canopy_auth_challenges', ownership: 'canopy' },
-      audit: { table: 'canopy_auth_audit_events', ownership: 'canopy' },
+      sessions: { table: 'doxa_auth_sessions', ownership: 'doxa' },
+      accessTokens: { table: 'doxa_auth_access_tokens', ownership: 'doxa' },
+      challenges: { table: 'doxa_auth_challenges', ownership: 'doxa' },
+      audit: { table: 'doxa_auth_audit_events', ownership: 'doxa' },
     } satisfies AuthStorageDescription)
   }
 
@@ -154,7 +154,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     if (context.signal.aborted) throw context.signal.reason
     const pool = new Pool({
       connectionString: this.options.connectionString,
-      application_name: this.options.applicationName ?? 'canopy-auth',
+      application_name: this.options.applicationName ?? 'doxa-auth',
     })
     try {
       await pool.query('select 1')
@@ -822,7 +822,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
   }
 
   async #resolveBearer(authorization: string): Promise<ResolvedHttpAuthentication> {
-    const match = /^Bearer (canopy_pat_([A-Za-z0-9_-]{16})_[A-Za-z0-9_-]{43})$/.exec(authorization)
+    const match = /^Bearer (doxa_pat_([A-Za-z0-9_-]{16})_[A-Za-z0-9_-]{43})$/.exec(authorization)
     if (!match)
       throw new AuthenticationError('invalid_credentials', 'The bearer credential is invalid.')
     const [, token, tokenId] = match
@@ -937,14 +937,14 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
       blocked_until: Date | null
     }>(
       `
-      INSERT INTO canopy_auth_rate_limits (action, bucket_key, window_started_at, attempts, blocked_until)
+      INSERT INTO doxa_auth_rate_limits (action, bucket_key, window_started_at, attempts, blocked_until)
       VALUES ($1, $2, now(), 1, NULL)
       ON CONFLICT (action, bucket_key) DO UPDATE SET
-        window_started_at = CASE WHEN canopy_auth_rate_limits.window_started_at <= now() - ($4 * interval '1 second') THEN now() ELSE canopy_auth_rate_limits.window_started_at END,
-        attempts = CASE WHEN canopy_auth_rate_limits.window_started_at <= now() - ($4 * interval '1 second') THEN 1 ELSE canopy_auth_rate_limits.attempts + 1 END,
+        window_started_at = CASE WHEN doxa_auth_rate_limits.window_started_at <= now() - ($4 * interval '1 second') THEN now() ELSE doxa_auth_rate_limits.window_started_at END,
+        attempts = CASE WHEN doxa_auth_rate_limits.window_started_at <= now() - ($4 * interval '1 second') THEN 1 ELSE doxa_auth_rate_limits.attempts + 1 END,
         blocked_until = CASE
-          WHEN canopy_auth_rate_limits.blocked_until > now() THEN canopy_auth_rate_limits.blocked_until
-          WHEN canopy_auth_rate_limits.window_started_at > now() - ($4 * interval '1 second') AND canopy_auth_rate_limits.attempts + 1 > $3 THEN now() + ($5 * interval '1 second')
+          WHEN doxa_auth_rate_limits.blocked_until > now() THEN doxa_auth_rate_limits.blocked_until
+          WHEN doxa_auth_rate_limits.window_started_at > now() - ($4 * interval '1 second') AND doxa_auth_rate_limits.attempts + 1 > $3 THEN now() + ($5 * interval '1 second')
           ELSE NULL
         END
       RETURNING attempts, blocked_until
@@ -1266,12 +1266,12 @@ function accessTokenMaterial(
   }
   const id = randomBytes(12).toString('base64url')
   const secret = randomBytes(32).toString('base64url')
-  const token = `canopy_pat_${id}_${secret}`
+  const token = `doxa_pat_${id}_${secret}`
   const row = {
     id,
     identityId,
     name,
-    displayPrefix: `canopy_pat_${id}_${secret.slice(0, 6)}`,
+    displayPrefix: `doxa_pat_${id}_${secret.slice(0, 6)}`,
     tokenDigest: digest(token),
     constraints,
     createdAt,

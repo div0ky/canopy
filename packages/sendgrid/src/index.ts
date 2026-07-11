@@ -6,7 +6,7 @@ import {
   type DeliveryAcceptance,
   type DeliveryUpdate,
   type MailMessage,
-} from '@canopy/core'
+} from '@doxajs/core'
 
 export interface SendGridOptions {
   readonly apiKey: string
@@ -78,7 +78,7 @@ export function normalizeSendGridEvents(rawBody: string): readonly DeliveryUpdat
       !record(value) ||
       typeof value.event !== 'string' ||
       typeof value.sg_event_id !== 'string' ||
-      typeof value.canopy_message_id !== 'string'
+      typeof value.doxa_message_id !== 'string'
     ) {
       throw new DeliveryError(
         'SendGrid webhook event is missing correlation fields.',
@@ -88,7 +88,7 @@ export function normalizeSendGridEvents(rawBody: string): readonly DeliveryUpdat
     }
     const mapped = sendGridState(value.event)
     return {
-      messageId: value.canopy_message_id,
+      messageId: value.doxa_message_id,
       eventId: value.sg_event_id,
       ...(typeof value.sg_message_id === 'string'
         ? { providerMessageId: value.sg_message_id }
@@ -103,7 +103,7 @@ function toRequest(message: MailMessage): Record<string, unknown> {
     from: { email: message.from },
     personalizations: message.to.map((email) => ({
       to: [{ email }],
-      custom_args: { canopy_message_id: message.id },
+      custom_args: { doxa_message_id: message.id },
     })),
   }
   if (message.template) {
@@ -111,7 +111,7 @@ function toRequest(message: MailMessage): Record<string, unknown> {
     request.personalizations = message.to.map((email) => ({
       to: [{ email }],
       dynamic_template_data: message.data ?? {},
-      custom_args: { canopy_message_id: message.id },
+      custom_args: { doxa_message_id: message.id },
     }))
   } else {
     request.subject = message.subject

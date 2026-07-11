@@ -1,4 +1,4 @@
-import { allow, deny, Policy, type PolicyDecision, type PolicyRequest } from '@canopy/core'
+import { allow, deny, Policy, type PolicyDecision, type PolicyRequest } from '@doxajs/core'
 
 interface OwnedCounter {
   readonly ownerId: string

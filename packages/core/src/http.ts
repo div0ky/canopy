@@ -161,7 +161,7 @@ export class HttpRequest {
   }
 }
 
-export abstract class Route<Output = unknown> extends CanopyRole {
+export abstract class Route<Output = unknown> extends DoxaRole {
   static readonly id: string = ''
   static readonly access: string = ''
   abstract readonly method: HttpMethod
@@ -185,4 +185,4 @@ export const Http = Object.freeze({
 })
 
 type HttpHeaders = Headers | Record<string, string> | Array<[string, string]>
-import { CanopyRole } from './role.js'
+import { DoxaRole } from './role.js'

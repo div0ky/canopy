@@ -2,16 +2,16 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import { compileApplication } from '@canopy/compiler'
+import { compileApplication } from '@doxajs/compiler'
 import {
-  CanopyTestHarness,
+  DoxaTestHarness,
   FakeMailTransport,
   FakeQueueManager,
   FakeSmsTransport,
   MemoryCache,
   MemoryTelemetry,
   MemoryTransactionManager,
-} from '@canopy/testing'
+} from '@doxajs/testing'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { Application } from '../examples/persistence-app/dist/application.js'
@@ -35,9 +35,9 @@ const workspace = path.resolve(import.meta.dirname, '..')
 const applicationRoot = path.join(workspace, 'examples/persistence-app')
 let artifacts: string
 
-describe('@canopy/testing', () => {
+describe('@doxajs/testing', () => {
   beforeAll(async () => {
-    artifacts = await mkdtemp(path.join(tmpdir(), 'canopy-testing-'))
+    artifacts = await mkdtemp(path.join(tmpdir(), 'doxa-testing-'))
     await compileApplication({
       tsconfigPath: path.join(applicationRoot, 'tsconfig.json'),
       applicationFile: path.join(applicationRoot, 'src/application.ts'),
@@ -57,7 +57,7 @@ describe('@canopy/testing', () => {
     const mail = new FakeMailTransport()
     const sms = new FakeSmsTransport()
     const telemetry = new MemoryTelemetry()
-    const harness = await CanopyTestHarness.boot(Application, {
+    const harness = await DoxaTestHarness.boot(Application, {
       artifactsDirectory: artifacts,
       dotenvPath: false,
       environment: { DATABASE_CONNECTION_STRING: 'test-memory-database' },
@@ -80,7 +80,7 @@ describe('@canopy/testing', () => {
         expect.objectContaining({ state: { id: 'memory-counter', value: 4 }, version: 1 }),
       )
 
-      const me = await harness.request('http://canopy.test/auth/me')
+      const me = await harness.request('http://doxa.test/auth/me')
       expect(me.status).toBe(200)
       expect(await me.json()).toEqual(
         expect.objectContaining({
@@ -88,14 +88,14 @@ describe('@canopy/testing', () => {
           data: expect.objectContaining({ actor: { kind: 'user', id: 'ada' } }),
         }),
       )
-      const home = await harness.request('http://canopy.test/')
+      const home = await harness.request('http://doxa.test/')
       expect(home.status).toBe(200)
-      expect((await harness.request('http://canopy.test/missing')).status).toBe(404)
+      expect((await harness.request('http://doxa.test/missing')).status).toBe(404)
       expect(harness.logs.records).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             channel: 'home-route',
-            message: 'Canopy home visited',
+            message: 'Doxa home visited',
             context: expect.objectContaining({ transport: 'http', actorKind: 'user' }),
           }),
           expect.objectContaining({ channel: 'http', message: 'Execution completed' }),
@@ -120,7 +120,7 @@ describe('@canopy/testing', () => {
       expect(harness.observations?.observations).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ kind: 'action', phase: 'completed' }),
-          expect.objectContaining({ kind: 'log', name: 'Canopy home visited' }),
+          expect.objectContaining({ kind: 'log', name: 'Doxa home visited' }),
         ]),
       )
     } finally {
@@ -130,7 +130,7 @@ describe('@canopy/testing', () => {
 
   it('preserves rollback and after-commit semantics in memory', async () => {
     const transactions = new MemoryTransactionManager()
-    const harness = await CanopyTestHarness.boot(Application, {
+    const harness = await DoxaTestHarness.boot(Application, {
       artifactsDirectory: artifacts,
       dotenvPath: false,
       environment: { DATABASE_CONNECTION_STRING: 'test-memory-database' },
@@ -159,7 +159,7 @@ describe('@canopy/testing', () => {
 
   it('preserves mapped-model semantics in the first-party memory fake', async () => {
     const transactions = new MemoryTransactionManager()
-    const harness = await CanopyTestHarness.boot(Application, {
+    const harness = await DoxaTestHarness.boot(Application, {
       artifactsDirectory: artifacts,
       dotenvPath: false,
       environment: { DATABASE_CONNECTION_STRING: 'test-memory-database' },
@@ -196,7 +196,7 @@ describe('@canopy/testing', () => {
     resetRecordedJobAttempts()
     const queue = new FakeQueueManager()
     const transactions = new MemoryTransactionManager(queue)
-    const harness = await CanopyTestHarness.boot(Application, {
+    const harness = await DoxaTestHarness.boot(Application, {
       artifactsDirectory: artifacts,
       dotenvPath: false,
       environment: { DATABASE_CONNECTION_STRING: 'test-memory-database' },

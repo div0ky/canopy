@@ -9,7 +9,7 @@
 ## Create and run
 
 ```sh
-pnpm dlx @canopy/arbor@next new MyApplication
+pnpm dlx @doxajs/praxis@next new MyApplication
 cd my-application
 pnpm install
 cp .env.example .env
@@ -43,13 +43,13 @@ declares framework-facing classes, and the compiler derives every reachable depe
 ## Useful commands
 
 ```sh
-pnpm arbor route:list
-pnpm arbor model:list
-pnpm arbor graph
-pnpm arbor db:studio
-pnpm arbor add undergrowth
+pnpm doxa route:list
+pnpm doxa model:list
+pnpm doxa graph
+pnpm doxa db:studio
+pnpm doxa add theoria
 pnpm test
 ```
 
-Run `pnpm arbor --help` for generators, inspection, recovery, authentication, queue, schedule,
-cache, migration, Cultivate, and runtime commands.
+Run `pnpm doxa --help` for generators, inspection, recovery, authentication, queue, schedule, cache,
+migration, Gnosis, and runtime commands.

@@ -2,24 +2,24 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import { compileApplication } from '@canopy/compiler'
+import { compileApplication } from '@doxajs/compiler'
 import {
   MemoryCache,
   RoleInjectionError,
   SecretString,
   sanitizeObservationAttributes,
   sanitizeObservationError,
-} from '@canopy/core'
+} from '@doxajs/core'
 import {
-  Canopy,
+  Doxa,
   ConfigurationValidationError,
   ExecutionAdmissionError,
   OperationDispatchError,
   ReadOnlyExecutionError,
   RuntimeBootError,
   RuntimeIntegrityError,
-} from '@canopy/runtime'
-import { PostgresUndergrowth } from '@canopy/undergrowth'
+} from '@doxajs/runtime'
+import { PostgresTheoria } from '@doxajs/theoria'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { Application } from '../examples/reference-app/dist/application.js'
@@ -64,7 +64,7 @@ describe('foundational compile-to-boot slice', () => {
       email: 'ada@example.com',
       password: 'correct horse battery staple',
       headers: { authorization: 'Bearer dangerously-visible', accept: 'application/json' },
-      database: 'postgresql://canopy:private@localhost/canopy',
+      database: 'postgresql://doxa:private@localhost/doxa',
       circular: (() => {
         const value: Record<string, unknown> = {}
         value.self = value
@@ -76,7 +76,7 @@ describe('foundational compile-to-boot slice', () => {
         email: 'ada@example.com',
         password: '[REDACTED]',
         headers: { authorization: '[REDACTED]', accept: 'application/json' },
-        database: 'postgresql://canopy:[REDACTED]@localhost/canopy',
+        database: 'postgresql://doxa:[REDACTED]@localhost/doxa',
         circular: { self: '[CIRCULAR]' },
       }),
     )
@@ -85,8 +85,8 @@ describe('foundational compile-to-boot slice', () => {
     )
   })
 
-  it('requires an explicit production override before Undergrowth can start', async () => {
-    const recorder = new PostgresUndergrowth({
+  it('requires an explicit production override before Theoria can start', async () => {
+    const recorder = new PostgresTheoria({
       connectionString: 'postgresql://unused:unused@127.0.0.1:1/unused',
       environment: 'production',
     })
@@ -172,7 +172,7 @@ describe('foundational compile-to-boot slice', () => {
       expect.objectContaining({
         kind: 'constructor',
         parameter: 'execution',
-        targetId: 'canopy:current-execution',
+        targetId: 'doxa:current-execution',
       }),
     ])
     expect(firstRegistry).not.toContain('dependencies')
@@ -183,7 +183,7 @@ describe('foundational compile-to-boot slice', () => {
     const artifactsDirectory = await temporaryDirectory()
     await compile(artifactsDirectory)
 
-    const runtime = await Canopy.boot(Application, {
+    const runtime = await Doxa.boot(Application, {
       artifactsDirectory,
       dotenvPath: false,
       environment: {
@@ -224,7 +224,7 @@ describe('foundational compile-to-boot slice', () => {
     }
 
     await expect(
-      Canopy.boot(Application, {
+      Doxa.boot(Application, {
         artifactsDirectory,
         dotenvPath: false,
         environment: { WORKER_FAIL_STARTUP: 'true' },
@@ -252,7 +252,7 @@ describe('foundational compile-to-boot slice', () => {
     await compile(artifactsDirectory)
 
     await expect(
-      Canopy.boot(Application, {
+      Doxa.boot(Application, {
         artifactsDirectory,
         dotenvPath: false,
         environment: {
@@ -281,7 +281,7 @@ describe('foundational compile-to-boot slice', () => {
     await writeFile(result.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
 
     await expect(
-      Canopy.boot(Application, {
+      Doxa.boot(Application, {
         artifactsDirectory,
         dotenvPath: false,
         environment: {},
@@ -299,7 +299,7 @@ describe('foundational compile-to-boot slice', () => {
     await writeFile(result.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
 
     await expect(
-      Canopy.boot(Application, {
+      Doxa.boot(Application, {
         artifactsDirectory,
         dotenvPath: false,
         environment: {},
@@ -317,12 +317,12 @@ describe('foundational compile-to-boot slice', () => {
     await writeFile(result.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
 
     await expect(
-      Canopy.boot(Application, {
+      Doxa.boot(Application, {
         artifactsDirectory,
         dotenvPath: false,
         environment: {},
       }),
-    ).rejects.toThrow('Unsupported Canopy manifest format 2; expected 11')
+    ).rejects.toThrow('Unsupported Doxa manifest format 2; expected 11')
   })
 
   it('rejects an Application constructor that does not match the generated registry', async () => {
@@ -331,12 +331,12 @@ describe('foundational compile-to-boot slice', () => {
     class DifferentApplication extends Application {}
 
     await expect(
-      Canopy.boot(DifferentApplication, {
+      Doxa.boot(DifferentApplication, {
         artifactsDirectory,
         dotenvPath: false,
         environment: {},
       }),
-    ).rejects.toThrow('not the Application passed to Canopy.boot()')
+    ).rejects.toThrow('not the Application passed to Doxa.boot()')
   })
 
   it('shares one execution-scoped service across actions and queries', async () => {
@@ -560,7 +560,7 @@ describe('foundational compile-to-boot slice', () => {
 })
 
 async function temporaryDirectory(): Promise<string> {
-  const directory = await mkdtemp(path.join(tmpdir(), 'canopy-foundation-'))
+  const directory = await mkdtemp(path.join(tmpdir(), 'doxa-foundation-'))
   temporaryDirectories.push(directory)
   return directory
 }
@@ -578,7 +578,7 @@ async function compile(artifactsDirectory: string) {
 async function bootRuntime() {
   const artifactsDirectory = await temporaryDirectory()
   await compile(artifactsDirectory)
-  return Canopy.boot(Application, {
+  return Doxa.boot(Application, {
     artifactsDirectory,
     dotenvPath: false,
     environment: {},

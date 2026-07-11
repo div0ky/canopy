@@ -1,10 +1,10 @@
-import { Feature } from '@canopy/core'
+import { Feature } from '@doxajs/core'
 
 import { DatabaseConfig } from './database/database-config.js'
-import { CanopyAuth } from './auth/canopy-auth.js'
+import { DoxaAuth } from './auth/doxa-auth.js'
 import { PersistenceTransactions } from './database/persistence-transactions.js'
-import { CanopyQueues } from './queue/canopy-queues.js'
-import { CanopyCache } from './cache/canopy-cache.js'
+import { DoxaQueues } from './queue/doxa-queues.js'
+import { DoxaCache } from './cache/doxa-cache.js'
 import { ReferenceMail } from './communications/reference-mail.js'
 import { ReferenceSms } from './communications/reference-sms.js'
 import { CommunicationsConfig } from './communications/communications-config.js'
@@ -12,20 +12,20 @@ import { RecordDeliveryUpdates } from './communications/record-delivery-updates.
 import { SendGridWebhookRoute } from './communications/sendgrid-webhook.route.js'
 import { TwilioSmsWebhookRoute } from './communications/twilio-sms-webhook.route.js'
 import { ReferenceTelemetry } from './telemetry/reference-telemetry.js'
-import { ApplicationUndergrowth } from './undergrowth/application-undergrowth.js'
+import { ApplicationTheoria } from './theoria/application-theoria.js'
 
 export class InfrastructureFeature extends Feature {
   id = 'infrastructure'
   configs = [DatabaseConfig, CommunicationsConfig]
   providers = [
     PersistenceTransactions,
-    CanopyQueues,
-    CanopyAuth,
-    CanopyCache,
+    DoxaQueues,
+    DoxaAuth,
+    DoxaCache,
     ReferenceMail,
     ReferenceSms,
     ReferenceTelemetry,
-    ApplicationUndergrowth,
+    ApplicationTheoria,
   ]
   actions = [RecordDeliveryUpdates]
   routes = [SendGridWebhookRoute, TwilioSmsWebhookRoute]

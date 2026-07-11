@@ -12,15 +12,15 @@ import {
   ModelNotFoundError,
   OptimisticConcurrencyError,
   type TraceContext,
-} from '@canopy/core'
-import { type CanopyRuntime, ExecutionAdmissionError } from '@canopy/runtime'
+} from '@doxajs/core'
+import { type DoxaRuntime, ExecutionAdmissionError } from '@doxajs/runtime'
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 
 export class HonoHttpEngine implements HttpEngine {
   readonly #app = new Hono()
 
-  constructor(private readonly runtime: CanopyRuntime) {
+  constructor(private readonly runtime: DoxaRuntime) {
     for (const route of runtime.manifest.routes) {
       this.#app.on(route.method, route.path, async (context) => {
         const startedAt = performance.now()
@@ -92,7 +92,7 @@ export class HonoHttpEngine implements HttpEngine {
       return errorDocument(
         404,
         'route_not_found',
-        `No Canopy route matches ${context.req.method} ${path}.`,
+        `No Doxa route matches ${context.req.method} ${path}.`,
       )
     })
   }
@@ -117,13 +117,13 @@ export class HonoHttpHost {
   private constructor(
     readonly engine: HonoHttpEngine,
     server: ReturnType<typeof serve>,
-    private readonly runtime: CanopyRuntime,
+    private readonly runtime: DoxaRuntime,
   ) {
     this.#server = server
   }
 
   static async listen(
-    runtime: CanopyRuntime,
+    runtime: DoxaRuntime,
     options: HonoHttpHostOptions = {},
   ): Promise<HonoHttpHost> {
     const engine = new HonoHttpEngine(runtime)
@@ -143,7 +143,7 @@ export class HonoHttpHost {
   get url(): URL {
     const address = this.#server.address()
     if (!address || typeof address === 'string') {
-      throw new Error('The Canopy HTTP host does not have a TCP address.')
+      throw new Error('The Doxa HTTP host does not have a TCP address.')
     }
     const hostname =
       address.address === '::'

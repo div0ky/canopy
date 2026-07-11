@@ -4,7 +4,7 @@
     { "path": "packages/core" },
     { "path": "packages/manifest" },
     { "path": "packages/compiler" },
-    { "path": "packages/arbor" },
+    { "path": "packages/praxis" },
     { "path": "packages/sendgrid" },
     { "path": "packages/twilio-sms" },
     { "path": "packages/testing" },
@@ -13,7 +13,7 @@
     { "path": "packages/auth-postgres" },
     { "path": "packages/postgres-drizzle" },
     { "path": "packages/queue-pg-boss" },
-    { "path": "packages/undergrowth" },
+    { "path": "packages/theoria" },
     { "path": "examples/reference-app" },
     { "path": "examples/persistence-app" }
   ]

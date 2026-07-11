@@ -1,4 +1,4 @@
-import { ActionBus, Http, type HttpRequest, Route } from '@canopy/core'
+import { ActionBus, Http, type HttpRequest, Route } from '@doxajs/core'
 
 import { DeleteCounter } from '../actions/delete-counter.js'
 

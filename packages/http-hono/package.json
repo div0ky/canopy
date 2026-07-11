@@ -1,19 +1,19 @@
 {
-  "name": "@canopy/http-hono",
+  "name": "@doxajs/http-hono",
   "version": "0.1.0-alpha.0",
-  "description": "The first-party Hono HTTP engine and Node host adapter for Canopy.",
+  "description": "The first-party Hono HTTP engine and Node host adapter for Doxa.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/div0ky/canopy.git",
+    "url": "git+https://github.com/div0ky/doxajs.git",
     "directory": "packages/http-hono"
   },
-  "homepage": "https://github.com/div0ky/canopy#readme",
+  "homepage": "https://github.com/div0ky/doxajs#readme",
   "bugs": {
-    "url": "https://github.com/div0ky/canopy/issues"
+    "url": "https://github.com/div0ky/doxajs/issues"
   },
   "keywords": [
-    "canopy",
+    "doxa",
     "framework",
     "hono",
     "http",
@@ -42,8 +42,8 @@
     "postpack": "node ../../scripts/prepare-package.mjs --clean"
   },
   "dependencies": {
-    "@canopy/core": "workspace:*",
-    "@canopy/runtime": "workspace:*",
+    "@doxajs/core": "workspace:*",
+    "@doxajs/runtime": "workspace:*",
     "@hono/node-server": "2.0.8",
     "hono": "4.12.29"
   }

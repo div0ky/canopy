@@ -7,7 +7,7 @@ export interface RoleInjector {
 }
 
 /** Shared execution-scoped behavior inherited by every framework-facing role. */
-export abstract class CanopyRole {
+export abstract class DoxaRole {
   protected readonly logger: Logger
   protected readonly inject: RoleInjector
 
@@ -22,7 +22,7 @@ export abstract class CanopyRole {
       if (!construction) {
         if (optional) return undefined
         throw new RoleInjectionError(
-          `${this.constructor.name} uses this.inject() and must be constructed by a Canopy execution scope.`,
+          `${this.constructor.name} uses this.inject() and must be constructed by a Doxa execution scope.`,
         )
       }
       return construction.resolve(token, optional)

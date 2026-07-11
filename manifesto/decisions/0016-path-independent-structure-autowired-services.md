@@ -3,18 +3,18 @@
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
 - **Scope:** MVP
-- **Decision owners:** Canopy maintainers
+- **Decision owners:** Doxa maintainers
 
 ## Decision
 
-Canopy imposes no semantic folder structure. Feature declarations explicitly own framework-facing
+Doxa imposes no semantic folder structure. Feature declarations explicitly own framework-facing
 classes, while ordinary concrete services and helpers are discovered through constructor
 reachability. Developers may reorganize source files and domain folders without framework
 configuration or behavioral changes.
 
 This direction is summarized as:
 
-> Folder paths organize humans. Imports and Feature declarations organize Canopy.
+> Folder paths organize humans. Imports and Feature declarations organize Doxa.
 
 The compiler records source locations for provenance and diagnostics, but a path must never activate
 a class, determine its framework role, change its identity, select its scope, or alter its runtime
@@ -23,7 +23,7 @@ behavior.
 ## Organizational freedom
 
 Laravel-style role folders, domain-first folders, vertical slices, and workspace packages are all
-valid Canopy layouts:
+valid Doxa layouts:
 
 ```text
 src/events/orders/order-shipped.ts
@@ -44,13 +44,13 @@ The owning Feature imports and declares the framework-facing class. Moving the c
 TypeScript import but does not change its stable manifest ID, Feature ownership, listeners, journal
 identity, queue identity, dependency scope, or runtime semantics.
 
-Canopy starters and generators may provide an opinionated layout, but that layout is a placement
+Doxa starters and generators may provide an opinionated layout, but that layout is a placement
 default rather than a discovery contract. Large applications may introduce domain folders or deepen
 a Feature into internal business areas without declaring nested framework modules.
 
 ## File conventions
 
-Canopy's generated and documented defaults are:
+Doxa's generated and documented defaults are:
 
 - Kebab-case filenames, such as `calculate-order-total.ts`.
 - PascalCase classes, such as `CalculateOrderTotal`.
@@ -59,16 +59,16 @@ Canopy's generated and documented defaults are:
 - Colocated unit tests named `*.test.ts`.
 - Feature and integration tests may live under `tests/`.
 
-These conventions improve predictability for developers, generators, source diagnostics, and
-Cultivate. They do not become runtime semantics. Applications may deviate where TypeScript imports
-and the manifest remain unambiguous.
+These conventions improve predictability for developers, generators, source diagnostics, and Gnosis.
+They do not become runtime semantics. Applications may deviate where TypeScript imports and the
+manifest remain unambiguous.
 
 ## Framework-facing classes
 
 Feature role arrays remain the sole ownership declarations for models, actions, queries, routes,
 policies, events, listeners, observers, jobs, schedules, commands, and other framework entry points.
 
-The compiler must inspect the TypeScript program for exported Canopy role classes that do not belong
+The compiler must inspect the TypeScript program for exported Doxa role classes that do not belong
 to any selected Feature. It should report an unowned declaration with source-aware fixes, but it
 must not silently register or classify the class based on its path.
 
@@ -90,8 +90,8 @@ export class PricingService {
 ```
 
 When a declared Action, Query, Listener, Job, Route, or other role injects a concrete class through
-`this.inject()`, Canopy recursively follows and autowires that service's constructor dependencies.
-Concrete services do not require a Canopy base class, decorator, Feature role array, provider entry,
+`this.inject()`, Doxa recursively follows and autowires that service's constructor dependencies.
+Concrete services do not require a Doxa base class, decorator, Feature role array, provider entry,
 or service registration.
 
 Abstract ports, aliases, primitive values, factories, and non-default scopes remain explicit Feature
@@ -99,7 +99,7 @@ bindings because the compiler cannot or should not infer application intent.
 
 ## Separation of concerns
 
-Canopy encourages the following division without requiring a directory for each term:
+Doxa encourages the following division without requiring a directory for each term:
 
 - Model methods own behavior and invariants belonging to one entity.
 - Value objects and functions express pure calculations without dependencies.
@@ -116,7 +116,7 @@ collaborators without moving domain invariants into arbitrary utility code.
 
 ## Feature privacy and sharing
 
-The concrete dependency closure beneath a Feature is private to that Feature by default. Canopy must
+The concrete dependency closure beneath a Feature is private to that Feature by default. Doxa must
 reject an accidental concrete dependency from one Feature into another and must reject a concrete
 service with ambiguous ownership across multiple Features.
 
@@ -128,7 +128,7 @@ Intentional sharing requires one of the following:
 - Extract framework-independent code into a library package.
 - Keep small domain concepts separate when sharing would create harmful coupling.
 
-Canopy must not silently create a global service namespace or a `shared/services` dumping ground.
+Doxa must not silently create a global service namespace or a `shared/services` dumping ground.
 
 ## Service providers and lifecycle
 
@@ -146,8 +146,8 @@ A focused service must be directly constructible with ordinary fakes or test dou
 must not boot or reconstruct the application container merely to exercise isolated business logic.
 
 Application-level tests may replace ports or concrete dependencies through first-party, test-scoped
-Canopy overrides. Overrides must preserve scope validation and remain isolated between concurrent
-test applications.
+Doxa overrides. Overrides must preserve scope validation and remain isolated between concurrent test
+applications.
 
 ## Consequences
 
@@ -166,15 +166,14 @@ test applications.
 The MVP must prove:
 
 1. Identical application behavior from role-first, domain-first, feature-first, and package-based
-   source layouts without Canopy configuration changes.
+   source layouts without Doxa configuration changes.
 2. Moving a declared class changes source provenance but not manifest identity or runtime behavior.
-3. An undeclared Canopy role class produces a source-aware diagnostic and is never silently
-   activated.
+3. An undeclared Doxa role class produces a source-aware diagnostic and is never silently activated.
 4. A multi-level concrete service graph is autowired without Feature or provider registration.
 5. Missing bindings, cycles, invalid scopes, ambiguous ownership, and accidental cross-feature
    concrete dependencies fail before boot.
 6. Abstract bindings and intentional cross-feature capabilities resolve predictably.
-7. A focused service can be unit tested through direct construction without a Canopy application.
+7. A focused service can be unit tested through direct construction without a Doxa application.
 8. Test-scoped dependency overrides remain isolated and retain container semantics.
 9. Generators update direct imports and Feature role arrays without requiring barrel files.
 
@@ -194,8 +193,8 @@ manifest ownership changes only through the new Feature declarations and imports
 
 ## References
 
-- [Canopy manifesto](../index.md#object-oriented-by-conviction)
-- [Canopy architecture](../architecture.md#application-services-and-internal-modules)
+- [Doxa manifesto](../index.md#object-oriented-by-conviction)
+- [Doxa architecture](../architecture.md#application-services-and-internal-modules)
 - [Explicit Feature declarations](0014-explicit-features-generated-manifest.md)
 - [Class-first container](0011-class-first-oop-container.md)
 - [First-party CLI and generators](0004-first-party-cli-generators.md)

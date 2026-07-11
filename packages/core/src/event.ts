@@ -1,11 +1,11 @@
 import { currentEventDispatcher } from './event-context.js'
-import { CanopyRole } from './role.js'
+import { DoxaRole } from './role.js'
 
 export class EventDispatchError extends Error {
   override readonly name = 'EventDispatchError'
 }
 
-export abstract class Event<Payload = never> extends CanopyRole {
+export abstract class Event<Payload = never> extends DoxaRole {
   static readonly id: string = ''
   readonly payload: Payload
 
@@ -20,15 +20,13 @@ export abstract class Event<Payload = never> extends CanopyRole {
   ): Promise<void> {
     const dispatcher = currentEventDispatcher()
     if (!dispatcher) {
-      throw new EventDispatchError('Event dispatch requires an active Canopy-managed execution.')
+      throw new EventDispatchError('Event dispatch requires an active Doxa-managed execution.')
     }
     return dispatcher.dispatch(new this(...arguments_))
   }
 }
 
-export abstract class Listener<
-  Instance extends Event<unknown> = Event<unknown>,
-> extends CanopyRole {
+export abstract class Listener<Instance extends Event<unknown> = Event<unknown>> extends DoxaRole {
   static readonly access: string = ''
   abstract handle(event: Instance): void | Promise<void>
 }

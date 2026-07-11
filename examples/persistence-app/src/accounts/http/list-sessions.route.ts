@@ -1,4 +1,4 @@
-import { Auth, CurrentExecution, type HttpRequest, Route } from '@canopy/core'
+import { Auth, CurrentExecution, type HttpRequest, Route } from '@doxajs/core'
 
 export class ListSessionsRoute extends Route {
   static override readonly id = 'list-sessions'

@@ -3,16 +3,16 @@
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
 - **Scope:** MVP
-- **Decision owners:** Canopy maintainers
+- **Decision owners:** Doxa maintainers
 
 ## Decision
 
-Canopy test applications apply dependency overrides before boot and validate them as a derived,
+Doxa test applications apply dependency overrides before boot and validate them as a derived,
 test-scoped application graph. Bindings become immutable when boot begins. Tests cannot mutate a
 running container.
 
 ```ts
-const app = await CanopyTest.create(Application)
+const app = await DoxaTest.create(Application)
   .override(PaymentGateway)
   .with(FakePaymentGateway)
   .boot()
@@ -20,7 +20,7 @@ const app = await CanopyTest.create(Application)
 
 ## Derived test graph
 
-An override does not mutate the canonical production manifest. `@canopy/testing` creates a derived
+An override does not mutate the canonical production manifest. `@doxajs/testing` creates a derived
 test graph with provenance linking every replacement to its production binding and test source. The
 derived graph receives the same missing-binding, ambiguity, cycle, ownership, and scope-leak
 validation as production.
@@ -35,7 +35,7 @@ Override declaration closes when test boot begins. The running test application 
 `container.set()`, rebinding, monkey-patching, or global fake registration. A test that needs a
 different graph boots another lightweight test application.
 
-Focused services remain directly constructible with ordinary fakes and do not require a Canopy test
+Focused services remain directly constructible with ordinary fakes and do not require a Doxa test
 application merely to exercise isolated business logic.
 
 ## Consequences
@@ -63,4 +63,4 @@ The MVP must prove:
 - [Class-first container](0011-class-first-oop-container.md)
 - [Path-independent services and testing](0016-path-independent-structure-autowired-services.md#testing)
 - [Public testing package](0018-public-package-surface.md)
-- [Canopy specification roadmap](../specifications.md#operations-and-developer-experience)
+- [Doxa specification roadmap](../specifications.md#operations-and-developer-experience)

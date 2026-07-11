@@ -1,4 +1,4 @@
-import { Action, Cache } from '@canopy/core'
+import { Action, Cache } from '@doxajs/core'
 
 export interface ExerciseCacheResult {
   readonly added: boolean

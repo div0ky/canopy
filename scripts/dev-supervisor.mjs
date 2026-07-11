@@ -2,26 +2,26 @@ import { fork, spawn } from 'node:child_process'
 import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 
-import { HotReloadSupervisor } from '@canopy/arbor/hot-reload'
-import { installAuthSchema } from '@canopy/auth-postgres'
-import { ConsoleLogSink, Logger } from '@canopy/core'
-import { installPersistenceSchema } from '@canopy/postgres-drizzle'
-import { installQueueSchema } from '@canopy/queue-pg-boss'
-import { installUndergrowthSchema } from '@canopy/undergrowth'
+import { HotReloadSupervisor } from '@doxajs/praxis/hot-reload'
+import { installAuthSchema } from '@doxajs/auth-postgres'
+import { ConsoleLogSink, Logger } from '@doxajs/core'
+import { installPersistenceSchema } from '@doxajs/postgres-drizzle'
+import { installQueueSchema } from '@doxajs/queue-pg-boss'
+import { installTheoriaSchema } from '@doxajs/theoria'
 
 const workspace = process.cwd()
 const applicationRoot = path.join(workspace, 'examples/persistence-app')
 const connectionString =
-  process.env.DATABASE_CONNECTION_STRING ?? 'postgresql://canopy:canopy@127.0.0.1:54329/canopy'
+  process.env.DATABASE_CONNECTION_STRING ?? 'postgresql://doxa:doxa@127.0.0.1:54329/doxa'
 const logger = new Logger({
   sink: new ConsoleLogSink({ format: 'pretty', color: process.env.NO_COLOR === undefined }),
-  level: process.env.CANOPY_LOG_LEVEL ?? 'info',
+  level: process.env.DOXA_LOG_LEVEL ?? 'info',
 }).channel('hmr')
 
 await installPersistenceSchema(connectionString)
 await installAuthSchema(connectionString)
 await installQueueSchema(connectionString)
-await installUndergrowthSchema(connectionString)
+await installTheoriaSchema(connectionString)
 
 const packageEntries = await readdir(path.join(workspace, 'packages'), { withFileTypes: true })
 const watchPaths = [
@@ -69,7 +69,7 @@ async function buildDevelopmentApplication() {
   if (code !== 0) throw new Error(`TypeScript build failed with exit code ${code}.`)
   const compileCode = await run(process.execPath, [path.join(workspace, 'scripts/dev-build.mjs')])
   if (compileCode !== 0) {
-    throw new Error(`Canopy manifest compilation failed with exit code ${compileCode}.`)
+    throw new Error(`Doxa manifest compilation failed with exit code ${compileCode}.`)
   }
 }
 

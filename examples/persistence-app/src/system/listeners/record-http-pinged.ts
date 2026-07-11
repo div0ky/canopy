@@ -1,4 +1,4 @@
-import { CurrentExecution, Listener } from '@canopy/core'
+import { CurrentExecution, Listener } from '@doxajs/core'
 
 import { HttpPinged } from '../events/http-pinged.js'
 import { SystemEventRecorder } from '../support/system-event-recorder.js'

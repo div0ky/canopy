@@ -7,7 +7,7 @@
 
 ## Outcome
 
-The fourth Canopy implementation proves the ordinary persistent-model path end to end:
+The fourth Doxa implementation proves the ordinary persistent-model path end to end:
 
 ```text
 Feature declares a Model class
@@ -45,7 +45,7 @@ export class PersistenceFeature extends Feature {
 }
 ```
 
-The semantic compiler verifies that every entry is a concrete Canopy `Model` with a stable local ID.
+The semantic compiler verifies that every entry is a concrete Doxa `Model` with a stable local ID.
 It emits a stable identity such as `model:persistence/counter` into both generated artifacts. Model
 constructors are not injectable services; the compiler reports direct constructor injection and
 directs application code to the static model API instead.
@@ -58,7 +58,7 @@ ownership.
 Every admitted action transaction receives exactly one `ModelSession`. It is attached to the
 existing execution scope and Unit of Work rather than creating another container scope.
 `ModelSession` is private runtime integration machinery and is not exported from the ordinary
-`@canopy/core` application surface.
+`@doxajs/core` application surface.
 
 Within that execution:
 

@@ -59,7 +59,7 @@ export class StaleModelError extends Error {
   override readonly name = 'StaleModelError'
 }
 
-const MODEL_INTERNALS = Symbol('canopy.model.internals')
+const MODEL_INTERNALS = Symbol('doxa.model.internals')
 
 interface PendingJournalFact {
   readonly type: string
@@ -273,7 +273,7 @@ export abstract class Model<Attributes extends ModelAttributes = ModelAttributes
   private attachedSession(): ModelSession {
     const current = currentModelSession<ModelSession>()
     if (!this.#session)
-      throw new DetachedModelError('Model is not attached to a Canopy ModelSession.')
+      throw new DetachedModelError('Model is not attached to a Doxa ModelSession.')
     if (!current || current !== this.#session || !current.active) {
       throw new StaleModelError('Model belongs to an execution that is no longer active.')
     }
@@ -462,7 +462,7 @@ export class ModelSession {
 function requireCurrentSession(): ModelSession {
   const session = currentModelSession<ModelSession>()
   if (!session || !session.active) {
-    throw new StaleModelError('A model operation requires an active Canopy action ModelSession.')
+    throw new StaleModelError('A model operation requires an active Doxa action ModelSession.')
   }
   return session
 }

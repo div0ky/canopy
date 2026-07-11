@@ -1,6 +1,6 @@
 # Changesets
 
-Published Canopy packages use one fixed version while the framework is pre-1.0. Add a Changeset for
+Published Doxa packages use one fixed version while the framework is pre-1.0. Add a Changeset for
 every user-visible package change:
 
 ```sh

@@ -1,4 +1,4 @@
-import { Action } from '@canopy/core'
+import { Action } from '@doxajs/core'
 
 import { ProcessCounterJob, type ProcessCounterInput } from '../jobs/process-counter.job.js'
 

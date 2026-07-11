@@ -1,6 +1,6 @@
 import { argon2, randomBytes, timingSafeEqual, type Argon2Parameters } from 'node:crypto'
 
-import { AuthenticationError } from '@canopy/core'
+import { AuthenticationError } from '@doxajs/core'
 
 import type { PasswordParameters } from './schema.js'
 
@@ -23,7 +23,7 @@ export interface PasswordRecord {
 let sharedDummyPassword: Promise<PasswordRecord> | undefined
 
 export function dummyPasswordRecord(): Promise<PasswordRecord> {
-  sharedDummyPassword ??= createPasswordRecord('canopy-dummy-password-never-valid')
+  sharedDummyPassword ??= createPasswordRecord('doxa-dummy-password-never-valid')
   return sharedDummyPassword
 }
 
@@ -60,14 +60,14 @@ export function needsRehash(record: PasswordRecord): boolean {
 }
 
 export function encodePasswordRecord(record: PasswordRecord): string {
-  return `canopy-argon2id:${Buffer.from(JSON.stringify(record), 'utf8').toString('base64url')}`
+  return `doxa-argon2id:${Buffer.from(JSON.stringify(record), 'utf8').toString('base64url')}`
 }
 
 export function decodePasswordRecord(value: string): PasswordRecord {
   try {
-    if (!value.startsWith('canopy-argon2id:')) throw new Error('unsupported format')
+    if (!value.startsWith('doxa-argon2id:')) throw new Error('unsupported format')
     const parsed = JSON.parse(
-      Buffer.from(value.slice('canopy-argon2id:'.length), 'base64url').toString('utf8'),
+      Buffer.from(value.slice('doxa-argon2id:'.length), 'base64url').toString('utf8'),
     ) as PasswordRecord
     if (
       parsed.version < 1 ||
@@ -80,7 +80,7 @@ export function decodePasswordRecord(value: string): PasswordRecord {
   } catch (error) {
     throw new AuthenticationError(
       'invalid_credentials',
-      'The stored password format is not supported by this Canopy Auth mapping.',
+      'The stored password format is not supported by this Doxa Auth mapping.',
       { cause: error },
     )
   }

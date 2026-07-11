@@ -3,11 +3,11 @@
 - **Status:** Accepted
 - **Accepted:** 2026-07-11
 - **Scope:** MVP
-- **Decision owners:** Canopy maintainers
+- **Decision owners:** Doxa maintainers
 
 ## Decision
 
-Framework-facing application classes extend their corresponding Canopy role and receive dependencies
+Framework-facing application classes extend their corresponding Doxa role and receive dependencies
 from the active execution scope through the inherited `this.inject()` API. Ordinary application
 services remain plain classes and use constructor injection.
 
@@ -40,13 +40,13 @@ export class OrderService {
 ## Framework roles
 
 Routes, actions, queries, jobs, schedules, events, listeners, observers, policies, commands,
-signals, and other framework entry points extend one Canopy role class. This inheritance is
-meaningful rather than ceremonial: it supplies the role contract, scoped injection, the class-bound
-logger, execution-context access, and role-specific framework behavior.
+signals, and other framework entry points extend one Doxa role class. This inheritance is meaningful
+rather than ceremonial: it supplies the role contract, scoped injection, the class-bound logger,
+execution-context access, and role-specific framework behavior.
 
 `this.inject(Dependency)` is:
 
-- Typed by the requested concrete class, abstract-class port, or Canopy token.
+- Typed by the requested concrete class, abstract-class port, or Doxa token.
 - Resolved from the role instance's admitted execution scope.
 - Recorded as an explicit dependency edge in the generated manifest.
 - Validated before boot for missing bindings, cycles, ownership, and scope violations.
@@ -63,7 +63,7 @@ class channel.
 
 ## Ordinary services
 
-Ordinary services and helpers do not extend a Canopy base class and do not receive `this.inject()`.
+Ordinary services and helpers do not extend a Doxa base class and do not receive `this.inject()`.
 They use constructor injection, remain recursively discoverable through the generated dependency
 graph, and can be directly instantiated in focused unit tests.
 
@@ -76,8 +76,8 @@ Generators and documentation must not add empty constructors or routine `super()
 Framework-role inputs and dispatch payloads should use the role's typed input API so jobs, events,
 signals, actions, and queries do not need constructors merely to carry application data.
 
-A custom constructor remains available for a genuinely exceptional role implementation. Because
-Canopy uses native JavaScript inheritance, that constructor must call `super()`; the exception is
+A custom constructor remains available for a genuinely exceptional role implementation. Because Doxa
+uses native JavaScript inheritance, that constructor must call `super()`; the exception is
 intentional and should be obvious in review.
 
 ## Consequences
@@ -86,8 +86,8 @@ intentional and should be obvious in review.
 - Normal role authoring has no constructor or `super()` ceremony.
 - Scoped dependencies and logging feel built in while remaining compiler-inspectable.
 - Ordinary business services retain conventional OOP construction and simple unit testing.
-- Canopy must implement and statically analyze role field injection without falling back to
-  reflection or hidden process-global state.
+- Doxa must implement and statically analyze role field injection without falling back to reflection
+  or hidden process-global state.
 - Existing generated examples and framework documentation that constructor-inject role classes must
   migrate to `this.inject()`.
 
@@ -112,4 +112,4 @@ The MVP must prove:
 - [Class-first OOP container](0011-class-first-oop-container.md)
 - [Path-independent structure and autowired services](0016-path-independent-structure-autowired-services.md)
 - [Explicit Features and generated manifest](0014-explicit-features-generated-manifest.md)
-- [Canopy manifesto](../index.md#object-oriented-by-conviction)
+- [Doxa manifesto](../index.md#object-oriented-by-conviction)

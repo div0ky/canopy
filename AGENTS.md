@@ -1,4 +1,4 @@
-# Canopy Contributor Guidance
+# Doxa Contributor Guidance
 
 These instructions apply to the entire repository.
 
@@ -16,14 +16,14 @@ These instructions apply to the entire repository.
   automatic HTTP envelopes, and first-party security ownership.
 - Use `apply_patch` for deliberate source edits.
 - Add focused regression evidence, then run `pnpm verify` before claiming completion.
-- Do not commit generated `dist`, `.canopy`, coverage, local environment, or package archives.
+- Do not commit generated `dist`, `.doxa`, coverage, local environment, or package archives.
 - Do not edit unrelated worktree changes.
 
 ## Application-facing design
 
-Canopy is opinionated, magical where safe, trivial for Cultivate to understand, and difficult to
-misuse. Framework-facing classes extend their Canopy role and use `this.inject()`. Ordinary services
-are plain classes with constructor injection. Folder names never carry runtime meaning.
+Doxa is opinionated, magical where safe, trivial for Gnosis to understand, and difficult to misuse.
+Framework-facing classes extend their Doxa role and use `this.inject()`. Ordinary services are plain
+classes with constructor injection. Folder names never carry runtime meaning.
 
 When equally viable designs exist, choose the one with better developer experience while retaining
 determinism, inspection, security, and clear failure behavior.

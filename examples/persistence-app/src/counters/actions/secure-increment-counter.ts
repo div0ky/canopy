@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 
-import { Action, Authorization, CurrentExecution, Mailer, Sms } from '@canopy/core'
+import { Action, Authorization, CurrentExecution, Mailer, Sms } from '@doxajs/core'
 
 import { CounterNotificationRequested } from '../events/counter-notification-requested.js'
 import { ProcessCounterJob } from '../jobs/process-counter.job.js'
@@ -40,7 +40,7 @@ export class SecureIncrementCounter extends Action<
     )
     await this.mailer.send({
       id: randomUUID(),
-      from: 'canopy@example.test',
+      from: 'doxa@example.test',
       to: [`${ownerId}@example.test`],
       subject: 'Counter updated',
       text: `${counter.id}=${counter.value}`,

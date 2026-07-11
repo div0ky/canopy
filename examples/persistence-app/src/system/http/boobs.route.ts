@@ -1,4 +1,4 @@
-import { type HttpRequest, Route } from '@canopy/core'
+import { type HttpRequest, Route } from '@doxajs/core'
 import { BoobJob } from './boob.job.js'
 import { BoobPinged } from './boob.event.js'
 

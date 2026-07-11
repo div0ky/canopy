@@ -1,4 +1,4 @@
-import { CurrentExecution, Observer } from '@canopy/core'
+import { CurrentExecution, Observer } from '@doxajs/core'
 
 import { Counter } from '../models/counter.js'
 import { observerLog } from '../../support/observer-log.js'

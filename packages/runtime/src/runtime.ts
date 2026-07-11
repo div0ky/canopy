@@ -14,7 +14,7 @@ import {
   type Action,
   type ActionClass,
   type ActorRef,
-  type CanopyApplication,
+  type DoxaApplication,
   type Command,
   CurrentExecution,
   CurrentJob,
@@ -73,7 +73,7 @@ import {
   sanitizeObservationError,
   type TelemetryRecord,
   UnitOfWork,
-} from '@canopy/core'
+} from '@doxajs/core'
 import {
   type EventDispatcher,
   type JobDispatcher,
@@ -86,12 +86,12 @@ import {
   runWithSignalDispatcher,
   type RoleInjectionToken,
   type SignalDispatcher,
-} from '@canopy/core/runtime'
+} from '@doxajs/core/runtime'
 import {
   MANIFEST_FORMAT_VERSION,
   assertManifest,
   canonicalJson,
-  type CanopyManifest,
+  type DoxaManifest,
   type CommandManifestEntry,
   type ConfigurationDefault,
   type ConfigurationManifestEntry,
@@ -106,7 +106,7 @@ import {
   type RegistryModule,
   type RouteManifestEntry,
   type SignalHandlerManifestEntry,
-} from '@canopy/manifest'
+} from '@doxajs/manifest'
 
 import {
   ConfigurationValidationError,
@@ -140,7 +140,7 @@ export {
 
 export type RuntimeState = 'booting' | 'ready' | 'draining' | 'stopping' | 'disposing' | 'stopped'
 
-type ApplicationDeclaration = abstract new () => CanopyApplication
+type ApplicationDeclaration = abstract new () => DoxaApplication
 
 export interface BootOptions {
   readonly artifactsDirectory?: string
@@ -169,7 +169,7 @@ const DEFAULT_DEADLINES: LifecycleDeadlines = {
 }
 
 interface RuntimeArtifacts {
-  readonly manifest: CanopyManifest
+  readonly manifest: DoxaManifest
   readonly registry: RegistryModule
 }
 
@@ -183,10 +183,10 @@ interface ExecutionStore {
   readonly context: ExecutionContext
   readonly scope: ExecutionScope
   readonly operationStack: ('action' | 'job' | 'query')[]
-  job?: import('@canopy/core').CurrentJobContext
+  job?: import('@doxajs/core').CurrentJobContext
 }
 
-export class CanopyRuntime {
+export class DoxaRuntime {
   #state: RuntimeState = 'booting'
   #shutdownPromise?: Promise<void>
   readonly #storage = new AsyncLocalStorage<ExecutionStore>()
@@ -194,20 +194,20 @@ export class CanopyRuntime {
   readonly #operationsByConstructor = new Map<Function, OperationManifestEntry>()
   readonly #modelsByConstructor = new Map<
     Function,
-    { readonly entityType: string; readonly storage: import('@canopy/core').ModelStorage }
+    { readonly entityType: string; readonly storage: import('@doxajs/core').ModelStorage }
   >()
   readonly #observersByModel = new Map<string, readonly ObserverManifestEntry[]>()
   readonly #eventsByConstructor = new Map<Function, EventManifestEntry>()
   readonly #listenersByEvent = new Map<string, readonly ListenerManifestEntry[]>()
   readonly #routesById = new Map<string, RouteManifestEntry>()
   readonly #eventDispatcher: EventDispatcher
-  readonly #signalsByConstructor = new Map<Function, CanopyManifest['signals'][number]>()
+  readonly #signalsByConstructor = new Map<Function, DoxaManifest['signals'][number]>()
   readonly #signalHandlersBySignal = new Map<string, readonly SignalHandlerManifestEntry[]>()
   readonly #signalDispatcher: SignalDispatcher
   readonly #jobsByConstructor = new Map<Function, JobManifestEntry>()
   readonly #jobsById = new Map<string, JobManifestEntry>()
   readonly #policiesByAbility = new Map<string, PolicyManifestEntry>()
-  readonly #schedulesById = new Map<string, CanopyManifest['schedules'][number]>()
+  readonly #schedulesById = new Map<string, DoxaManifest['schedules'][number]>()
   readonly #commandsByName = new Map<string, CommandManifestEntry>()
   readonly #jobDispatcher: JobDispatcher
   readonly #currentJob: CurrentJob
@@ -221,7 +221,7 @@ export class CanopyRuntime {
   readonly #currentExecution: CurrentExecution
 
   private constructor(
-    readonly manifest: CanopyManifest,
+    readonly manifest: DoxaManifest,
     private readonly artifacts: RuntimeArtifacts,
     private readonly graph: RuntimeGraph,
     private readonly participants: readonly LifecycleParticipant[],
@@ -315,7 +315,7 @@ export class CanopyRuntime {
           timeZone: schedule.timeZone,
           overlap: schedule.overlap,
           misfire: schedule.misfire,
-          input: schedule.input as import('@canopy/core').JsonValue,
+          input: schedule.input as import('@doxajs/core').JsonValue,
           policy: {
             retries: job.retries,
             retryDelay: job.retryDelay,
@@ -338,14 +338,14 @@ export class CanopyRuntime {
   static async boot(
     application: ApplicationDeclaration,
     options: BootOptions,
-  ): Promise<CanopyRuntime> {
-    const artifactsDirectory = path.resolve(options.artifactsDirectory ?? '.canopy')
+  ): Promise<DoxaRuntime> {
+    const artifactsDirectory = path.resolve(options.artifactsDirectory ?? '.doxa')
     const artifacts = await loadArtifacts(artifactsDirectory)
     const registeredApplication =
       artifacts.registry.constructors[`application:${artifacts.manifest.applicationId}`]
     if (registeredApplication !== application) {
       throw new RuntimeIntegrityError(
-        `Generated artifacts belong to ${artifacts.manifest.applicationId}, not the Application passed to Canopy.boot().`,
+        `Generated artifacts belong to ${artifacts.manifest.applicationId}, not the Application passed to Doxa.boot().`,
       )
     }
     const deadlines = { ...DEFAULT_DEADLINES, ...options.deadlines }
@@ -421,7 +421,7 @@ export class CanopyRuntime {
       ? (graph.singletonInstances.get(observationProvider.id) as ObservationRecorder)
       : new NoopObservationRecorder()
     sink.attach(observations)
-    const runtime = new CanopyRuntime(
+    const runtime = new DoxaRuntime(
       artifacts.manifest,
       artifacts,
       graph,
@@ -461,7 +461,7 @@ export class CanopyRuntime {
       })
       await runtime.recordTelemetry({
         kind: 'metric',
-        name: 'canopy.lifecycle.boot.duration',
+        name: 'doxa.lifecycle.boot.duration',
         value: performance.now() - bootStartedAt,
         unit: 'milliseconds',
         attributes: { status: 'ok' },
@@ -476,7 +476,7 @@ export class CanopyRuntime {
       })
       await runtime.recordTelemetry({
         kind: 'metric',
-        name: 'canopy.lifecycle.boot.duration',
+        name: 'doxa.lifecycle.boot.duration',
         value: performance.now() - bootStartedAt,
         unit: 'milliseconds',
         attributes: { status: 'error' },
@@ -491,7 +491,7 @@ export class CanopyRuntime {
   ): Promise<Output> {
     if (this.#state !== 'ready') {
       throw new ExecutionAdmissionError(
-        `Canopy cannot admit work while runtime state is ${this.#state}.`,
+        `Doxa cannot admit work while runtime state is ${this.#state}.`,
       )
     }
     if (this.#storage.getStore()) {
@@ -504,7 +504,7 @@ export class CanopyRuntime {
     let deadlineTimer: NodeJS.Timeout | undefined
     if (seed.deadline) {
       deadlineTimer = setTimeout(
-        () => controller.abort(new Error('Canopy execution deadline exceeded.')),
+        () => controller.abort(new Error('Doxa execution deadline exceeded.')),
         Math.max(0, seed.deadline.getTime() - Date.now()),
       )
       deadlineTimer.unref()
@@ -546,7 +546,7 @@ export class CanopyRuntime {
     })
     await this.recordTelemetry({
       kind: 'metric',
-      name: 'canopy.execution.admitted',
+      name: 'doxa.execution.admitted',
       value: 1,
       unit: 'count',
       attributes: { transport: context.transport.kind },
@@ -635,7 +635,7 @@ export class CanopyRuntime {
     })
     await this.recordTelemetry({
       kind: 'metric',
-      name: 'canopy.execution.duration',
+      name: 'doxa.execution.duration',
       value: durationMilliseconds,
       unit: 'milliseconds',
       attributes: { transport: context.transport.kind, status },
@@ -794,14 +794,14 @@ export class CanopyRuntime {
       })
       await this.recordTelemetry({
         kind: 'metric',
-        name: `canopy.${subsystem}.total`,
+        name: `doxa.${subsystem}.total`,
         value: 1,
         unit: 'count',
         attributes: { ...attributes, status: 'ok' },
       })
       await this.recordTelemetry({
         kind: 'metric',
-        name: `canopy.${subsystem}.duration`,
+        name: `doxa.${subsystem}.duration`,
         value: performance.now() - startedAt,
         unit: 'milliseconds',
         attributes: { ...attributes, status: 'ok' },
@@ -814,14 +814,14 @@ export class CanopyRuntime {
       })
       await this.recordTelemetry({
         kind: 'metric',
-        name: `canopy.${subsystem}.total`,
+        name: `doxa.${subsystem}.total`,
         value: 1,
         unit: 'count',
         attributes: { ...attributes, status: 'error' },
       })
       await this.recordTelemetry({
         kind: 'metric',
-        name: `canopy.${subsystem}.duration`,
+        name: `doxa.${subsystem}.duration`,
         value: performance.now() - startedAt,
         unit: 'milliseconds',
         attributes: { ...attributes, status: 'error' },
@@ -842,7 +842,7 @@ export class CanopyRuntime {
     )
   }
 
-  authenticationStorage(): import('@canopy/core').AuthStorageDescription {
+  authenticationStorage(): import('@doxajs/core').AuthStorageDescription {
     return this.authentication?.storage() ?? { kind: 'custom' }
   }
 
@@ -852,7 +852,7 @@ export class CanopyRuntime {
   ): Promise<Awaited<Output>> {
     const store = this.requireExecution('action')
     if (store.operationStack.length > 0) {
-      throw new OperationDispatchError('Nested action dispatch is prohibited in the Canopy MVP.')
+      throw new OperationDispatchError('Nested action dispatch is prohibited in the Doxa MVP.')
     }
     const operation = this.operationFor(action, 'action')
     if (!this.transactions) {
@@ -1191,7 +1191,7 @@ export class CanopyRuntime {
     const envelope = this.createQueueEnvelope(
       {
         kind: channel,
-        targetId: `canopy:${channel}`,
+        targetId: `doxa:${channel}`,
         payload: serializeQueuePayload(message),
         policy: { retries: 3, retryDelay: 1, backoff: true, timeout: 30 },
       },
@@ -1206,7 +1206,7 @@ export class CanopyRuntime {
     })
     await this.recordTelemetry({
       kind: 'metric',
-      name: `canopy.${channel}.queued`,
+      name: `doxa.${channel}.queued`,
       value: 1,
       unit: 'count',
       attributes: { channel },
@@ -1236,8 +1236,8 @@ export class CanopyRuntime {
     const unitOfWork = store.scope.currentUnitOfWork
     if (unitOfWork) {
       await unitOfWork.enqueue({
-        type: 'canopy.queue',
-        payload: envelope as unknown as import('@canopy/core').JsonValue,
+        type: 'doxa.queue',
+        payload: envelope as unknown as import('@doxajs/core').JsonValue,
         ...(availableAt ? { availableAt } : {}),
       })
       return
@@ -1388,7 +1388,7 @@ export class CanopyRuntime {
 
   private async invokeJob(
     manifest: JobManifestEntry,
-    payload: import('@canopy/core').JsonValue,
+    payload: import('@doxajs/core').JsonValue,
     store: ExecutionStore,
   ): Promise<void> {
     if (!this.transactions) {
@@ -1480,7 +1480,7 @@ export class CanopyRuntime {
     return this.#storage.getStore()?.operationStack.at(-1)
   }
 
-  currentJobContext(): import('@canopy/core').CurrentJobContext {
+  currentJobContext(): import('@doxajs/core').CurrentJobContext {
     const job = this.#storage.getStore()?.job
     if (!job) throw new OperationDispatchError('CurrentJob requires an active queue execution.')
     return job
@@ -1501,7 +1501,7 @@ export class CanopyRuntime {
         ability,
         Object.freeze({
           effect: 'deny',
-          policy: 'canopy:credential-constraints',
+          policy: 'doxa:credential-constraints',
           code: 'credential_constraint_denied',
         }),
         store.context,
@@ -1513,7 +1513,7 @@ export class CanopyRuntime {
         ability,
         Object.freeze({
           effect: 'deny',
-          policy: 'canopy:default-deny',
+          policy: 'doxa:default-deny',
           code: 'policy_missing',
         }),
         store.context,
@@ -1551,7 +1551,7 @@ export class CanopyRuntime {
     }
     await this.recordTelemetry({
       kind: 'metric',
-      name: 'canopy.authorization.decisions',
+      name: 'doxa.authorization.decisions',
       value: 1,
       unit: 'count',
       attributes: {
@@ -1650,7 +1650,7 @@ export class CanopyRuntime {
         new Promise<never>((_resolve, reject) => {
           timer = setTimeout(() => {
             for (const controller of this.#activeExecutions.values()) controller.abort()
-            reject(new Error(`Canopy execution drain exceeded ${this.deadlines.drain}ms.`))
+            reject(new Error(`Doxa execution drain exceeded ${this.deadlines.drain}ms.`))
           }, this.deadlines.drain)
           timer.unref()
         }),
@@ -1664,7 +1664,7 @@ export class CanopyRuntime {
 }
 
 class RuntimeActionBus extends ActionBus {
-  constructor(private readonly runtime: CanopyRuntime) {
+  constructor(private readonly runtime: DoxaRuntime) {
     super()
   }
 
@@ -1677,7 +1677,7 @@ class RuntimeActionBus extends ActionBus {
 }
 
 class RuntimeQueryBus extends QueryBus {
-  constructor(private readonly runtime: CanopyRuntime) {
+  constructor(private readonly runtime: DoxaRuntime) {
     super()
   }
 
@@ -1687,7 +1687,7 @@ class RuntimeQueryBus extends QueryBus {
 }
 
 class RuntimeMailer extends Mailer {
-  constructor(private readonly runtime: CanopyRuntime) {
+  constructor(private readonly runtime: DoxaRuntime) {
     super()
   }
   send(message: MailMessage): Promise<string> {
@@ -1696,7 +1696,7 @@ class RuntimeMailer extends Mailer {
 }
 
 class RuntimeSms extends Sms {
-  constructor(private readonly runtime: CanopyRuntime) {
+  constructor(private readonly runtime: DoxaRuntime) {
     super()
   }
   send(message: SmsMessage): Promise<string> {
@@ -1705,7 +1705,7 @@ class RuntimeSms extends Sms {
 }
 
 class RuntimeDeliveryLedger extends DeliveryLedger {
-  constructor(private readonly runtime: CanopyRuntime) {
+  constructor(private readonly runtime: DoxaRuntime) {
     super()
   }
   record(transition: DeliveryTransition): Promise<void> {
@@ -1714,7 +1714,7 @@ class RuntimeDeliveryLedger extends DeliveryLedger {
 }
 
 class RuntimeAuthorization extends Authorization {
-  constructor(private readonly runtime: CanopyRuntime) {
+  constructor(private readonly runtime: DoxaRuntime) {
     super()
   }
 
@@ -1729,7 +1729,7 @@ class RuntimeAuthorization extends Authorization {
 }
 
 class RuntimeCurrentExecution extends CurrentExecution {
-  constructor(private readonly runtime: CanopyRuntime) {
+  constructor(private readonly runtime: DoxaRuntime) {
     super()
   }
 
@@ -1749,23 +1749,20 @@ class RuntimeCurrentExecution extends CurrentExecution {
 }
 
 class RuntimeCurrentJob extends CurrentJob {
-  constructor(private readonly runtime: CanopyRuntime) {
+  constructor(private readonly runtime: DoxaRuntime) {
     super()
   }
 
-  get context(): import('@canopy/core').CurrentJobContext {
+  get context(): import('@doxajs/core').CurrentJobContext {
     return this.runtime.currentJobContext()
   }
 }
 
-export const Canopy = Object.freeze({
-  async boot(
-    application: ApplicationDeclaration,
-    options: BootOptions = {},
-  ): Promise<CanopyRuntime> {
+export const Doxa = Object.freeze({
+  async boot(application: ApplicationDeclaration, options: BootOptions = {}): Promise<DoxaRuntime> {
     // Runtime semantics come exclusively from generated artifacts. Constructor identity only
     // proves that the host passed the declaration linked by the matching registry.
-    return CanopyRuntime.boot(application, options)
+    return DoxaRuntime.boot(application, options)
   },
 })
 
@@ -1777,7 +1774,7 @@ async function loadArtifacts(artifactsDirectory: string): Promise<RuntimeArtifac
     parsed = JSON.parse(await readFile(manifestPath, 'utf8'))
   } catch (error) {
     throw new RuntimeIntegrityError(
-      `Unable to load ${manifestPath}. Run canopy build before booting. ${errorMessage(error)}`,
+      `Unable to load ${manifestPath}. Run doxa build before booting. ${errorMessage(error)}`,
     )
   }
   assertManifest(parsed)
@@ -1788,7 +1785,7 @@ async function loadArtifacts(artifactsDirectory: string): Promise<RuntimeArtifac
     .digest('hex')
   if (computedBuildHash !== declaredBuildHash) {
     throw new RuntimeIntegrityError(
-      'Canopy manifest content does not match its build hash. Run canopy build.',
+      'Doxa manifest content does not match its build hash. Run doxa build.',
     )
   }
 
@@ -1797,7 +1794,7 @@ async function loadArtifacts(artifactsDirectory: string): Promise<RuntimeArtifac
     imported = await import(`${pathToFileURL(registryPath).href}?buildHash=${manifest.buildHash}`)
   } catch (error) {
     throw new RuntimeIntegrityError(
-      `Unable to load ${registryPath}. Run canopy build before booting. ${errorMessage(error)}`,
+      `Unable to load ${registryPath}. Run doxa build before booting. ${errorMessage(error)}`,
     )
   }
   const registry = imported as RegistryModule
@@ -1806,7 +1803,7 @@ async function loadArtifacts(artifactsDirectory: string): Promise<RuntimeArtifac
   }
   if (registry.buildHash !== manifest.buildHash) {
     throw new RuntimeIntegrityError(
-      'Manifest and registry build hashes do not match. Run canopy build.',
+      'Manifest and registry build hashes do not match. Run doxa build.',
     )
   }
 
@@ -1831,7 +1828,7 @@ async function loadArtifacts(artifactsDirectory: string): Promise<RuntimeArtifac
   const registryIds = Object.keys(registry.constructors ?? {}).sort()
   if (JSON.stringify(expectedIds) !== JSON.stringify(registryIds)) {
     throw new RuntimeIntegrityError(
-      'Manifest and registry constructor IDs do not match. Run canopy build.',
+      'Manifest and registry constructor IDs do not match. Run doxa build.',
     )
   }
   return { manifest, registry }
@@ -1944,7 +1941,7 @@ function constructSingletonGraph(
   }
 
   const resolve = (id: string): object | undefined => {
-    if (id === 'canopy:logger') return logger
+    if (id === 'doxa:logger') return logger
     const configuration = configurations.get(id)
     if (configuration) return configuration
     const provider = providerById.get(id)
@@ -2073,16 +2070,16 @@ class ExecutionScope {
     if (this.#disposed) {
       throw new OperationDispatchError('The current execution scope has already been disposed.')
     }
-    if (id === 'canopy:action-bus') return this.actions
-    if (id === 'canopy:query-bus') return this.queries
-    if (id === 'canopy:current-execution') return this.currentExecution
-    if (id === 'canopy:current-job') return this.currentJob
-    if (id === 'canopy:authorization') return this.authorization
-    if (id === 'canopy:mailer') return this.mailer
-    if (id === 'canopy:sms') return this.sms
-    if (id === 'canopy:delivery-ledger') return this.deliveryLedger
-    if (id === 'canopy:logger') return this.logger
-    if (id === 'canopy:unit-of-work') return this.#unitOfWork ?? this.#readOnlyUnitOfWork
+    if (id === 'doxa:action-bus') return this.actions
+    if (id === 'doxa:query-bus') return this.queries
+    if (id === 'doxa:current-execution') return this.currentExecution
+    if (id === 'doxa:current-job') return this.currentJob
+    if (id === 'doxa:authorization') return this.authorization
+    if (id === 'doxa:mailer') return this.mailer
+    if (id === 'doxa:sms') return this.sms
+    if (id === 'doxa:delivery-ledger') return this.deliveryLedger
+    if (id === 'doxa:logger') return this.logger
+    if (id === 'doxa:unit-of-work') return this.#unitOfWork ?? this.#readOnlyUnitOfWork
     const configuration = this.graph.configurations.get(id)
     if (configuration) return configuration
     const singleton = this.graph.singletonInstances.get(id)
@@ -2172,7 +2169,7 @@ class ExecutionScope {
     )
     if (!dependency || dependency.optional !== optional) {
       throw new RuntimeIntegrityError(
-        `${manifest.id} attempted an undeclared this.inject(${token.name || 'anonymous'}). Run canopy build.`,
+        `${manifest.id} attempted an undeclared this.inject(${token.name || 'anonymous'}). Run doxa build.`,
       )
     }
     return dependency.targetId
@@ -2192,7 +2189,7 @@ class ExecutionScope {
     work: () => Promise<Output>,
   ): Promise<Output> {
     if (this.#unitOfWork) {
-      throw new OperationDispatchError('Nested units of work are prohibited in the Canopy MVP.')
+      throw new OperationDispatchError('Nested units of work are prohibited in the Doxa MVP.')
     }
     this.#unitOfWork = unitOfWork
     try {
@@ -2208,15 +2205,15 @@ class ExecutionScope {
 }
 
 class ReadOnlyUnitOfWork extends UnitOfWork {
-  findEntity<State extends import('@canopy/core').JsonValue>(
+  findEntity<State extends import('@doxajs/core').JsonValue>(
     _type: string,
     _id: string,
-  ): Promise<import('@canopy/core').PersistedEntity<State> | undefined> {
+  ): Promise<import('@doxajs/core').PersistedEntity<State> | undefined> {
     return Promise.reject(this.error())
   }
 
-  saveEntity<State extends import('@canopy/core').JsonValue>(
-    _entity: import('@canopy/core').SaveEntity<State>,
+  saveEntity<State extends import('@doxajs/core').JsonValue>(
+    _entity: import('@doxajs/core').SaveEntity<State>,
   ): Promise<number> {
     return Promise.reject(this.error())
   }
@@ -2225,23 +2222,23 @@ class ReadOnlyUnitOfWork extends UnitOfWork {
     return Promise.reject(this.error())
   }
 
-  record<Payload extends import('@canopy/core').JsonValue>(
-    _fact: import('@canopy/core').JournalFact<Payload>,
+  record<Payload extends import('@doxajs/core').JsonValue>(
+    _fact: import('@doxajs/core').JournalFact<Payload>,
   ): Promise<string> {
     return Promise.reject(this.error())
   }
 
-  enqueue<Payload extends import('@canopy/core').JsonValue>(
-    _message: import('@canopy/core').OutboxMessage<Payload>,
+  enqueue<Payload extends import('@doxajs/core').JsonValue>(
+    _message: import('@doxajs/core').OutboxMessage<Payload>,
   ): Promise<string> {
     return Promise.reject(this.error())
   }
 
-  stageDelivery(_delivery: import('@canopy/core').StagedDelivery): Promise<void> {
+  stageDelivery(_delivery: import('@doxajs/core').StagedDelivery): Promise<void> {
     return Promise.reject(this.error())
   }
 
-  transitionDelivery(_transition: import('@canopy/core').DeliveryTransition): Promise<void> {
+  transitionDelivery(_transition: import('@doxajs/core').DeliveryTransition): Promise<void> {
     return Promise.reject(this.error())
   }
 
@@ -2254,7 +2251,7 @@ class ReadOnlyUnitOfWork extends UnitOfWork {
   }
 }
 
-function assertOperationInfrastructure(manifest: CanopyManifest): void {
+function assertOperationInfrastructure(manifest: DoxaManifest): void {
   const transactionProviders = manifest.providers.filter((provider) =>
     provider.capabilities.includes('transactions'),
   )
@@ -2339,7 +2336,7 @@ function createExecutionContext(
 
 function telemetryAttributes(
   context: ExecutionContext,
-): Readonly<Record<string, import('@canopy/core').JsonValue>> {
+): Readonly<Record<string, import('@doxajs/core').JsonValue>> {
   return Object.freeze({
     executionId: context.executionId,
     ...(context.sourceExecutionId ? { sourceExecutionId: context.sourceExecutionId } : {}),
@@ -2373,7 +2370,7 @@ function observationContext(context: ExecutionContext | undefined): ObservationC
   })
 }
 
-function logContext(context: ExecutionContext): import('@canopy/core').LogContext {
+function logContext(context: ExecutionContext): import('@doxajs/core').LogContext {
   return Object.freeze({
     executionId: context.executionId,
     correlationId: context.correlationId,
@@ -2480,18 +2477,18 @@ function queueSeed(envelope: QueueEnvelope): ExecutionContextSeed {
         ? { constraints: [...context.authentication.constraints] }
         : {}),
     },
-    transport: { kind: envelope.scheduleId ? 'schedule' : 'job', name: envelope.targetId },
+    transport: { kind: 'job', name: envelope.targetId },
     trace: { ...context.trace },
     ...(context.locale ? { locale: context.locale } : {}),
     ...(context.timeZone ? { timeZone: context.timeZone } : {}),
   }
 }
 
-function serializeQueuePayload(value: unknown): import('@canopy/core').JsonValue {
+function serializeQueuePayload(value: unknown): import('@doxajs/core').JsonValue {
   try {
     const serialized = JSON.stringify(value)
     if (serialized === undefined) throw new Error('value has no JSON representation')
-    return JSON.parse(serialized) as import('@canopy/core').JsonValue
+    return JSON.parse(serialized) as import('@doxajs/core').JsonValue
   } catch (cause) {
     throw new OperationDispatchError('Queued payloads must be JSON serializable.', { cause })
   }
@@ -2561,16 +2558,16 @@ function isMissingFile(error: unknown): boolean {
 }
 
 const BUILTIN_INJECTION_IDS = new Map<object, string>([
-  [ActionBus, 'canopy:action-bus'],
-  [QueryBus, 'canopy:query-bus'],
-  [CurrentExecution, 'canopy:current-execution'],
-  [CurrentJob, 'canopy:current-job'],
-  [Authorization, 'canopy:authorization'],
-  [Mailer, 'canopy:mailer'],
-  [Sms, 'canopy:sms'],
-  [DeliveryLedger, 'canopy:delivery-ledger'],
-  [Logger, 'canopy:logger'],
-  [UnitOfWork, 'canopy:unit-of-work'],
+  [ActionBus, 'doxa:action-bus'],
+  [QueryBus, 'doxa:query-bus'],
+  [CurrentExecution, 'doxa:current-execution'],
+  [CurrentJob, 'doxa:current-job'],
+  [Authorization, 'doxa:authorization'],
+  [Mailer, 'doxa:mailer'],
+  [Sms, 'doxa:sms'],
+  [DeliveryLedger, 'doxa:delivery-ledger'],
+  [Logger, 'doxa:logger'],
+  [UnitOfWork, 'doxa:unit-of-work'],
 ])
 
 const INJECTION_CAPABILITIES = new Map<object, ProviderManifestEntry['capabilities'][number]>([

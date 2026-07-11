@@ -14,7 +14,7 @@ import {
   type ActorRef,
   type AuthenticationContext,
   type ActionClass,
-  type CanopyApplication,
+  type DoxaApplication,
   type DeliveryTransition,
   type ExecutionContext,
   Event,
@@ -48,9 +48,9 @@ import {
   type StagedDelivery,
   TransactionManager,
   UnitOfWork,
-} from '@canopy/core'
-import { HonoHttpEngine } from '@canopy/http-hono'
-import { Canopy, type BootOptions, type CanopyRuntime } from '@canopy/runtime'
+} from '@doxajs/core'
+import { HonoHttpEngine } from '@doxajs/http-hono'
+import { Doxa, type BootOptions, type DoxaRuntime } from '@doxajs/runtime'
 
 export {
   FakeMailTransport,
@@ -67,14 +67,14 @@ export class TestObservationRecorder extends MemoryObservationRecorder {
   dispose(): void {}
 }
 
-export class CanopyTestHarness {
+export class DoxaTestHarness {
   readonly http: HonoHttpEngine
   readonly logs: MemoryLogSink
   #actor: ActorRef = { kind: 'anonymous' }
   #authentication: AuthenticationContext = { state: 'anonymous' }
 
   private constructor(
-    readonly runtime: CanopyRuntime,
+    readonly runtime: DoxaRuntime,
     logs: MemoryLogSink,
     readonly auth?: TestAuth,
     readonly observations?: TestObservationRecorder,
@@ -84,9 +84,9 @@ export class CanopyTestHarness {
   }
 
   static async boot(
-    application: abstract new () => CanopyApplication,
+    application: abstract new () => DoxaApplication,
     options: BootOptions & { readonly authProviderId?: string } = {},
-  ): Promise<CanopyTestHarness> {
+  ): Promise<DoxaTestHarness> {
     const auth = options.authProviderId ? new TestAuth() : undefined
     const observation = await testObservationOverride(options.artifactsDirectory)
     const overrides = {
@@ -101,12 +101,12 @@ export class CanopyTestHarness {
       options.logging === false
         ? (false as const)
         : { level: 'debug' as const, ...options.logging, sink: logs }
-    const runtime = await Canopy.boot(application, {
+    const runtime = await Doxa.boot(application, {
       ...options,
       providerOverrides: overrides,
       logging,
     })
-    return new CanopyTestHarness(runtime, logs, auth, observation?.recorder)
+    return new DoxaTestHarness(runtime, logs, auth, observation?.recorder)
   }
 
   actingAs(actor: ActorRef, authentication?: AuthenticationContext): this {
@@ -119,7 +119,7 @@ export class CanopyTestHarness {
   actingAsUser(id: string = randomUUID()): this {
     return this.actingAs({ kind: 'user', id })
   }
-  actingAsSystem(id: string = 'canopy:test'): this {
+  actingAsSystem(id: string = 'doxa:test'): this {
     return this.actingAs({ kind: 'system', id })
   }
   asAnonymous(): this {
@@ -197,7 +197,7 @@ async function testObservationOverride(
 ): Promise<
   { readonly providerId: string; readonly recorder: TestObservationRecorder } | undefined
 > {
-  const manifestPath = path.join(path.resolve(artifactsDirectory ?? '.canopy'), 'manifest.json')
+  const manifestPath = path.join(path.resolve(artifactsDirectory ?? '.doxa'), 'manifest.json')
   try {
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
       providers?: Array<{ id: string; capabilities?: readonly string[] }>
@@ -227,7 +227,7 @@ export class TestAuth extends Auth {
     if (actor.kind === 'user' && actor.id && !this.#identities.has(actor.id)) {
       this.#identities.set(actor.id, {
         id: actor.id,
-        email: `${actor.id}@canopy.test`,
+        email: `${actor.id}@doxajs.test`,
         emailVerified: true,
         createdAt: new Date(),
       })
@@ -358,10 +358,10 @@ export class TestAuth extends Auth {
     return this.#resolved
   }
   sessionCookie(grant: AuthSessionGrant): string {
-    return `canopy_session=${grant.token.reveal()}; HttpOnly; SameSite=Lax; Path=/`
+    return `doxa_session=${grant.token.reveal()}; HttpOnly; SameSite=Lax; Path=/`
   }
   expiredSessionCookie(): string {
-    return 'canopy_session=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/'
+    return 'doxa_session=; Max-Age=0; HttpOnly; SameSite=Lax; Path=/'
   }
 }
 
@@ -391,13 +391,13 @@ export class FakeQueueManager extends QueueManager {
   async runNext(attempt = 1): Promise<void> {
     const envelope = this.queued.shift()
     if (!envelope) throw new Error('No fake queue delivery is pending.')
-    if (!this.#handler) throw new Error('Fake queue is not bound to a Canopy runtime.')
+    if (!this.#handler) throw new Error('Fake queue is not bound to a Doxa runtime.')
     await this.#handler({ envelope, attempt, cancellation: new AbortController().signal })
   }
   async runSchedule(id: string, attempt = 1): Promise<void> {
     const schedule = this.schedules.get(id)
     if (!schedule) throw new Error(`No fake schedule is declared with ID ${id}.`)
-    if (!this.#handler) throw new Error('Fake queue is not bound to a Canopy runtime.')
+    if (!this.#handler) throw new Error('Fake queue is not bound to a Doxa runtime.')
     const envelopeId = randomUUID()
     await this.#handler({
       envelope: {
@@ -411,12 +411,12 @@ export class FakeQueueManager extends QueueManager {
           sourceExecutionId: envelopeId,
           correlationId: envelopeId,
           causationId: schedule.id,
-          actor: { kind: 'system', id: 'canopy:test-scheduler' },
-          initiator: { kind: 'system', id: 'canopy:test-scheduler' },
+          actor: { kind: 'system', id: 'doxa:test-scheduler' },
+          initiator: { kind: 'system', id: 'doxa:test-scheduler' },
           delegation: [],
           authentication: {
             state: 'authenticated',
-            identityId: 'canopy:test-scheduler',
+            identityId: 'doxa:test-scheduler',
             method: 'schedule',
           },
           trace: {},
@@ -464,7 +464,7 @@ export class MemoryTransactionManager extends TransactionManager {
     await unit.commit()
     if (this.queue) {
       for (const message of draft.outbox.slice(outboxStart)) {
-        if (message.type === 'canopy.queue')
+        if (message.type === 'doxa.queue')
           await this.queue.enqueue(message.payload as unknown as QueueEnvelope)
       }
     }

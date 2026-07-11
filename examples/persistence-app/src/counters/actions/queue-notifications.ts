@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 
-import { Action, Mailer, Sms } from '@canopy/core'
+import { Action, Mailer, Sms } from '@doxajs/core'
 
 export class QueueNotifications extends Action<
   { failAfterQueue?: boolean } | undefined,
@@ -17,9 +17,9 @@ export class QueueNotifications extends Action<
     const smsId = randomUUID()
     await this.mailer.send({
       id: mailId,
-      from: 'canopy@example.test',
+      from: 'doxa@example.test',
       to: ['developer@example.test'],
-      subject: 'Canopy',
+      subject: 'Doxa',
       text: 'Mail delivery proof',
     })
     await this.sms.send({ id: smsId, to: '+13125551212', text: 'SMS delivery proof' })

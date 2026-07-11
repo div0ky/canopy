@@ -1,19 +1,19 @@
-# Canopy Field Guide
+# Doxa.js Field Guide
 
-Field Guide is Canopy's external browser-consumer fixture. It is a Next.js App Router application
-using Tailwind CSS and shadcn/ui. It deliberately imports no Canopy runtime packages: every
+Field Guide is Doxa's external browser-consumer fixture. It is a Next.js App Router application
+using Tailwind CSS and shadcn/ui. It deliberately imports no Doxa runtime packages: every
 interaction crosses the public HTTP boundary exactly as a separately deployed frontend would.
 
 ## Run it
 
-Start Canopy from the workspace root, then start Field Guide in another terminal:
+Start Doxa from the workspace root, then start Field Guide in another terminal:
 
 ```bash
 pnpm dev
 pnpm dev:field-guide
 ```
 
-Open `http://127.0.0.1:3001`. The Next server forwards `/api/canopy/*` to `CANOPY_API_URL`, which
+Open `http://127.0.0.1:3001`. The Next server forwards `/api/doxa/*` to `DOXA_API_URL`, which
 defaults to `http://127.0.0.1:3000`. Copy `.env.example` to `.env.local` only when that backend URL
 needs to change.
 
@@ -26,12 +26,12 @@ needs to change.
 - One-time opaque bearer-token issuance.
 - A default-deny protected counter mutation.
 - Transactional model persistence followed by durable job dispatch.
-- Stable Canopy error normalization without importing backend implementation types.
+- Stable Doxa error normalization without importing backend implementation types.
 
 The same-origin Next route is an HTTP transport adapter, not a second application API. It forwards
 method, query, body, browser cookie, origin, authorization, content type, and user agent while
-preserving Canopy's status, headers, and response body. In production, the trusted frontend origin
-must also be declared by the Canopy authentication provider.
+preserving Doxa's status, headers, and response body. In production, the trusted frontend origin
+must also be declared by the Doxa authentication provider.
 
 ## Design and checks
 

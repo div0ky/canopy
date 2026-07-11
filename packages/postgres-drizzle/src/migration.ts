@@ -2,16 +2,16 @@ import { readFile } from 'node:fs/promises'
 
 import { Pool } from 'pg'
 
-export const CANOPY_PERSISTENCE_MIGRATION_URL = new URL(
-  '../migrations/0001_canopy_durability.sql',
+export const DOXA_PERSISTENCE_MIGRATION_URL = new URL(
+  '../migrations/0001_doxa_durability.sql',
   import.meta.url,
 )
-export const CANOPY_CACHE_MIGRATION_URL = new URL(
-  '../migrations/0002_canopy_cache.sql',
+export const DOXA_CACHE_MIGRATION_URL = new URL(
+  '../migrations/0002_doxa_cache.sql',
   import.meta.url,
 )
-export const CANOPY_COMMUNICATIONS_MIGRATION_URL = new URL(
-  '../migrations/0003_canopy_communications.sql',
+export const DOXA_COMMUNICATIONS_MIGRATION_URL = new URL(
+  '../migrations/0003_doxa_communications.sql',
   import.meta.url,
 )
 
@@ -19,17 +19,17 @@ export const CANOPY_COMMUNICATIONS_MIGRATION_URL = new URL(
 export async function installPersistenceSchema(connectionString: string): Promise<void> {
   const pool = new Pool({ connectionString })
   try {
-    await pool.query(await readFile(CANOPY_PERSISTENCE_MIGRATION_URL, 'utf8'))
+    await pool.query(await readFile(DOXA_PERSISTENCE_MIGRATION_URL, 'utf8'))
   } finally {
     await pool.end()
   }
 }
 
-/** Explicit cache-schema helper for tests and Arbor migrations. */
+/** Explicit cache-schema helper for tests and Praxis migrations. */
 export async function installCacheSchema(connectionString: string): Promise<void> {
   const pool = new Pool({ connectionString })
   try {
-    await pool.query(await readFile(CANOPY_CACHE_MIGRATION_URL, 'utf8'))
+    await pool.query(await readFile(DOXA_CACHE_MIGRATION_URL, 'utf8'))
   } finally {
     await pool.end()
   }
@@ -38,7 +38,7 @@ export async function installCacheSchema(connectionString: string): Promise<void
 export async function installCommunicationsSchema(connectionString: string): Promise<void> {
   const pool = new Pool({ connectionString })
   try {
-    await pool.query(await readFile(CANOPY_COMMUNICATIONS_MIGRATION_URL, 'utf8'))
+    await pool.query(await readFile(DOXA_COMMUNICATIONS_MIGRATION_URL, 'utf8'))
   } finally {
     await pool.end()
   }

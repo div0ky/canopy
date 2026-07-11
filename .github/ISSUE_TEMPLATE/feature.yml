@@ -14,8 +14,8 @@ body:
   - type: textarea
     id: experience
     attributes:
-      label: Desired Canopy experience
-      description: Show the application code or Arbor workflow you want developers to use.
+      label: Desired Doxa experience
+      description: Show the application code or Praxis workflow you want developers to use.
     validations:
       required: true
   - type: textarea

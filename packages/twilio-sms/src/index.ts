@@ -6,7 +6,7 @@ import {
   type DeliveryAcceptance,
   type DeliveryUpdate,
   type SmsMessage,
-} from '@canopy/core'
+} from '@doxajs/core'
 
 export interface TwilioSmsOptions {
   readonly accountSid: string
@@ -31,7 +31,7 @@ export class TwilioSmsTransport extends SmsTransport {
         'invalid_message',
       )
     const callback = new URL(this.options.statusCallback)
-    callback.searchParams.set('canopy_message_id', message.id)
+    callback.searchParams.set('doxa_message_id', message.id)
     const body = new URLSearchParams({
       To: message.to,
       Body: message.text,
@@ -93,7 +93,7 @@ export function normalizeTwilioStatus(
   parameters: Readonly<Record<string, string>>,
 ): DeliveryUpdate {
   const providerMessageId = parameters.MessageSid
-  const messageId = parameters.CanopyMessageId
+  const messageId = parameters.DoxaMessageId
   const status = parameters.MessageStatus
   if (!providerMessageId || !messageId || !status)
     throw new DeliveryError(

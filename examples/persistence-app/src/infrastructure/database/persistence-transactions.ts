@@ -1,4 +1,4 @@
-import { PostgresTransactionManager } from '@canopy/postgres-drizzle'
+import { PostgresTransactionManager } from '@doxajs/postgres-drizzle'
 
 import { DatabaseConfig } from './database-config.js'
 
@@ -9,7 +9,7 @@ export class PersistenceTransactions extends PostgresTransactionManager {
     super({
       connectionString: config.connectionString.reveal(),
       maximumConnections: 8,
-      applicationName: 'canopy-persistence-proof',
+      applicationName: 'doxa-persistence-proof',
     })
   }
 }

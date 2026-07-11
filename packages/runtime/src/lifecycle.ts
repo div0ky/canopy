@@ -1,4 +1,4 @@
-import type { LifecycleContext } from '@canopy/core'
+import type { LifecycleContext } from '@doxajs/core'
 import type {
   CommandManifestEntry,
   JobManifestEntry,
@@ -8,7 +8,7 @@ import type {
   ProviderManifestEntry,
   RouteManifestEntry,
   SignalHandlerManifestEntry,
-} from '@canopy/manifest'
+} from '@doxajs/manifest'
 
 import { RuntimeIntegrityError } from './errors.js'
 

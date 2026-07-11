@@ -1,8 +1,8 @@
-# `@canopy/compiler`
+# `@doxajs/compiler`
 
-The fail-closed semantic TypeScript compiler behind Arbor. It analyzes declaration-only Canopy
-Applications and Features and emits `.canopy/manifest.json`, `.canopy/registry.mjs`, and compiled
+The fail-closed semantic TypeScript compiler behind Praxis. It analyzes declaration-only Doxa
+Applications and Features and emits `.doxa/manifest.json`, `.doxa/registry.mjs`, and compiled
 application output.
 
-Application code should use `@canopy/core`; application developers normally invoke this package
-through `arbor build` and `arbor dev`.
+Application code should use `@doxajs/core`; application developers normally invoke this package
+through `doxa build` and `doxa dev`.

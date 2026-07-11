@@ -2,15 +2,15 @@
 
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
-- **Decision owners:** Canopy maintainers
+- **Decision owners:** Doxa maintainers
 
 ## Decision
 
-Canopy will provide Eloquent-style persistent model ergonomics as an MVP requirement. Applications
-may retrieve hydrated models, invoke behavior, mutate state, inspect changes, and explicitly persist
+Doxa will provide Eloquent-style persistent model ergonomics as an MVP requirement. Applications may
+retrieve hydrated models, invoke behavior, mutate state, inspect changes, and explicitly persist
 through model methods such as `save()`.
 
-Canopy implements this experience through an execution-scoped model session, Unit of Work, and Data
+Doxa implements this experience through an execution-scoped model session, Unit of Work, and Data
 Mapper over Drizzle. Models do not import Drizzle, database clients, table definitions, or row
 types.
 
@@ -53,7 +53,7 @@ experience is accepted.
 ## Entity, model, record, and state
 
 - An **entity** is an identity-bearing domain concept.
-- A persistent **model** is Canopy's object-oriented runtime representation of a stored entity.
+- A persistent **model** is Doxa's object-oriented runtime representation of a stored entity.
 - A **record** or row is part of its physical database representation.
 - **Entity state** is the authoritative persisted information used to rehydrate the model.
 - A **snapshot** is reserved for an actual point-in-time capture or checkpoint and is not the
@@ -63,8 +63,8 @@ One model may map to several records. A record is not automatically the domain e
 
 ## Attachment and hydration
 
-Models hydrated through Canopy are attached to the active execution-scoped `ModelSession`. Canopy
-tracks attachment, original state, current changes, persistence status, and version through private
+Models hydrated through Doxa are attached to the active execution-scoped `ModelSession`. Doxa tracks
+attachment, original state, current changes, persistence status, and version through private
 framework metadata rather than public model attributes.
 
 For an ordinary single-table model, safe physical-name differences use Laravel-like metadata on the
@@ -92,7 +92,7 @@ persist(Order).using(
 )
 ```
 
-Simple metadata is compiled and validated by Canopy. Advanced mapping is infrastructure composition.
+Simple metadata is compiled and validated by Doxa. Advanced mapping is infrastructure composition.
 In neither path does feature or domain code import a table object or adapter. The complete
 existing-table contract is recorded by [Decision 0023](0023-existing-table-model-auth-mapping.md).
 
@@ -152,8 +152,8 @@ required journal, outbox, audit, or observer behavior must not be an ordinary es
 
 ## Dirty tracking
 
-Canopy tracks original persisted values and changes made since hydration or the last successful
-save. A successful save marks the current values clean and retains the last saved change set for
+Doxa tracks original persisted values and changes made since hydration or the last successful save.
+A successful save marks the current values clean and retains the last saved change set for
 `wasChanged()` and diagnostics.
 
 Dirty tracking must use persistence mappings rather than proxies over arbitrary model properties.
@@ -163,11 +163,11 @@ they exist on the object.
 ## Static retrieval
 
 Static retrieval methods such as `find` and `findOrFail` resolve the current `ModelSession` through
-Canopy's execution context. They are Canopy model APIs, not Drizzle query builders.
+Doxa's execution context. They are Doxa model APIs, not Drizzle query builders.
 
 The MVP does not need to reproduce Eloquent's complete query-builder surface. Complex reports,
 projections, aggregates, and optimized reads remain the responsibility of query handlers and read
-models behind Canopy-owned contracts.
+models behind Doxa-owned contracts.
 
 ## Repositories
 
@@ -181,12 +181,12 @@ application ceremony for ordinary model work.
 
 ## Consequences
 
-- Canopy embraces Active Record ergonomics without giving models direct database-engine authority.
+- Doxa embraces Active Record ergonomics without giving models direct database-engine authority.
 - Persistence magic remains bounded by the accepted execution scope and transaction lifecycle.
 - The framework owns hydration, attachment, dirty tracking, lifecycle, optimistic concurrency, and
   model diagnostics.
 - Drizzle continues to own SQL construction, physical schema definitions, and database mechanics.
-- Detached models and background work require explicit reload or reattachment through Canopy APIs.
+- Detached models and background work require explicit reload or reattachment through Doxa APIs.
 - Bulk writes that bypass hydration cannot claim normal model lifecycle semantics.
 
 ## Required implementation proof
@@ -212,7 +212,7 @@ and bulk semantics remain required before this proof satisfies the complete MVP 
 
 ## Revisit when
 
-- `save()` cannot remain subordinate to the active Canopy transaction.
+- `save()` cannot remain subordinate to the active Doxa transaction.
 - Static retrieval requires a hidden global database connection outside execution context.
 - Dirty tracking forces persistence concerns into arbitrary domain properties.
 - Eloquent-style convenience makes actor, journal, outbox, or observer behavior ambiguous.
@@ -221,6 +221,6 @@ and bulk semantics remain required before this proof satisfies the complete MVP 
 ## References
 
 - [Laravel Eloquent](https://laravel.com/docs/13.x/eloquent)
-- [Canopy persistence decision](0002-postgresql-drizzle-persistence.md)
-- [Canopy OOP and container decision](0011-class-first-oop-container.md)
-- [Canopy operation defaults](0009-operation-lifecycle-defaults.md)
+- [Doxa persistence decision](0002-postgresql-drizzle-persistence.md)
+- [Doxa OOP and container decision](0011-class-first-oop-container.md)
+- [Doxa operation defaults](0009-operation-lifecycle-defaults.md)

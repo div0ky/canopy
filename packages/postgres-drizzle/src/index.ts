@@ -4,9 +4,9 @@ export {
 } from './postgres-transaction-manager.js'
 export { PostgresCache, type PostgresCacheOptions } from './postgres-cache.js'
 export {
-  CANOPY_CACHE_MIGRATION_URL,
-  CANOPY_COMMUNICATIONS_MIGRATION_URL,
-  CANOPY_PERSISTENCE_MIGRATION_URL,
+  DOXA_CACHE_MIGRATION_URL,
+  DOXA_COMMUNICATIONS_MIGRATION_URL,
+  DOXA_PERSISTENCE_MIGRATION_URL,
   installCacheSchema,
   installCommunicationsSchema,
   installPersistenceSchema,

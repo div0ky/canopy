@@ -1,9 +1,9 @@
-import { Http, HttpError, httpFailure, httpSuccess, Logger, type HttpEnvelope } from '@canopy/core'
-import { HonoHttpEngine } from '@canopy/http-hono'
-import type { CanopyRuntime } from '@canopy/runtime'
+import { Http, HttpError, httpFailure, httpSuccess, Logger, type HttpEnvelope } from '@doxajs/core'
+import { HonoHttpEngine } from '@doxajs/http-hono'
+import type { DoxaRuntime } from '@doxajs/runtime'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
-describe('Canopy HTTP response envelopes', () => {
+describe('Doxa HTTP response envelopes', () => {
   it('uses one discriminated union for success and failure', () => {
     const success = httpSuccess({ id: 'user-1' })
     const failure = httpFailure('validation_failed', 'The request did not pass validation.', {
@@ -60,14 +60,14 @@ describe('Canopy HTTP response envelopes', () => {
         }
         return { id: 'payload-1' }
       },
-    } as unknown as CanopyRuntime
+    } as unknown as DoxaRuntime
     const http = new HonoHttpEngine(runtime)
 
-    const success = await http.fetch(new Request('http://canopy.test/payload'))
+    const success = await http.fetch(new Request('http://doxa.test/payload'))
     expect(success.status).toBe(200)
     expect(await success.json()).toEqual({ ok: true, data: { id: 'payload-1' } })
 
-    const failure = await http.fetch(new Request('http://canopy.test/failure'))
+    const failure = await http.fetch(new Request('http://doxa.test/failure'))
     expect(failure.status).toBe(409)
     expect(await failure.json()).toEqual({
       ok: false,
@@ -77,12 +77,12 @@ describe('Canopy HTTP response envelopes', () => {
       details: { version: 2 },
     })
 
-    const missing = await http.fetch(new Request('http://canopy.test/missing'))
+    const missing = await http.fetch(new Request('http://doxa.test/missing'))
     expect(missing.status).toBe(404)
     expect(await missing.json()).toEqual({
       ok: false,
       code: 'route_not_found',
-      message: 'No Canopy route matches GET /missing.',
+      message: 'No Doxa route matches GET /missing.',
       data: null,
     })
   })

@@ -30,7 +30,7 @@ export function ActivityPanel({ entries }: { readonly entries: readonly Activity
       <CardContent className="flex flex-col gap-4">
         {entries.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Interactions will appear here as they cross the Canopy boundary.
+            Interactions will appear here as they cross the Doxa boundary.
           </p>
         ) : null}
         {entries.map((entry, index) => {

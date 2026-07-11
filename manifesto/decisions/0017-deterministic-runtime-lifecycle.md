@@ -3,11 +3,11 @@
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
 - **Scope:** MVP
-- **Decision owners:** Canopy maintainers
+- **Decision owners:** Doxa maintainers
 
 ## Decision
 
-Canopy's runtime owns one deterministic lifecycle:
+Doxa's runtime owns one deterministic lifecycle:
 
 ```text
 start → ready → drain → stop → dispose
@@ -24,12 +24,12 @@ Feature and Application declarations have no lifecycle hooks and are never const
 Ordinary application code uses one public lifecycle surface:
 
 ```ts
-const runtime = await Canopy.boot(Application)
+const runtime = await Doxa.boot(Application)
 
 await runtime.shutdown()
 ```
 
-`Canopy.boot()` validates the artifacts and configuration, constructs the runtime graph, starts
+`Doxa.boot()` validates the artifacts and configuration, constructs the runtime graph, starts
 lifecycle participants, performs readiness checks, and resolves only after the runtime reaches
 `ready`. It never returns a half-started runtime. Failure completes the required unwind and rejects
 according to the accepted primary- and cleanup-error model.
@@ -44,16 +44,16 @@ state.
 
 ## Process host integration
 
-`Canopy.boot()` does not install `SIGTERM`, `SIGINT`, uncaught-error, rejection, or other
+`Doxa.boot()` does not install `SIGTERM`, `SIGINT`, uncaught-error, rejection, or other
 process-global handlers. Booting a runtime must not mutate global process behavior or interfere with
 another runtime or concurrent test.
 
-Official Node host adapters and commands such as `canopy serve` and `canopy worker` own process
-signal integration. The first termination signal initiates idempotent `runtime.shutdown()` with the
-host's configured deadline. Repeated signals may escalate cancellation according to explicit host
-policy. Host adapters must remove handlers they install when their runtime terminates.
+Official Node host adapters and commands such as `doxa serve` and `doxa worker` own process signal
+integration. The first termination signal initiates idempotent `runtime.shutdown()` with the host's
+configured deadline. Repeated signals may escalate cancellation according to explicit host policy.
+Host adapters must remove handlers they install when their runtime terminates.
 
-Embedded applications may wire their own host policy around the public lifecycle API. The Canopy
+Embedded applications may wire their own host policy around the public lifecycle API. The Doxa
 kernel exposes lifecycle state and normalized outcomes but never calls `process.exit()`; final
 process termination and exit-code policy belong to the host.
 
@@ -139,7 +139,7 @@ a normalized lifecycle timeout containing the participant, phase, start time, de
 duration.
 
 A drain timeout advances shutdown into forced stop. Later phase behavior must preserve the global
-shutdown deadline and report participants that do not cooperate with cancellation. The Canopy kernel
+shutdown deadline and report participants that do not cooperate with cancellation. The Doxa kernel
 never calls `process.exit()`; the runtime host decides how to terminate a process that cannot
 settle.
 
@@ -177,10 +177,10 @@ preserve this primary-error and cleanup-error model.
 The MVP must prove:
 
 1. Validation failure executes no constructors or lifecycle hooks.
-2. `Canopy.boot()` resolves only with a ready runtime or rejects after required unwind.
+2. `Doxa.boot()` resolves only with a ready runtime or rejects after required unwind.
 3. Concurrent shutdown callers share one idempotent lifecycle transition and promise.
 4. A stopped runtime rejects restart attempts.
-5. `Canopy.boot()` installs no process-global handlers.
+5. `Doxa.boot()` installs no process-global handlers.
 6. Official Node hosts translate termination signals into idempotent shutdown and remove their
    handlers afterward.
 7. Constructors remain synchronous and side-effect-free.
@@ -201,7 +201,7 @@ The MVP must prove:
 
 ## References
 
-- [Canopy architecture](../architecture.md#runtime-lifecycle)
+- [Doxa architecture](../architecture.md#runtime-lifecycle)
 - [Class-first container](0011-class-first-oop-container.md)
 - [Application and Feature declarations](0014-explicit-features-generated-manifest.md)
-- [Canopy MVP viability bar](../mvp.md#required-foundation)
+- [Doxa MVP viability bar](../mvp.md#required-foundation)

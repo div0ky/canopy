@@ -1,0 +1,66 @@
+{
+  "name": "@doxajs/praxis",
+  "version": "0.1.0-alpha.0",
+  "description": "The canonical generator, development, runtime, inspection, and operations CLI for Doxa.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/div0ky/doxajs.git",
+    "directory": "packages/praxis"
+  },
+  "homepage": "https://github.com/div0ky/doxajs#readme",
+  "bugs": {
+    "url": "https://github.com/div0ky/doxajs/issues"
+  },
+  "keywords": [
+    "doxa",
+    "framework",
+    "cli",
+    "generator",
+    "typescript"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "bin": {
+    "doxa": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./hot-reload": {
+      "types": "./dist/hot-reload.d.ts",
+      "default": "./dist/hot-reload.js"
+    }
+  },
+  "files": [
+    "dist",
+    "NOTICE"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/prepare-package.mjs",
+    "postpack": "node ../../scripts/prepare-package.mjs --clean"
+  },
+  "dependencies": {
+    "@doxajs/core": "workspace:*",
+    "@doxajs/http-hono": "workspace:*",
+    "@doxajs/queue-pg-boss": "workspace:*",
+    "@doxajs/runtime": "workspace:*",
+    "pg": "8.22.0"
+  },
+  "optionalDependencies": {
+    "@doxajs/compiler": "workspace:*",
+    "@doxajs/theoria": "workspace:*",
+    "drizzle-kit": "0.31.10"
+  },
+  "devDependencies": {
+    "@types/pg": "8.20.0"
+  }
+}

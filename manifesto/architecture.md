@@ -1,35 +1,35 @@
-# Canopy Architecture
+# Doxa Architecture
 
-This document develops the architectural consequences of the [Canopy Manifesto](index.md). It
+This document develops the architectural consequences of the [Doxa Manifesto](index.md). It
 describes the stable shape of the system without prematurely fixing every API or package boundary.
 
 ## The governing dependency rule
 
-Dependencies point inward toward Canopy's application model:
+Dependencies point inward toward Doxa's application model:
 
 ```text
 application features
         |
         v
-Canopy programming model and contracts
+Doxa programming model and contracts
         |
         v
-Canopy adapters
+Doxa adapters
         |
         v
 infrastructure engines and vendor SDKs
 ```
 
-Feature code may depend on domain code and Canopy contracts. Adapters may depend on both Canopy
+Feature code may depend on domain code and Doxa contracts. Adapters may depend on both Doxa
 contracts and their engine. Infrastructure engines must not appear in feature signatures, metadata,
 exceptions, test assertions, or generated application contracts.
 
-The rule is semantic as well as syntactic. Renaming an engine type behind a Canopy export does not
+The rule is semantic as well as syntactic. Renaming an engine type behind a Doxa export does not
 create a boundary if the engine still dictates application behavior.
 
 ## The kernel
 
-The kernel owns the minimum machinery required to make the Canopy programming model true:
+The kernel owns the minimum machinery required to make the Doxa programming model true:
 
 - Build and validate the application manifest.
 - Register and resolve dependencies.
@@ -49,8 +49,8 @@ builder functions, generated metadata, and future syntax are front ends; the man
 contract.
 
 For the MVP, the application root explicitly selects class-first Features, and each Feature declares
-its framework-facing classes through role arrays. Canopy automatically follows and wires the
-concrete constructor dependencies beneath those declarations. This keeps composition visible without
+its framework-facing classes through role arrays. Doxa automatically follows and wires the concrete
+constructor dependencies beneath those declarations. This keeps composition visible without
 requiring handwritten provider registration for every service. The accepted direction is defined in
 [Explicit features and one generated manifest](decisions/0014-explicit-features-generated-manifest.md).
 
@@ -79,8 +79,8 @@ The manifest should make it possible to answer, before serving traffic:
 This shared representation is the basis for boot validation, diagnostics, generators, API contracts,
 test applications, and static analysis.
 
-The compiler materializes that representation as canonical `.canopy/manifest.json` plus a
-constructor-only `.canopy/registry.mjs`. Tools may read the JSON without executing application code.
+The compiler materializes that representation as canonical `.doxa/manifest.json` plus a
+constructor-only `.doxa/registry.mjs`. Tools may read the JSON without executing application code.
 The runtime uses the registry only to link manifest IDs to constructors, and it rejects artifacts
 whose required build hashes do not match.
 
@@ -88,11 +88,11 @@ The compiled application graph is immutable. Runtime code cannot register or rep
 and development reload boots a newly compiled replacement runtime. Dynamic configuration and
 business data influence declared behavior without redefining the manifest.
 
-`.canopy/` is deterministic, gitignored build output. Development, tests, packaging, CLI inspection,
-and Cultivate regenerate or require it; production bundles include it. Source control retains the
+`.doxa/` is deterministic, gitignored build output. Development, tests, packaging, CLI inspection,
+and Gnosis regenerate or require it; production bundles include it. Source control retains the
 declarations and schemas from which the graph is derived, not the generated graph.
 
-Compilation belongs to tooling. `Canopy.boot()` validates and consumes existing artifacts but never
+Compilation belongs to tooling. `Doxa.boot()` validates and consumes existing artifacts but never
 analyzes TypeScript or generates the graph. Production runtime therefore has no compiler dependency
 and fails actionably when required artifacts are unavailable or incompatible.
 
@@ -113,7 +113,7 @@ compiler resolves actual program symbols and types; regexes, textual names, and 
 cannot define manifest relationships. Last known-good artifacts may aid watch-mode diagnostics but
 are stale and cannot boot as current source.
 
-Each Canopy release pins the TypeScript version used by application checks and semantic manifest
+Each Doxa release pins the TypeScript version used by application checks and semantic manifest
 compilation. TypeScript upgrades are framework compatibility changes backed by conformance suites,
 not independent application dependency choices.
 
@@ -124,7 +124,7 @@ the optional `start()`, `drain()`, `stop()`, and `dispose()` phases. Readiness i
 reached only after manifest and configuration validation, pure construction, successful startup, and
 required readiness checks.
 
-Application code boots through `Canopy.boot(Application)`, which resolves only with a ready runtime,
+Application code boots through `Doxa.boot(Application)`, which resolves only with a ready runtime,
 and shuts down through idempotent `runtime.shutdown()`. Individual lifecycle transitions are not an
 ordinary application control surface.
 
@@ -145,9 +145,9 @@ Every lifecycle hook receives a runtime-owned abort signal and deadline. Drain t
 forced stop, and all timeout diagnostics identify the participant and phase. The kernel does not
 terminate the process; the host owns final process policy for non-cooperative code.
 
-`Canopy.boot()` installs no process-global handlers. Official Node hosts translate termination
-signals into idempotent runtime shutdown, own escalation and exit-code policy, and remove the
-handlers they installed. Embedded hosts may provide equivalent integration themselves.
+`Doxa.boot()` installs no process-global handlers. Official Node hosts translate termination signals
+into idempotent runtime shutdown, own escalation and exit-code policy, and remove the handlers they
+installed. Embedded hosts may provide equivalent integration themselves.
 
 ## Execution context
 
@@ -165,9 +165,9 @@ consumed and carries only explicitly serialized execution context across the bou
 code cannot create arbitrary nested container scopes.
 
 Concrete classes are their own injection identities. Abstract classes are the preferred ports for
-application capabilities, while branded Canopy tokens with stable IDs represent values and cases
-where a class is inappropriate. Raw strings, symbols, parameter names, and erased TypeScript
-interfaces do not identify dependencies.
+application capabilities, while branded Doxa tokens with stable IDs represent values and cases where
+a class is inappropriate. Raw strings, symbols, parameter names, and erased TypeScript interfaces do
+not identify dependencies.
 
 Dependencies are required by default. A parameter explicitly marked optional through TypeScript
 syntax receives its valid binding when present or `undefined` when absent, and that optionality is
@@ -215,7 +215,7 @@ and after commit has materially different guarantees and must not share an ambig
 
 ## Persistent model runtime
 
-Canopy owns an Eloquent-like persistent model experience above its private database engine. Hydrated
+Doxa owns an Eloquent-like persistent model experience above its private database engine. Hydrated
 models are attached to the active execution-scoped model session and unit of work. They may expose
 `save()`, `delete()`, `refresh()`, dirty tracking, original values, changed values, and lifecycle
 state without importing Drizzle or database records into domain code.
@@ -226,7 +226,7 @@ journal and outbox work. It does not commit the action transaction independently
 
 A detached model, a model used after its execution scope ends, or a model saved inside a read-only
 query execution fails explicitly. Static model retrieval methods resolve the current model session
-through Canopy's execution context; reporting and optimized reads may still use dedicated query
+through Doxa's execution context; reporting and optimized reads may still use dedicated query
 handlers and read models.
 
 The accepted model-runtime decision is defined in
@@ -235,11 +235,11 @@ The accepted model-runtime decision is defined in
 ## Reads
 
 Queries express reads and do not silently acquire mutation semantics. They may use repositories,
-read models, or optimized query engines behind Canopy-owned contracts. Their authorization, context,
+read models, or optimized query engines behind Doxa-owned contracts. Their authorization, context,
 tracing, serialization, and error behavior should still align with actions.
 
-Canopy need not force every read through hydrated domain models. It must make the distinction
-between domain state and purpose-built projections clear.
+Doxa need not force every read through hydrated domain models. It must make the distinction between
+domain state and purpose-built projections clear.
 
 ## Application services and internal modules
 
@@ -265,10 +265,10 @@ does not become one merely because it has many files.
 
 ## Configuration
 
-Configuration is declared through typed classes owned by the Application or selected Features.
-Canopy derives ordinary environment names and validation from group names, property names,
-TypeScript types, optionality, defaults, and first-party semantic scalar types. Complex fields may
-use Standard Schema without making schemas mandatory for common values.
+Configuration is declared through typed classes owned by the Application or selected Features. Doxa
+derives ordinary environment names and validation from group names, property names, TypeScript
+types, optionality, defaults, and first-party semantic scalar types. Complex fields may use Standard
+Schema without making schemas mandatory for common values.
 
 The official Node host resolves explicit overrides, `process.env`, workspace-root `.env`, and
 declared defaults in that order. Only declared keys are resolved. Validation completes before
@@ -281,7 +281,7 @@ enter the manifest or diagnostics.
 Remote side effects do not occur inside a database transaction. Mutating work records durable intent
 in the outbox, and a delivery runtime claims and dispatches that intent after commit.
 
-Canopy's application-facing event experience is class-first and Laravel-like: a named event may be
+Doxa's application-facing event experience is class-first and Laravel-like: a named event may be
 dispatched from any framework-managed execution, and typed listener classes declare how they react.
 `Event` represents general application dispatch. `DomainEvent` represents an accepted domain fact
 that participates in the Unit of Work and journal. `Signal` remains immediate, non-durable framework
@@ -301,7 +301,7 @@ behavior, idempotency expectations, and terminal failure must be observable.
 
 ## Transport adapters
 
-HTTP is the first transport, with Hono as the initial private engine. Canopy routes, validation,
+HTTP is the first transport, with Hono as the initial private engine. Doxa routes, validation,
 authentication, error documents, and resources compile into the Hono adapter. Application code may
 use Web Standards `Request` and `Response` only through explicit escape hatches.
 
@@ -315,7 +315,7 @@ The initial executable adapter boundary is recorded in the
 
 An adapter owns:
 
-- Translation between Canopy contracts and engine APIs.
+- Translation between Doxa contracts and engine APIs.
 - Configuration validation and secure defaults.
 - Lifecycle integration and health reporting.
 - Error normalization.
@@ -323,18 +323,18 @@ An adapter owns:
 - A framework fake or test strategy.
 - A conformance suite shared by supported implementations.
 
-Canopy may intentionally support one implementation of a contract. The contract exists to protect
-the application model, not to promise a marketplace of interchangeable engines.
+Doxa may intentionally support one implementation of a contract. The contract exists to protect the
+application model, not to promise a marketplace of interchangeable engines.
 
 ## Package boundaries
 
-Application code uses one primary programming-model package, `@canopy/core`. Testing and
-infrastructure adapters use separate public surfaces such as `@canopy/testing`, `@canopy/http-hono`,
-and `@canopy/postgres-drizzle`. Compiler, registry, container, lifecycle, and runtime implementation
+Application code uses one primary programming-model package, `@doxajs/core`. Testing and
+infrastructure adapters use separate public surfaces such as `@doxajs/testing`, `@doxajs/http-hono`,
+and `@doxajs/postgres-drizzle`. Compiler, registry, container, lifecycle, and runtime implementation
 packages do not become application dependencies.
 
-The MVP physically separates `@canopy/core`, `@canopy/manifest`, `@canopy/compiler`,
-`@canopy/runtime`, `@canopy/testing`, and `@canopy/cli`. The package graph must preserve four
+The MVP physically separates `@doxajs/core`, `@doxajs/manifest`, `@doxajs/compiler`,
+`@doxajs/runtime`, `@doxajs/testing`, and `@doxajs/cli`. The package graph must preserve four
 conceptual zones:
 
 1. Kernel and programming model, with minimal infrastructure dependencies.
@@ -342,8 +342,8 @@ conceptual zones:
 3. First-party adapters that bind contracts to selected engines.
 4. Tooling and testing packages that consume the same manifest and lifecycle model.
 
-Cycles between these zones are architectural defects. An adapter may extend Canopy; Canopy's kernel
-must not require a concrete adapter in order to be understood or tested.
+Cycles between these zones are architectural defects. An adapter may extend Doxa; Doxa's kernel must
+not require a concrete adapter in order to be understood or tested.
 
 Runtime cannot depend on the compiler or TypeScript source analysis. Manifest remains a data-only
 contract package. CI rejects cycles and forbidden dependency directions.
@@ -371,4 +371,4 @@ The specifications and conformance suites should protect these invariants:
 - Failed optimistic concurrency does not partially publish work.
 - Context boundaries are explicit across asynchronous and process boundaries.
 - All automatic behavior is attributable to a manifest declaration and lifecycle phase.
-- Framework fakes preserve Canopy semantics rather than mimic vendor implementation details.
+- Framework fakes preserve Doxa semantics rather than mimic vendor implementation details.

@@ -10,9 +10,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - The initial pnpm, native ESM, strict TypeScript workspace.
-- Application-facing `@canopy/core` declaration and lifecycle contracts.
+- Application-facing `@doxajs/core` declaration and lifecycle contracts.
 - A versioned manifest package and semantic TypeScript compiler.
-- Deterministic `.canopy/manifest.json` and constructor-only `.canopy/registry.mjs` generation.
+- Deterministic `.doxa/manifest.json` and constructor-only `.doxa/registry.mjs` generation.
 - Artifact-only runtime boot with injectable configuration classes, dependency ordering, startup
   unwind, readiness, and idempotent shutdown.
 - A reference application and compile-to-boot conformance suite.
@@ -23,7 +23,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deterministic disposal.
 - Transaction-wrapped action dispatch, non-transactional query dispatch, nested-action rejection,
   concurrent execution isolation, deadline cancellation, and shutdown draining.
-- A Canopy-owned Unit of Work contract with entity state, journal, outbox, and after-commit phases.
+- A Doxa-owned Unit of Work contract with entity state, journal, outbox, and after-commit phases.
 - A PostgreSQL/Drizzle adapter with explicit migrations, optimistic concurrency, durable causal
   metadata, stable persistence failures, and lifecycle-owned connection pooling.
 - Docker-backed PostgreSQL conformance tests for atomic commit, rollback, read-only enforcement,
@@ -40,16 +40,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Automatic class-bound `this.logger` for every framework role, required and optional
   `this.inject()` edges in manifest format v11, and constructor injection retained for ordinary
   services.
-- `arbor db:studio`, backed by framework-pinned Drizzle Kit and `.env` database discovery without
+- `doxa db:studio`, backed by framework-pinned Drizzle Kit and `.env` database discovery without
   exposing credentials in process arguments.
-- Undergrowth, the optional first-party development debugger with typed runtime observations,
-  recursive secret redaction, PostgreSQL retention, causal timelines, a read-only loopback UI,
-  Cultivate knowledge, and `arbor add undergrowth`, `undergrowth`, and `undergrowth:prune` commands.
-- Undergrowth category browsing that lists actual HTTP, queue, event, and schedule observations and
+- Theoria, the optional first-party development debugger with typed runtime observations, recursive
+  secret redaction, PostgreSQL retention, causal timelines, a read-only loopback UI, Gnosis
+  knowledge, and `doxa add theoria`, `theoria`, and `theoria:prune` commands.
+- Theoria category browsing that lists actual HTTP, queue, event, and schedule observations and
   opens each selected observation inside its complete causal timeline.
 - One-image production deployment generation with a multi-stage non-root Dockerfile,
   `.dockerignore`, production Compose topology, prebuilt artifact-only startup, explicit migration
-  jobs, and a horizontally scalable `arbor work` role that runs workers and schedules together.
+  jobs, and a horizontally scalable `doxa work` role that runs workers and schedules together.
 - Local listener failure propagation plus Laravel-aligned event-level and listener-level
   after-commit delivery that is discarded on rollback.
 - Feature-declared HTTP routes compiled into the manifest with stable identities, methods, paths,

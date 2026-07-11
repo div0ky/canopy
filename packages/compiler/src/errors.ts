@@ -1,3 +1,3 @@
-export class CanopyCompilationError extends Error {
-  override readonly name = 'CanopyCompilationError'
+export class DoxaCompilationError extends Error {
+  override readonly name = 'DoxaCompilationError'
 }

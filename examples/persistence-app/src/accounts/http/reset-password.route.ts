@@ -1,4 +1,4 @@
-import { Auth, type HttpRequest, Route } from '@canopy/core'
+import { Auth, type HttpRequest, Route } from '@doxajs/core'
 
 export class ResetPasswordRoute extends Route {
   static override readonly id = 'reset-password'

@@ -6,7 +6,7 @@ export class ConfigurationValidationError extends Error {
   override readonly name = 'ConfigurationValidationError'
 
   constructor(readonly issues: readonly string[]) {
-    super(`Canopy configuration is invalid:\n${issues.map((issue) => `- ${issue}`).join('\n')}`)
+    super(`Doxa configuration is invalid:\n${issues.map((issue) => `- ${issue}`).join('\n')}`)
   }
 }
 
@@ -17,7 +17,7 @@ export class RuntimeBootError extends Error {
     readonly primaryError: unknown,
     readonly cleanupErrors: readonly unknown[],
   ) {
-    super('Canopy failed to boot and completed startup unwind.', { cause: primaryError })
+    super('Doxa failed to boot and completed startup unwind.', { cause: primaryError })
   }
 }
 
@@ -25,7 +25,7 @@ export class RuntimeShutdownError extends Error {
   override readonly name = 'RuntimeShutdownError'
 
   constructor(readonly errors: readonly unknown[]) {
-    super(`Canopy shutdown completed with ${errors.length} lifecycle failure(s).`)
+    super(`Doxa shutdown completed with ${errors.length} lifecycle failure(s).`)
   }
 }
 
@@ -44,7 +44,7 @@ export class ExecutionFailureError extends Error {
     readonly primaryError: unknown,
     readonly cleanupErrors: readonly unknown[],
   ) {
-    super('Canopy execution failed and scoped cleanup also reported failures.', {
+    super('Doxa execution failed and scoped cleanup also reported failures.', {
       cause: primaryError,
     })
   }
@@ -54,6 +54,6 @@ export class ExecutionCleanupError extends Error {
   override readonly name = 'ExecutionCleanupError'
 
   constructor(readonly cleanupErrors: readonly unknown[]) {
-    super(`Canopy execution completed with ${cleanupErrors.length} scoped cleanup failure(s).`)
+    super(`Doxa execution completed with ${cleanupErrors.length} scoped cleanup failure(s).`)
   }
 }

@@ -4,11 +4,11 @@
 - **Manifest format:** 8
 - **Completed:** 2026-07-10
 
-Canopy now compiles signals, signal handlers, and model observers from explicit Feature declarations
+Doxa now compiles signals, signal handlers, and model observers from explicit Feature declarations
 into the semantic manifest and constructor registry. Folder names have no runtime meaning.
 
 Signals are immediate, in-process, sequential, and fail-fast. `Signal.dispatch()` requires an
-admitted Canopy execution, preserves its actor and causal context, and never implies queueing,
+admitted Doxa execution, preserves its actor and causal context, and never implies queueing,
 journaling, deferral, or rollback. Signal handlers may be authorized through the same default-deny
 ability system as other entry roles.
 
@@ -30,4 +30,4 @@ The reference application proves declaration, type-inferred signal/model associa
 metadata, execution-context propagation, create/update ordering, and rollback behavior.
 
 Remaining MVP work is first-party signal/observer testing assertions, fake-persistence conformance,
-bulk-operation diagnostics, and parity through the future Arbor console execution host.
+bulk-operation diagnostics, and parity through the future Praxis console execution host.

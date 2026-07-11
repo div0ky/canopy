@@ -1,19 +1,19 @@
 {
-  "name": "@canopy/manifest",
+  "name": "@doxajs/manifest",
   "version": "0.1.0-alpha.0",
-  "description": "Versioned, inert application manifest contracts for the Canopy framework.",
+  "description": "Versioned, inert application manifest contracts for the Doxa framework.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/div0ky/canopy.git",
+    "url": "git+https://github.com/div0ky/doxajs.git",
     "directory": "packages/manifest"
   },
-  "homepage": "https://github.com/div0ky/canopy#readme",
+  "homepage": "https://github.com/div0ky/doxajs#readme",
   "bugs": {
-    "url": "https://github.com/div0ky/canopy/issues"
+    "url": "https://github.com/div0ky/doxajs/issues"
   },
   "keywords": [
-    "canopy",
+    "doxa",
     "framework",
     "manifest",
     "typescript"

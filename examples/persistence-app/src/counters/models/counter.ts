@@ -1,4 +1,4 @@
-import { Model, type ModelAttributes } from '@canopy/core'
+import { Model, type ModelAttributes } from '@doxajs/core'
 
 import { CounterIncremented } from '../events/counter-incremented.js'
 import { CounterSaved } from '../events/counter-saved.js'

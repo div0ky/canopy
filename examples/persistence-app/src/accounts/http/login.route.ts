@@ -1,4 +1,4 @@
-import { Auth, CurrentExecution, Http, type HttpRequest, Route } from '@canopy/core'
+import { Auth, CurrentExecution, Http, type HttpRequest, Route } from '@doxajs/core'
 
 import { UserLoggedIn } from '../events/user-logged-in.js'
 import { credentials } from './credentials.js'

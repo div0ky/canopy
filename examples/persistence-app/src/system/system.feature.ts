@@ -1,4 +1,4 @@
-import { Feature } from '@canopy/core'
+import { Feature } from '@doxajs/core'
 
 import { HttpPinged } from './events/http-pinged.js'
 import { HealthRoute } from './http/health.route.js'
@@ -8,7 +8,7 @@ import { PingRoute } from './http/ping.route.js'
 import { RecordHttpPinged } from './listeners/record-http-pinged.js'
 import { SystemEventRecorder } from './support/system-event-recorder.js'
 import { DailyHealthCheckSchedule } from './schedules/daily-health-check.schedule.js'
-import { DescribeCanopy } from './commands/describe-canopy.js'
+import { DescribeDoxa } from './commands/describe-doxa.js'
 import { PongRoute } from './http/pong.route.js'
 import { BoobsRoute } from './http/boobs.route.js'
 import { BoobJob } from './http/boob.job.js'
@@ -22,6 +22,6 @@ export class SystemFeature extends Feature {
   events = [HttpPinged, BoobPinged]
   listeners = [RecordHttpPinged, BoobPingDoThingListener]
   schedules = [DailyHealthCheckSchedule]
-  commands = [DescribeCanopy]
+  commands = [DescribeDoxa]
   jobs = [BoobJob]
 }

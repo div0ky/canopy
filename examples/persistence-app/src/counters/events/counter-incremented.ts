@@ -1,4 +1,4 @@
-import { Event } from '@canopy/core'
+import { Event } from '@doxajs/core'
 
 export class CounterIncremented extends Event<{
   counterId: string

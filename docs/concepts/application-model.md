@@ -1,6 +1,6 @@
 # Application Model
 
-A Canopy Application is a declaration of selected Features. A Feature declares only the classes that
+A Doxa Application is a declaration of selected Features. A Feature declares only the classes that
 face the framework: models, actions, queries, routes, events, listeners, signals, observers, jobs,
 schedules, policies, commands, configuration, and infrastructure providers.
 
@@ -16,7 +16,7 @@ export class AccountsFeature extends Feature {
 }
 ```
 
-Framework roles extend their Canopy role and receive execution-scoped dependencies through
+Framework roles extend their Doxa role and receive execution-scoped dependencies through
 `this.inject()`. They do not need constructors or manual `super()` calls.
 
 ```ts

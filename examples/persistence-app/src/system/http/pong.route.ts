@@ -1,4 +1,4 @@
-import { type HttpRequest, Route } from '@canopy/core'
+import { type HttpRequest, Route } from '@doxajs/core'
 
 import { HttpPinged } from '../events/http-pinged.js'
 

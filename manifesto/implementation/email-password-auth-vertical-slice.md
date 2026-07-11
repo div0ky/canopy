@@ -9,25 +9,25 @@
 
 ## Outcome
 
-The ninth Canopy implementation proves the first first-party authentication path end to end:
+The ninth Doxa implementation proves the first first-party authentication path end to end:
 
 ```text
 email + password registration
-  → Canopy-owned identity and versioned Argon2id credential
+  → Doxa-owned identity and versioned Argon2id credential
   → opaque browser session issuance
   → digest-only PostgreSQL session storage
-  → Hono asks the Canopy runtime to authenticate the Request
+  → Hono asks the Doxa runtime to authenticate the Request
   → user Actor + authentication context admitted before route execution
   → session rotation, CSRF origin enforcement, and server-side logout
 ```
 
-No authentication framework owns Canopy's schema, session semantics, HTTP context, actor, errors, or
+No authentication framework owns Doxa's schema, session semantics, HTTP context, actor, errors, or
 upgrade path. Node supplies the Argon2id and random primitives; PostgreSQL and Drizzle remain
 private storage mechanics.
 
 ## Provider boundary
 
-`Auth` is a Canopy-owned abstract-class port. A selected concrete provider is compiled with the
+`Auth` is a Doxa-owned abstract-class port. A selected concrete provider is compiled with the
 `authentication` capability, and the compiler permits at most one. Routes inject `Auth` directly;
 the Hono adapter knows only that the runtime can resolve a Request into an actor and authentication
 context.
@@ -35,7 +35,7 @@ context.
 The reference application selects `PostgresAuth` through an ordinary infrastructure provider:
 
 ```ts
-export class CanopyAuth extends PostgresAuth {
+export class DoxaAuth extends PostgresAuth {
   static id = 'auth'
 
   constructor(config: DatabaseConfig) {
@@ -53,7 +53,7 @@ setting exists only for the local HTTP fixture.
 
 ## Passwords
 
-Canopy uses Node 24's asynchronous Argon2id primitive with:
+Doxa uses Node 24's asynchronous Argon2id primitive with:
 
 - A unique 16-byte random salt per password.
 - 19 MiB of memory, two passes, two lanes, and a 32-byte result.
@@ -73,10 +73,10 @@ and wrong-password attempts return the same status, code, message, and response 
 
 The first schema owns four tables:
 
-- `canopy_auth_identities`
-- `canopy_auth_passwords`
-- `canopy_auth_sessions`
-- `canopy_auth_audit_events`
+- `doxa_auth_identities`
+- `doxa_auth_passwords`
+- `doxa_auth_sessions`
+- `doxa_auth_audit_events`
 
 Registration normalizes email, atomically creates identity and credential records, and appends a
 security audit event. Email uniqueness is enforced by PostgreSQL.
@@ -85,9 +85,9 @@ Login always creates a new 256-bit opaque token. Only its SHA-256 digest is stor
 exists only in the one `Set-Cookie` response. The database session carries absolute and sliding idle
 expiry, authentication time, optional client metadata, and revocation state.
 
-The production cookie is host-only and named `__Host-canopy_session`, with `Secure`, `HttpOnly`,
+The production cookie is host-only and named `__Host-doxa_session`, with `Secure`, `HttpOnly`,
 `SameSite=Lax`, and `Path=/`. It is non-persistent in the browser; server-side absolute and idle
-expiry remain authoritative. Local plain-HTTP development uses `canopy_session` without `Secure`.
+expiry remain authoritative. Local plain-HTTP development uses `doxa_session` without `Secure`.
 
 A login performed from an existing authenticated session creates a new session and revokes the old
 one. Logout revokes the database session and expires the cookie. `revokeAllSessions(identityId)` is
@@ -144,7 +144,7 @@ The suite contains forty passing tests. Authentication-specific integration prov
 4. Enumeration-equivalent invalid credential responses.
 5. A 256-bit opaque token with only its digest stored.
 6. HttpOnly, SameSite, host-only cookie behavior.
-7. Authenticated Request resolution into the Canopy user actor and session context.
+7. Authenticated Request resolution into the Doxa user actor and session context.
 8. Session fixation prevention through login rotation.
 9. Rejection of an attacker Origin before a cookie-authenticated logout.
 10. Trusted-origin logout, server revocation, cookie expiry, and later anonymous resolution.
@@ -171,8 +171,8 @@ This proof is not production-complete authentication. Still required:
 - Concurrency, replay, crash-process, migration-upgrade, and parameter-upgrade suites.
 - A dedicated threat model, dependency provenance review, and external security review.
 
-Until those are complete, this is evidence for the architecture—not a claim that Canopy Auth is
-ready to protect a production system.
+Until those are complete, this is evidence for the architecture—not a claim that Doxa Auth is ready
+to protect a production system.
 
 ## Next slice
 

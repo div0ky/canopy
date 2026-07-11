@@ -1,4 +1,4 @@
-import { Action, DeliveryLedger, type DeliveryTransition } from '@canopy/core'
+import { Action, DeliveryLedger, type DeliveryTransition } from '@doxajs/core'
 
 export class RecordDeliveryUpdates extends Action<readonly DeliveryTransition[], void> {
   static id = 'record-delivery-updates'

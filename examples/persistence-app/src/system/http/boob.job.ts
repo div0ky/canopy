@@ -1,4 +1,4 @@
-import { Job, type ShouldQueue } from '@canopy/core'
+import { Job, type ShouldQueue } from '@doxajs/core'
 
 interface BobJobInput {}
 

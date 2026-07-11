@@ -1,4 +1,4 @@
-import { Action } from '@canopy/core'
+import { Action } from '@doxajs/core'
 import { LegacyNote } from '../models/legacy-note.js'
 
 export class SaveLegacyNote extends Action<

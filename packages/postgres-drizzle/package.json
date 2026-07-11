@@ -1,19 +1,19 @@
 {
-  "name": "@canopy/postgres-drizzle",
+  "name": "@doxajs/postgres-drizzle",
   "version": "0.1.0-alpha.0",
-  "description": "PostgreSQL durability and cache adapters for Canopy, implemented with Drizzle.",
+  "description": "PostgreSQL durability and cache adapters for Doxa, implemented with Drizzle.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/div0ky/canopy.git",
+    "url": "git+https://github.com/div0ky/doxajs.git",
     "directory": "packages/postgres-drizzle"
   },
-  "homepage": "https://github.com/div0ky/canopy#readme",
+  "homepage": "https://github.com/div0ky/doxajs#readme",
   "bugs": {
-    "url": "https://github.com/div0ky/canopy/issues"
+    "url": "https://github.com/div0ky/doxajs/issues"
   },
   "keywords": [
-    "canopy",
+    "doxa",
     "framework",
     "postgresql",
     "drizzle",
@@ -43,7 +43,7 @@
     "postpack": "node ../../scripts/prepare-package.mjs --clean"
   },
   "dependencies": {
-    "@canopy/core": "workspace:*",
+    "@doxajs/core": "workspace:*",
     "drizzle-orm": "0.45.2",
     "pg": "8.22.0"
   },

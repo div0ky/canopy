@@ -7,12 +7,12 @@
 
 ## Outcome
 
-The third Canopy implementation proves this durability path end to end:
+The third Doxa implementation proves this durability path end to end:
 
 ```text
 admitted action execution
   → PostgreSQL/Drizzle transaction
-  → active Canopy Unit of Work
+  → active Doxa Unit of Work
   → entity-state write with optimistic concurrency
   → journal fact + outbox message + causal metadata
   → one atomic PostgreSQL commit
@@ -24,7 +24,7 @@ work. A query receives a read-only Unit of Work and fails before touching Postgr
 
 ## Boundary
 
-Application operations import persistence vocabulary from `@canopy/core` only:
+Application operations import persistence vocabulary from `@doxajs/core` only:
 
 ```ts
 export class SaveCounter extends Action<SaveCounterInput, SaveCounterResult> {
@@ -50,7 +50,7 @@ The database URL is declared as `SecretString`. It remains redacted under string
 serialization and is explicitly revealed only inside the PostgreSQL composition provider.
 
 Action and query source contains no Drizzle, `pg`, table, SQL, database-session, or driver-error
-types. The generated semantic manifest contains the stable `canopy:unit-of-work` identity and
+types. The generated semantic manifest contains the stable `doxa:unit-of-work` identity and
 transaction capability without engine types.
 
 ## Unit of Work proof
@@ -77,7 +77,7 @@ model-runtime work.
 
 ## PostgreSQL and Drizzle adapter
 
-`@canopy/postgres-drizzle` owns:
+`@doxajs/postgres-drizzle` owns:
 
 - The lifecycle-managed `pg` connection pool.
 - Drizzle transaction creation and transaction-scoped queries.
@@ -90,8 +90,8 @@ The proof pins Drizzle ORM 0.45.2 and `pg` 8.22.0. PostgreSQL conformance curren
 locally available `postgres:17-alpine` image. Runtime boot never creates or migrates tables. The
 explicit migration helper is used only by tests and future migration tooling.
 
-The initial generic `canopy_entity_states` table proves the framework transaction and concurrency
-contract; it does not mandate that every future Canopy model use one JSON record. Model mappers may
+The initial generic `doxa_entity_states` table proves the framework transaction and concurrency
+contract; it does not mandate that every future Doxa model use one JSON record. Model mappers may
 target domain tables or multiple records while retaining the same Unit of Work guarantees.
 
 ## Atomicity and concurrency
@@ -125,7 +125,7 @@ Callbacks registered through `unitOfWork.afterCommit()` remain private until Pos
 commit. A conformance callback queries through another pool connection and observes the durable row,
 proving it did not execute inside the transaction.
 
-If an after-commit callback fails, Canopy throws `AfterCommitError` while retaining the committed
+If an after-commit callback fails, Doxa throws `AfterCommitError` while retaining the committed
 state. It does not claim rollback after durability has already been established.
 
 ## Executable evidence

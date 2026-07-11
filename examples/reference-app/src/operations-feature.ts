@@ -1,4 +1,4 @@
-import { Feature } from '@canopy/core'
+import { Feature } from '@doxajs/core'
 
 import { DatabaseConnection } from './database-connection.js'
 import { FailCounter } from './fail-counter.js'

@@ -8,22 +8,22 @@
 
 ## Outcome
 
-Canopy now has a separately composed browser fixture under `examples/field-guide`. It uses Next.js
-App Router, Tailwind CSS, and shadcn/ui without importing Canopy, Hono, Drizzle, pg-boss, or auth
-adapter types. That makes the fixture a real external consumer rather than another view inside the
-framework runtime.
+Doxa now has a separately composed browser fixture under `examples/field-guide`. It uses Next.js App
+Router, Tailwind CSS, and shadcn/ui without importing Doxa, Hono, Drizzle, pg-boss, or auth adapter
+types. That makes the fixture a real external consumer rather than another view inside the framework
+runtime.
 
 ```text
 Browser
-  → same-origin /api/canopy transport in Next.js
-  → public Canopy HTTP contract
+  → same-origin /api/doxa transport in Next.js
+  → public Doxa HTTP contract
   → first-party cookie or bearer authentication
   → admitted execution, policy, action, model transaction
   → journal/outbox and queued work
 ```
 
 The Next route preserves the relevant HTTP contract while avoiding browser CORS and cookie-domain
-coupling in local development. Canopy still owns origin validation; the reference authentication
+coupling in local development. Doxa still owns origin validation; the reference authentication
 provider explicitly trusts the Field Guide development origins.
 
 ## Proven workflows
@@ -46,7 +46,7 @@ remains code-native and accessible.
 - Field Guide ESLint and production Next build are part of `pnpm audit:mvp`.
 - The root boundary audit scans `.ts` and `.tsx` in the frontend and rejects private engine imports.
 - A first-party fixture test verifies the workspace stack, proxy contract, endpoints, and absence of
-  Canopy package imports.
+  Doxa package imports.
 - Browser testing exercises hello, registration/login, cookie identity, bearer-token issuance,
   protected counter mutation, and resulting job activity with no console errors.
 - Desktop and mobile layouts are inspected against the accepted visual direction.

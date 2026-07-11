@@ -1,6 +1,6 @@
-import { CanopyRole } from './role.js'
+import { DoxaRole } from './role.js'
 
-export abstract class Command extends CanopyRole {
+export abstract class Command extends DoxaRole {
   static readonly id: string = ''
   static readonly name: string = ''
   static readonly description: string = ''

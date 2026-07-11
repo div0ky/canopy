@@ -1,19 +1,19 @@
 {
-  "name": "@canopy/runtime",
+  "name": "@doxajs/runtime",
   "version": "0.1.0-alpha.0",
-  "description": "Artifact-only dependency injection, execution, dispatch, and lifecycle runtime for Canopy.",
+  "description": "Artifact-only dependency injection, execution, dispatch, and lifecycle runtime for Doxa.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/div0ky/canopy.git",
+    "url": "git+https://github.com/div0ky/doxajs.git",
     "directory": "packages/runtime"
   },
-  "homepage": "https://github.com/div0ky/canopy#readme",
+  "homepage": "https://github.com/div0ky/doxajs#readme",
   "bugs": {
-    "url": "https://github.com/div0ky/canopy/issues"
+    "url": "https://github.com/div0ky/doxajs/issues"
   },
   "keywords": [
-    "canopy",
+    "doxa",
     "framework",
     "runtime",
     "dependency-injection",
@@ -42,7 +42,7 @@
     "postpack": "node ../../scripts/prepare-package.mjs --clean"
   },
   "dependencies": {
-    "@canopy/core": "workspace:*",
-    "@canopy/manifest": "workspace:*"
+    "@doxajs/core": "workspace:*",
+    "@doxajs/manifest": "workspace:*"
   }
 }

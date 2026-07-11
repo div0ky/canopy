@@ -1,4 +1,4 @@
-# Canopy MVP Completion Ledger
+# Doxa MVP Completion Ledger
 
 - **Status:** MVP acceptance ledger — complete
 - **Started:** 2026-07-10
@@ -9,28 +9,28 @@
 
 This ledger prevents a runnable demo from being mislabeled as a viable framework. Implementation
 proof means a risky seam works. MVP complete means an ordinary production-shaped application can use
-the entire promised model without assembling another framework beside Canopy.
+the entire promised model without assembling another framework beside Doxa.
 
 ## Ecosystem name
 
-**Arbor** is the canonical name for Canopy's Artisan-like command suite and generator. The package
-is `@canopy/arbor` and the executable is `arbor`:
+**Praxis** is the canonical name for Doxa's Artisan-like command suite and generator. The package is
+`@doxajs/praxis` and the executable is `doxa`:
 
 ```text
-arbor new
-arbor make:feature Accounts
-arbor make:model User
-arbor make:job SendWelcomeEmail
-arbor migrate
-arbor serve
-arbor work
-arbor work --without-scheduler
-arbor schedule
-arbor route:list
-arbor graph
+doxa new
+doxa make:feature Accounts
+doxa make:model User
+doxa make:job SendWelcomeEmail
+doxa migrate
+doxa serve
+doxa work
+doxa work --without-scheduler
+doxa schedule
+doxa route:list
+doxa graph
 ```
 
-Arbor name is accepted. Command semantics and generated output remain described by Cultivate so
+Praxis name is accepted. Command semantics and generated output remain described by Gnosis so
 applications and tools do not depend on undocumented behavior.
 
 ## Foundation and operations
@@ -71,13 +71,13 @@ applications and tools do not depend on undocumented behavior.
 
 ## Communications and infrastructure
 
-| Capability           | State    | Remaining acceptance work                                                                                                    |
-| -------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Canopy mail contract | Complete | Transactional outbox delivery, normalized state, fakes, telemetry, inspection, and redrive are proven.                       |
-| SendGrid adapter     | Complete | Request translation, failure classes, signed timestamp-bounded webhooks, deduplication, and conformance fixtures are proven. |
-| Canopy SMS contract  | Complete | Transactional outbox delivery, normalized state, fakes, telemetry, inspection, and redrive are proven.                       |
-| Twilio adapter       | Complete | Messaging Service translation, opt-out classification, signed callbacks, and conformance fixtures are proven.                |
-| Cache                | Complete | Canopy port, memory/PostgreSQL adapters, TTL, atomic operations, injection, inspection, forget, and prune are proven.        |
+| Capability         | State    | Remaining acceptance work                                                                                                    |
+| ------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Doxa mail contract | Complete | Transactional outbox delivery, normalized state, fakes, telemetry, inspection, and redrive are proven.                       |
+| SendGrid adapter   | Complete | Request translation, failure classes, signed timestamp-bounded webhooks, deduplication, and conformance fixtures are proven. |
+| Doxa SMS contract  | Complete | Transactional outbox delivery, normalized state, fakes, telemetry, inspection, and redrive are proven.                       |
+| Twilio adapter     | Complete | Messaging Service translation, opt-out classification, signed callbacks, and conformance fixtures are proven.                |
+| Cache              | Complete | Doxa port, memory/PostgreSQL adapters, TTL, atomic operations, injection, inspection, forget, and prune are proven.          |
 
 ## Observability and operability
 
@@ -86,30 +86,30 @@ applications and tools do not depend on undocumented behavior.
 | Structured logs                | Complete | Automatic role-bound loggers, ordinary-service constructor injection, recursive redaction, contextual framework channels, colored TTY output, NDJSON output, and in-memory assertions are proven.                 |
 | W3C trace context              | Complete | HTTP validation/propagation plus durable queue, delivery, journal, and outbox correlation are proven.                                                                                                             |
 | Metrics                        | Complete | Lifecycle, execution/HTTP, persistence, auth, authorization, queue/schedule, and communications instruments are proven.                                                                                           |
-| Diagnostics                    | Complete | Graph, routes, policies, observers, listeners, jobs, schedules, auth, delivery, journal, outbox, and cache are inspectable through Arbor; `db:studio` provides safe local database browsing.                      |
-| Development execution debugger | Complete | Optional Undergrowth capture, redaction, causal PostgreSQL timelines, bounded retention, loopback UI, Arbor workflow, Cultivate knowledge, and an automatic test fake are proven.                                 |
-| Operator recovery              | Complete | Queue, delivery, schedule, session, token, cache, and auth-pruning operations are proven through Arbor.                                                                                                           |
+| Diagnostics                    | Complete | Graph, routes, policies, observers, listeners, jobs, schedules, auth, delivery, journal, outbox, and cache are inspectable through Praxis; `db:studio` provides safe local database browsing.                     |
+| Development execution debugger | Complete | Optional Theoria capture, redaction, causal PostgreSQL timelines, bounded retention, loopback UI, Praxis workflow, Gnosis knowledge, and an automatic test fake are proven.                                       |
+| Operator recovery              | Complete | Queue, delivery, schedule, session, token, cache, and auth-pruning operations are proven through Praxis.                                                                                                          |
 | Production topology            | Complete | One immutable image boots independent web and combined background roles from prebuilt artifacts; explicit migration, horizontal scheduling safety, advanced scheduler isolation, and bounded shutdown are proven. |
 
 ## Developer experience
 
 | Capability                  | State    | Remaining acceptance work                                                                                                                                   |
 | --------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Arbor command kernel        | Complete | One first-party executable owns generation, build, run, migration, inspection, recovery, and application commands.                                          |
+| Praxis command kernel       | Complete | One first-party executable owns generation, build, run, migration, inspection, recovery, and application commands.                                          |
 | `new` application generator | Complete | A clean generated app compiles and boots auth, HTTP, persistence, policy, model, observer, event, signal, job, schedule, mail, SMS, telemetry, and tests.   |
 | `make:*` generators         | Complete | Every canonical role is generated, registered, overwrite-safe, and authorization-explicit.                                                                  |
 | Database commands           | Complete | Forward migration, status, batching, checksums, advisory lock, and drift refusal are proven; destructive rollback is intentionally excluded.                |
 | Runtime commands            | Complete | `serve`, default combined `work`, advanced isolated `work --without-scheduler`/`schedule`, combined dev, and fail-safe fresh-runtime hot reload are proven. |
 | Inspection commands         | Complete | Graph, routes, reactive roles, policies, commands, queues, deliveries, infrastructure, auth, and schedules are proven.                                      |
 | Testing package and fakes   | Complete | HTTP/auth/persistence/queue/comms/cache/telemetry plus direct event, signal, job, and schedule APIs are proven against real manifests.                      |
-| Cultivate integration       | Complete | Derived manifest knowledge, command discovery, conventions, principles, and safe mutation guidance are generated.                                           |
+| Gnosis integration          | Complete | Derived manifest knowledge, command discovery, conventions, principles, and safe mutation guidance are generated.                                           |
 
 ## Reference application acceptance
 
 The final generated application must prove this single connected flow:
 
-1. Generate the application and its domain classes through Arbor.
-2. Migrate PostgreSQL through Arbor.
+1. Generate the application and its domain classes through Praxis.
+2. Migrate PostgreSQL through Praxis.
 3. Register and verify an identity, then authenticate by cookie and bearer token.
 4. Authorize a mutating HTTP action through a default-deny policy.
 5. Hydrate and save a model with observer phases.
@@ -118,12 +118,12 @@ The final generated application must prove this single connected flow:
 8. Execute retrying queued work with preserved actor and causation.
 9. Deliver mail and SMS through fakes and production-adapter conformance.
 10. Fire scheduled work through the same job runtime.
-11. Inspect the entire path through logs, traces, metrics, audit, journal, outbox, and Arbor.
+11. Inspect the entire path through logs, traces, metrics, audit, journal, outbox, and Praxis.
 12. Express the same flow using first-party testing helpers.
 
 ## Final completion gate
 
-Canopy may be called an MVP only when:
+Doxa may be called an MVP only when:
 
 - Every required row above is complete or the MVP authority explicitly removes it.
 - The generated reference application starts from a clean directory and passes its own tests.
@@ -131,7 +131,7 @@ Canopy may be called an MVP only when:
 - Multi-process, crash, retry, shutdown, migration, and security negative paths pass.
 - `pnpm check`, every package test, generator fixtures, residue scans, and documentation link checks
   are green.
-- The development server and independent production roles are runnable through Arbor.
+- The development server and independent production roles are runnable through Praxis.
 - The final audit finds no required application import of Hono, Drizzle, pg-boss, telemetry vendor,
   SendGrid, Twilio, or third-party authentication types.
 
@@ -140,5 +140,5 @@ Canopy may be called an MVP only when:
 | Capability                        | State                    | Direction                                                                                                                  |
 | --------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
 | Existing-table model mapping      | MVP common path complete | Laravel-like table/key/column/timestamp/version metadata; advanced multi-record mappers remain future work.                |
-| Existing-table auth mapping       | MVP common path complete | Explicit external identity/credential mapping with Canopy-owned session, token, challenge, abuse, and audit tables.        |
+| Existing-table auth mapping       | MVP common path complete | Explicit external identity/credential mapping with Doxa-owned session, token, challenge, abuse, and audit tables.          |
 | First-party roles and permissions | Deferred                 | Stable abilities and policies remain core; storage and assignment wait for existing-table mapping and production evidence. |

@@ -1,5 +1,5 @@
 import type { Model } from './model.js'
-import { CanopyRole } from './role.js'
+import { DoxaRole } from './role.js'
 
 export type ModelObserverPhase =
   'retrieved' | 'saving' | 'creating' | 'updating' | 'created' | 'updated' | 'saved' | 'committed'
@@ -9,7 +9,7 @@ export interface ModelObserverDispatcher {
 }
 
 /** Synchronous model lifecycle coordination. Remote effects belong in queued listeners. */
-export abstract class Observer<Instance extends Model = Model> extends CanopyRole {
+export abstract class Observer<Instance extends Model = Model> extends DoxaRole {
   retrieved(_model: Instance): void | Promise<void> {}
   saving(_model: Instance): void | Promise<void> {}
   creating(_model: Instance): void | Promise<void> {}

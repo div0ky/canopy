@@ -19,7 +19,7 @@ import {
   type Starts,
   TransactionManager,
   UnitOfWork,
-} from '@canopy/core'
+} from '@doxajs/core'
 import { and, eq, sql, type SQL } from 'drizzle-orm'
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres'
 import { Pool } from 'pg'
@@ -217,7 +217,7 @@ class PostgresUnitOfWork extends UnitOfWork {
   ): Promise<PersistedEntity<State> | undefined> {
     const version = versionExpression(storage)
     const result = await this.session.execute(sql`
-      SELECT *, ${version} AS ${sql.identifier('__canopy_version')}
+      SELECT *, ${version} AS ${sql.identifier('__doxa_version')}
       FROM ${qualifiedIdentifier(storage.table)}
       WHERE ${sql.identifier(storage.primaryKey)} = ${id}
       LIMIT 1
@@ -228,7 +228,7 @@ class PostgresUnitOfWork extends UnitOfWork {
     return {
       type,
       id: String(state.id),
-      version: numberVersion(row.__canopy_version, type, id),
+      version: numberVersion(row.__doxa_version, type, id),
       state: state as State,
     }
   }
@@ -259,12 +259,12 @@ class PostgresUnitOfWork extends UnitOfWork {
         const result = await this.session.execute(sql`
           INSERT INTO ${qualifiedIdentifier(storage.table)} (${sql.join(columns, sql`, `)})
           VALUES (${sql.join(parameters, sql`, `)})
-          RETURNING ${versionExpression(storage)} AS ${sql.identifier('__canopy_version')}
+          RETURNING ${versionExpression(storage)} AS ${sql.identifier('__doxa_version')}
         `)
         const row = result.rows[0] as Record<string, unknown> | undefined
         if (!row)
           throw new PersistenceError('PostgreSQL did not return the inserted mapped model version.')
-        return numberVersion(row.__canopy_version, entity.type, entity.id)
+        return numberVersion(row.__doxa_version, entity.type, entity.id)
       } catch (error) {
         if (postgresCode(error) === '23505')
           throw new OptimisticConcurrencyError(entity.type, entity.id, entity.expectedVersion)
@@ -281,11 +281,11 @@ class PostgresUnitOfWork extends UnitOfWork {
       SET ${sql.join(assignments, sql`, `)}
       WHERE ${sql.identifier(storage.primaryKey)} = ${entity.id}
         AND ${versionPredicate(storage, entity.expectedVersion)}
-      RETURNING ${versionExpression(storage)} AS ${sql.identifier('__canopy_version')}
+      RETURNING ${versionExpression(storage)} AS ${sql.identifier('__doxa_version')}
     `)
     const row = result.rows[0] as Record<string, unknown> | undefined
     if (!row) throw new OptimisticConcurrencyError(entity.type, entity.id, entity.expectedVersion)
-    return numberVersion(row.__canopy_version, entity.type, entity.id)
+    return numberVersion(row.__doxa_version, entity.type, entity.id)
   }
 
   private async deleteMappedEntity(
@@ -436,7 +436,7 @@ function hydrateMappedState(
   )
   const explicitlyMapped = new Set(Object.values(storage.columns))
   const infrastructure = new Set<string>([
-    '__canopy_version',
+    '__doxa_version',
     ...(storage.versionColumn && !explicitlyMapped.has(storage.versionColumn)
       ? [storage.versionColumn]
       : []),

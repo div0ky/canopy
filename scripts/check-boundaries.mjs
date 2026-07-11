@@ -29,29 +29,29 @@ const forbiddenDeclarationDependencies = [
   /^@sendgrid(?:\/|$)/,
   /^twilio(?:\/|$)/,
 ]
-const allowedCanopyDependencies = new Map(
+const allowedDoxaDependencies = new Map(
   Object.entries({
-    '@canopy/core': [],
-    '@canopy/manifest': [],
-    '@canopy/compiler': ['@canopy/manifest'],
-    '@canopy/runtime': ['@canopy/core', '@canopy/manifest'],
-    '@canopy/http-hono': ['@canopy/core', '@canopy/runtime'],
-    '@canopy/postgres-drizzle': ['@canopy/core'],
-    '@canopy/auth-postgres': ['@canopy/core'],
-    '@canopy/queue-pg-boss': ['@canopy/core'],
-    '@canopy/sendgrid': ['@canopy/core'],
-    '@canopy/twilio-sms': ['@canopy/core'],
-    '@canopy/testing': ['@canopy/core', '@canopy/http-hono', '@canopy/runtime'],
-    '@canopy/undergrowth': ['@canopy/core'],
-    '@canopy/arbor': [
-      '@canopy/auth-postgres',
-      '@canopy/compiler',
-      '@canopy/core',
-      '@canopy/http-hono',
-      '@canopy/postgres-drizzle',
-      '@canopy/queue-pg-boss',
-      '@canopy/runtime',
-      '@canopy/undergrowth',
+    '@doxajs/core': [],
+    '@doxajs/manifest': [],
+    '@doxajs/compiler': ['@doxajs/manifest'],
+    '@doxajs/runtime': ['@doxajs/core', '@doxajs/manifest'],
+    '@doxajs/http-hono': ['@doxajs/core', '@doxajs/runtime'],
+    '@doxajs/postgres-drizzle': ['@doxajs/core'],
+    '@doxajs/auth-postgres': ['@doxajs/core'],
+    '@doxajs/queue-pg-boss': ['@doxajs/core'],
+    '@doxajs/sendgrid': ['@doxajs/core'],
+    '@doxajs/twilio-sms': ['@doxajs/core'],
+    '@doxajs/testing': ['@doxajs/core', '@doxajs/http-hono', '@doxajs/runtime'],
+    '@doxajs/theoria': ['@doxajs/core'],
+    '@doxajs/praxis': [
+      '@doxajs/auth-postgres',
+      '@doxajs/compiler',
+      '@doxajs/core',
+      '@doxajs/http-hono',
+      '@doxajs/postgres-drizzle',
+      '@doxajs/queue-pg-boss',
+      '@doxajs/runtime',
+      '@doxajs/theoria',
     ],
   }),
 )
@@ -59,8 +59,8 @@ const violations = []
 const packageRecords = await loadPackages()
 const packagesByName = new Map(packageRecords.map((record) => [record.packageJson.name, record]))
 const generatedApplicationDependencies = new Set([
-  '@canopy/auth-postgres',
-  '@canopy/postgres-drizzle',
+  '@doxajs/auth-postgres',
+  '@doxajs/postgres-drizzle',
 ])
 
 for (const applicationRoot of applicationRoots) {
@@ -75,13 +75,13 @@ for (const applicationRoot of applicationRoots) {
 
 for (const record of packageRecords) {
   const packageName = record.packageJson.name
-  const allowed = new Set(allowedCanopyDependencies.get(packageName) ?? [])
+  const allowed = new Set(allowedDoxaDependencies.get(packageName) ?? [])
   const declared = {
     ...record.packageJson.dependencies,
     ...record.packageJson.optionalDependencies,
     ...record.packageJson.peerDependencies,
   }
-  for (const dependency of Object.keys(declared).filter((name) => name.startsWith('@canopy/'))) {
+  for (const dependency of Object.keys(declared).filter((name) => name.startsWith('@doxajs/'))) {
     if (!allowed.has(dependency)) {
       violations.push(
         `${relative(record.directory)}/package.json: forbidden edge ${packageName} -> ${dependency}`,
@@ -91,12 +91,12 @@ for (const record of packageRecords) {
 
   for (const file of await sourceFiles(path.join(record.directory, 'src'))) {
     for (const specifier of imports(await readFile(file, 'utf8'))) {
-      if (specifier.startsWith('@canopy/')) {
+      if (specifier.startsWith('@doxajs/')) {
         const [scope, segment, ...subpath] = specifier.split('/')
         const targetName = `${scope}/${segment}`
         const target = packagesByName.get(targetName)
         if (!target) {
-          violations.push(`${relative(file)}: unknown Canopy package ${targetName}`)
+          violations.push(`${relative(file)}: unknown Doxa package ${targetName}`)
           continue
         }
         if (!allowed.has(targetName)) {
@@ -105,7 +105,7 @@ for (const record of packageRecords) {
           )
         }
         const generatedDependency =
-          packageName === '@canopy/arbor' && generatedApplicationDependencies.has(targetName)
+          packageName === '@doxajs/praxis' && generatedApplicationDependencies.has(targetName)
         if (!(targetName in declared) && !generatedDependency) {
           violations.push(
             `${relative(file)}: ${targetName} is imported but not a runtime dependency`,
@@ -190,12 +190,12 @@ function detectCycles() {
   const visited = new Set()
   const visit = (name, trail) => {
     if (visiting.has(name)) {
-      violations.push(`Canopy package dependency cycle: ${[...trail, name].join(' -> ')}`)
+      violations.push(`Doxa package dependency cycle: ${[...trail, name].join(' -> ')}`)
       return
     }
     if (visited.has(name)) return
     visiting.add(name)
-    for (const dependency of allowedCanopyDependencies.get(name) ?? []) {
+    for (const dependency of allowedDoxaDependencies.get(name) ?? []) {
       const record = packagesByName.get(name)
       const declared = {
         ...record?.packageJson.dependencies,

@@ -1,4 +1,4 @@
-import { type HttpRequest, Route } from '@canopy/core'
+import { type HttpRequest, Route } from '@doxajs/core'
 
 export class HomeRoute extends Route {
   static override readonly id = 'home'
@@ -7,9 +7,9 @@ export class HomeRoute extends Route {
   readonly path = '/'
 
   handle(_request: HttpRequest): object {
-    this.logger.info('Canopy home visited')
+    this.logger.info('Doxa home visited')
     return {
-      name: 'Canopy',
+      name: 'Doxa',
       status: 'growing',
       routes: [
         'GET /',

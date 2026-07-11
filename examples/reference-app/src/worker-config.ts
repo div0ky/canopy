@@ -1,4 +1,4 @@
-import { Configuration } from '@canopy/core'
+import { Configuration } from '@doxajs/core'
 
 export class WorkerConfig extends Configuration {
   concurrency = 2

@@ -1,22 +1,22 @@
-# Canopy
+# Doxa.js
 
-[![CI](https://github.com/div0ky/canopy/actions/workflows/ci.yml/badge.svg)](https://github.com/div0ky/canopy/actions/workflows/ci.yml)
+[![CI](https://github.com/div0ky/doxajs/actions/workflows/ci.yml/badge.svg)](https://github.com/div0ky/doxajs/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-24-43853d.svg)](.node-version)
 
-Canopy is an opinionated, class-first TypeScript application framework inspired by Laravel's
+Doxa.js is an opinionated, class-first TypeScript application framework inspired by Laravel's
 coherence and developer experience. It is magical where that magic is safe, deterministic and
-inspectable beneath the surface, trivial for Cultivate to understand, and deliberately difficult to
+inspectable beneath the surface, trivial for Gnosis to understand, and deliberately difficult to
 misuse.
 
-> **Pre-1.0 status:** Canopy is an open-source alpha. Its connected application model is implemented
-> and extensively tested, but APIs may still change and the independent security review required for
-> a production-stability claim is not complete. Use the `next` npm tag.
+> **Pre-1.0 status:** Doxa.js is an open-source alpha. Its connected application model is
+> implemented and extensively tested, but APIs may still change and the independent security review
+> required for a production-stability claim is not complete. Use the `next` npm tag.
 
-## The Canopy experience
+## The Doxa experience
 
 ```ts
-import { Feature, Route, type HttpRequest } from '@canopy/core'
+import { Feature, Route, type HttpRequest } from '@doxajs/core'
 
 export class HealthRoute extends Route {
   static override readonly id = 'health'
@@ -35,7 +35,7 @@ export class AppFeature extends Feature {
 }
 ```
 
-The route returns only its payload. Canopy compiles the declaration, constructs its dependencies,
+The route returns only its payload. Doxa compiles the declaration, constructs its dependencies,
 admits an execution scope, resolves the actor, enforces authorization, adds correlation and trace
 context, records structured evidence, and returns `{ ok: true, data: { status: 'ok' } }`.
 
@@ -44,7 +44,7 @@ context, records structured evidence, and returns `{ ok: true, data: { status: '
 After the alpha packages are published:
 
 ```sh
-pnpm dlx @canopy/arbor@next new MyApplication
+pnpm dlx @doxajs/praxis@next new MyApplication
 cd my-application
 pnpm install
 cp .env.example .env
@@ -53,11 +53,11 @@ pnpm migrate
 pnpm dev
 ```
 
-Arbor generates a domain-organized application with HTTP, PostgreSQL/Drizzle persistence,
+Praxis generates a domain-organized application with HTTP, PostgreSQL/Drizzle persistence,
 Eloquent-style models, first-party authentication, policies, events, signals, observers, queues,
-schedules, tests, Cultivate knowledge, and production container files.
+schedules, tests, Gnosis knowledge, and production container files.
 
-To work on Canopy itself before package publication, follow the
+To work on Doxa itself before package publication, follow the
 [contributor setup](CONTRIBUTING.md#development-setup).
 
 ## What is included
@@ -69,11 +69,11 @@ To work on Canopy itself before package publication, follow the
 - Laravel-like events, listeners, signals, observers, jobs, and schedules.
 - First-party email/password, opaque browser-session, and opaque bearer authentication.
 - Default-deny entry and resource authorization.
-- SendGrid mail and Twilio SMS adapters behind Canopy-owned contracts.
+- SendGrid mail and Twilio SMS adapters behind Doxa-owned contracts.
 - W3C trace context, structured logs, metrics, diagnostics, and testing fakes.
-- Undergrowth, the causal development debugger.
-- Arbor, the generator, migration, runtime, inspection, and recovery command suite.
-- Cultivate, the generated application knowledge contract for AI-assisted engineering.
+- Theoria, the causal development debugger.
+- Praxis, the generator, migration, runtime, inspection, and recovery command suite.
+- Gnosis, the generated application knowledge contract for AI-assisted engineering.
 
 ## Repository map
 
@@ -83,9 +83,9 @@ To work on Canopy itself before package publication, follow the
 | [`packages/manifest`](packages/manifest) | Versioned inert manifest contract                                 |
 | [`packages/compiler`](packages/compiler) | Semantic TypeScript compiler                                      |
 | [`packages/runtime`](packages/runtime)   | Container, execution, dispatch, and lifecycle                     |
-| [`packages/arbor`](packages/arbor)       | Generator and command suite                                       |
+| [`packages/praxis`](packages/praxis)     | Generator and command suite                                       |
 | [`packages/testing`](packages/testing)   | First-party harnesses and fakes                                   |
-| `packages/*` adapters                    | Hono, PostgreSQL, queues, auth, communications, and Undergrowth   |
+| `packages/*` adapters                    | Hono, PostgreSQL, queues, auth, communications, and Theoria       |
 | [`examples`](examples)                   | Runtime, persistence, and external Next.js reference applications |
 | [`docs`](docs)                           | User and maintainer documentation                                 |
 | [`manifesto`](manifesto/index.md)        | Principles, accepted decisions, specifications, and proof ledger  |
@@ -103,7 +103,7 @@ To work on Canopy itself before package publication, follow the
 
 ## Development
 
-Canopy supports Node.js 24 and pnpm 11.
+Doxa supports Node.js 24 and pnpm 11.
 
 ```sh
 corepack enable
@@ -111,7 +111,7 @@ pnpm install --frozen-lockfile
 pnpm build
 cp .env.example .env
 docker compose up -d postgres
-pnpm arbor migrate
+pnpm doxa migrate
 pnpm verify
 pnpm dev
 ```
@@ -124,10 +124,10 @@ inspection, and the security audit.
 ## Community
 
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a change.
-- Use [GitHub Discussions](https://github.com/div0ky/canopy/discussions) for questions and design.
-- Use [GitHub Issues](https://github.com/div0ky/canopy/issues) for reproducible defects.
+- Use [GitHub Discussions](https://github.com/div0ky/doxajs/discussions) for questions and design.
+- Use [GitHub Issues](https://github.com/div0ky/doxajs/issues) for reproducible defects.
 - Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
 - See [MAINTAINERS.md](MAINTAINERS.md) and [GOVERNANCE.md](GOVERNANCE.md) for project stewardship.
 - Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-Canopy is licensed under the [Apache License 2.0](LICENSE).
+Doxa is licensed under the [Apache License 2.0](LICENSE).

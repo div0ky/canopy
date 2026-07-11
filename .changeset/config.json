@@ -4,23 +4,23 @@
   "commit": false,
   "fixed": [
     [
-      "@canopy/arbor",
-      "@canopy/auth-postgres",
-      "@canopy/compiler",
-      "@canopy/core",
-      "@canopy/http-hono",
-      "@canopy/manifest",
-      "@canopy/postgres-drizzle",
-      "@canopy/queue-pg-boss",
-      "@canopy/runtime",
-      "@canopy/sendgrid",
-      "@canopy/testing",
-      "@canopy/twilio-sms",
-      "@canopy/undergrowth"
+      "@doxajs/praxis",
+      "@doxajs/auth-postgres",
+      "@doxajs/compiler",
+      "@doxajs/core",
+      "@doxajs/http-hono",
+      "@doxajs/manifest",
+      "@doxajs/postgres-drizzle",
+      "@doxajs/queue-pg-boss",
+      "@doxajs/runtime",
+      "@doxajs/sendgrid",
+      "@doxajs/testing",
+      "@doxajs/twilio-sms",
+      "@doxajs/theoria"
     ]
   ],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["@canopy/field-guide", "@canopy/persistence-reference-app", "@canopy/reference-app"]
+  "ignore": ["@doxajs/field-guide", "@doxajs/persistence-reference-app", "@doxajs/reference-app"]
 }

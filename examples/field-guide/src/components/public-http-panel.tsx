@@ -47,7 +47,7 @@ export function PublicHttpPanel({ connected, onHello }: PublicHttpPanelProps) {
           Public HTTP
         </CardTitle>
         <CardDescription>
-          Exercise Canopy routes through the same-origin Next.js transport.
+          Exercise Doxa routes through the same-origin Next.js transport.
         </CardDescription>
         <CardAction>
           <Badge variant={connected ? 'secondary' : 'destructive'}>

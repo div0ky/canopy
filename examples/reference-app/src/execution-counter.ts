@@ -3,7 +3,7 @@ import {
   type Disposes,
   type ExecutionScoped,
   type LifecycleContext,
-} from '@canopy/core'
+} from '@doxajs/core'
 
 import { operationLog } from './operation-log.js'
 

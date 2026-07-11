@@ -1,4 +1,4 @@
-import type { JsonValue } from '@canopy/core'
+import type { JsonValue } from '@doxajs/core'
 import {
   index,
   integer,
@@ -41,7 +41,7 @@ export interface DurableExecutionEnvelope {
 }
 
 export const entityStates = pgTable(
-  'canopy_entity_states',
+  'doxa_entity_states',
   {
     entityType: text('entity_type').notNull(),
     entityId: text('entity_id').notNull(),
@@ -53,7 +53,7 @@ export const entityStates = pgTable(
 )
 
 export const journalEntries = pgTable(
-  'canopy_journal_entries',
+  'doxa_journal_entries',
   {
     id: uuid('id').primaryKey(),
     factType: text('fact_type').notNull(),
@@ -64,13 +64,13 @@ export const journalEntries = pgTable(
     occurredAt: timestamp('occurred_at', { withTimezone: true, mode: 'date' }).notNull(),
   },
   (table) => [
-    index('canopy_journal_entity_idx').on(table.entityType, table.entityId),
-    index('canopy_journal_context_idx').using('gin', table.context),
+    index('doxa_journal_entity_idx').on(table.entityType, table.entityId),
+    index('doxa_journal_context_idx').using('gin', table.context),
   ],
 )
 
 export const outboxMessages = pgTable(
-  'canopy_outbox_messages',
+  'doxa_outbox_messages',
   {
     id: uuid('id').primaryKey(),
     messageType: text('message_type').notNull(),
@@ -80,11 +80,11 @@ export const outboxMessages = pgTable(
     availableAt: timestamp('available_at', { withTimezone: true, mode: 'date' }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
   },
-  (table) => [index('canopy_outbox_available_idx').on(table.status, table.availableAt)],
+  (table) => [index('doxa_outbox_available_idx').on(table.status, table.availableAt)],
 )
 
 export const deliveryMessages = pgTable(
-  'canopy_delivery_messages',
+  'doxa_delivery_messages',
   {
     id: uuid('id').primaryKey(),
     channel: text('channel').notNull(),
@@ -98,10 +98,10 @@ export const deliveryMessages = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
   },
-  (table) => [index('canopy_delivery_state_idx').on(table.channel, table.state)],
+  (table) => [index('doxa_delivery_state_idx').on(table.channel, table.state)],
 )
 
-export const deliveryEvents = pgTable('canopy_delivery_events', {
+export const deliveryEvents = pgTable('doxa_delivery_events', {
   eventId: text('event_id').primaryKey(),
   messageId: uuid('message_id').notNull(),
   state: text('state').notNull(),

@@ -1,5 +1,5 @@
-import { ActionBus, HttpError, type HttpRequest, Route } from '@canopy/core'
-import { normalizeTwilioStatus, verifyTwilioWebhook } from '@canopy/twilio-sms'
+import { ActionBus, HttpError, type HttpRequest, Route } from '@doxajs/core'
+import { normalizeTwilioStatus, verifyTwilioWebhook } from '@doxajs/twilio-sms'
 
 import { CommunicationsConfig } from './communications-config.js'
 import { RecordDeliveryUpdates } from './record-delivery-updates.js'
@@ -28,7 +28,7 @@ export class TwilioSmsWebhookRoute extends Route {
     await this.actions.execute(RecordDeliveryUpdates, [
       normalizeTwilioStatus({
         ...signedParameters,
-        CanopyMessageId: request.query('canopy_message_id') ?? '',
+        DoxaMessageId: request.query('doxa_message_id') ?? '',
       }),
     ])
     return new Response(null, { status: 204 })

@@ -4,7 +4,7 @@ import { type FormEvent, useState } from 'react'
 import { CheckCircle2Icon, CopyIcon, KeyRoundIcon, LogOutIcon, UserRoundIcon } from 'lucide-react'
 import { toast } from 'sonner'
 
-import type { AccessToken, CurrentIdentityResponse } from '@/lib/canopy-client'
+import type { AccessToken, CurrentIdentityResponse } from '@/lib/doxa-client'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -47,7 +47,7 @@ export function IdentityPanel({
     try {
       await onAuthenticate(mode, { email, password })
     } catch {
-      /* The shell reports normalized Canopy errors. */
+      /* The shell reports normalized Doxa errors. */
     } finally {
       setPending(undefined)
     }
@@ -60,7 +60,7 @@ export function IdentityPanel({
       const result = await onIssueToken(tokenName)
       setIssuedToken(result.token)
     } catch {
-      // The shell reports normalized Canopy errors.
+      // The shell reports normalized Doxa errors.
     } finally {
       setPending(undefined)
     }
@@ -113,7 +113,7 @@ export function IdentityPanel({
                   await onLogout()
                   setIssuedToken(undefined)
                 } catch {
-                  // The shell reports normalized Canopy errors.
+                  // The shell reports normalized Doxa errors.
                 } finally {
                   setPending(undefined)
                 }

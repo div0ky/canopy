@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 const workspace = path.resolve(import.meta.dirname, '..')
 const fieldGuide = path.join(workspace, 'examples/field-guide')
 
-describe('Canopy Field Guide frontend fixture', () => {
+describe('Doxa Field Guide frontend fixture', () => {
   it('is a first-class Next.js, Tailwind, and shadcn/ui workspace application', async () => {
     const packageJson = JSON.parse(
       await readFile(path.join(fieldGuide, 'package.json'), 'utf8'),
@@ -21,7 +21,7 @@ describe('Canopy Field Guide frontend fixture', () => {
       style: string
       rsc: boolean
     }
-    expect(packageJson.name).toBe('@canopy/field-guide')
+    expect(packageJson.name).toBe('@doxajs/field-guide')
     expect(packageJson.dependencies).toEqual(
       expect.objectContaining({ next: expect.any(String), react: expect.any(String) }),
     )
@@ -32,13 +32,13 @@ describe('Canopy Field Guide frontend fixture', () => {
   })
 
   it('uses the HTTP boundary for public, session, bearer, and protected-action flows', async () => {
-    const client = await readFile(path.join(fieldGuide, 'src/lib/canopy-client.ts'), 'utf8')
+    const client = await readFile(path.join(fieldGuide, 'src/lib/doxa-client.ts'), 'utf8')
     const shell = await readFile(path.join(fieldGuide, 'src/components/field-guide.tsx'), 'utf8')
     const proxy = await readFile(
-      path.join(fieldGuide, 'src/app/api/canopy/[[...path]]/route.ts'),
+      path.join(fieldGuide, 'src/app/api/doxa/[[...path]]/route.ts'),
       'utf8',
     )
-    expect(client).toContain('fetch(`/api/canopy${path}`')
+    expect(client).toContain('fetch(`/api/doxa${path}`')
     expect(client).toContain('if (!body?.ok)')
     expect(client).toContain('return body.data')
     expect(shell).toContain("'/health'")
@@ -49,7 +49,7 @@ describe('Canopy Field Guide frontend fixture', () => {
     expect(proxy).toContain("'authorization'")
     expect(proxy).toContain("'cookie'")
     expect(proxy).toContain("'origin'")
-    expect(`${client}\n${shell}\n${proxy}`).not.toContain("from '@canopy/")
-    expect(`${client}\n${shell}\n${proxy}`).not.toContain('from "@canopy/')
+    expect(`${client}\n${shell}\n${proxy}`).not.toContain("from '@doxajs/")
+    expect(`${client}\n${shell}\n${proxy}`).not.toContain('from "@doxajs/')
   })
 })

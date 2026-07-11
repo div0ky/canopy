@@ -1,4 +1,4 @@
-import { Auth, HttpError, type HttpRequest, Route } from '@canopy/core'
+import { Auth, HttpError, type HttpRequest, Route } from '@doxajs/core'
 
 export class VerifyEmailRoute extends Route {
   static override readonly id = 'verify-email'

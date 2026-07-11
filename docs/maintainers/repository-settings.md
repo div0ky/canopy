@@ -16,10 +16,9 @@ unused repository features instead of leaving unmaintained support surfaces visi
 
 ## npm publication
 
-1. Reserve the `@canopy` npm organization and require two-factor authentication.
+1. Reserve the `@doxajs` npm organization and require two-factor authentication.
 2. Bootstrap each public package once if npm requires an initial owner publication.
 3. Configure `release.yml` as the trusted publisher for every package and restrict token-based
    publication afterward.
 4. Protect the `npm` GitHub environment and require maintainer approval.
-5. Publish prereleases under the `next` dist-tag until Canopy intentionally promotes a stable
-   release.
+5. Publish prereleases under the `next` dist-tag until Doxa intentionally promotes a stable release.

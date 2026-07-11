@@ -3,14 +3,14 @@
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
 - **Scope:** MVP
-- **Decision owners:** Canopy maintainers
+- **Decision owners:** Doxa maintainers
 
 ## Decision
 
-Ordinary application and domain code uses one primary Canopy programming-model package:
+Ordinary application and domain code uses one primary Doxa programming-model package:
 
 ```ts
-import { Action, Event, Feature, Model, Query, ShouldQueue, token } from '@canopy/core'
+import { Action, Event, Feature, Model, Query, ShouldQueue, token } from '@doxajs/core'
 ```
 
 Compiler, container, manifest, registry, lifecycle, and runtime implementation packages are not
@@ -21,12 +21,12 @@ application dependencies. Internal package refactors must not require feature-co
 Testing and infrastructure adapters have intentionally separate packages:
 
 ```ts
-import { CanopyTest } from '@canopy/testing'
-import { HonoFeature } from '@canopy/http-hono'
-import { DrizzleFeature } from '@canopy/postgres-drizzle'
+import { DoxaTest } from '@doxajs/testing'
+import { HonoFeature } from '@doxajs/http-hono'
+import { DrizzleFeature } from '@doxajs/postgres-drizzle'
 ```
 
-`@canopy/testing` may expose test applications, fakes, assertions, clocks, and scoped overrides. It
+`@doxajs/testing` may expose test applications, fakes, assertions, clocks, and scoped overrides. It
 must not make test-only behavior available through the production programming model.
 
 Adapter packages expose composition-boundary Features, configuration schemas, and adapter-owned
@@ -35,7 +35,7 @@ adapter types.
 
 ## Core boundary
 
-`@canopy/core` owns the stable vocabulary used by application code, including:
+`@doxajs/core` owns the stable vocabulary used by application code, including:
 
 - Application and Feature declarations.
 - Role base classes and capability interfaces.
@@ -58,27 +58,27 @@ It must not expose:
 The MVP physically separates architectural responsibilities:
 
 ```text
-@canopy/core
-@canopy/manifest
-@canopy/compiler
-@canopy/runtime
-@canopy/testing
-@canopy/cli
+@doxajs/core
+@doxajs/manifest
+@doxajs/compiler
+@doxajs/runtime
+@doxajs/testing
+@doxajs/cli
 ```
 
-- `@canopy/core` contains the application programming model and public contracts only.
-- `@canopy/manifest` contains the serializable manifest schema, validation, and format compatibility
+- `@doxajs/core` contains the application programming model and public contracts only.
+- `@doxajs/manifest` contains the serializable manifest schema, validation, and format compatibility
   contracts only.
-- `@canopy/compiler` analyzes TypeScript and emits canonical manifest and constructor registry
+- `@doxajs/compiler` analyzes TypeScript and emits canonical manifest and constructor registry
   artifacts.
-- `@canopy/runtime` consumes generated artifacts and owns the container, dispatch, execution scopes,
+- `@doxajs/runtime` consumes generated artifacts and owns the container, dispatch, execution scopes,
   and lifecycle.
-- `@canopy/testing` builds on public core plus deliberate runtime testing contracts.
-- `@canopy/cli` orchestrates compiler, generators, diagnostics, operational commands, and official
+- `@doxajs/testing` builds on public core plus deliberate runtime testing contracts.
+- `@doxajs/cli` orchestrates compiler, generators, diagnostics, operational commands, and official
   hosts.
 
 The runtime cannot import TypeScript compiler APIs, compile source, or reconstruct the graph at
-boot. The compiler is unnecessary in the production runtime image. `@canopy/manifest` remains a
+boot. The compiler is unnecessary in the production runtime image. `@doxajs/manifest` remains a
 data-contract package and cannot depend on runtime, compiler, CLI, testing, or infrastructure
 adapters.
 
@@ -95,19 +95,19 @@ application-facing manifest contracts.
 
 ## Closed exports
 
-Every Canopy package defines an explicit package `exports` map. Cross-package consumers may import
+Every Doxa package defines an explicit package `exports` map. Cross-package consumers may import
 only declared package roots and intentional public subpaths. Deep imports into source, build output,
 or unexported implementation modules are forbidden.
 
 ```ts
-import { Action } from '@canopy/core'
-import { Manifest } from '@canopy/manifest'
+import { Action } from '@doxajs/core'
+import { Manifest } from '@doxajs/manifest'
 ```
 
 ```ts
 // Invalid
-import { Container } from '@canopy/runtime/dist/container.js'
-import { compileClass } from '@canopy/compiler/src/internals.js'
+import { Container } from '@doxajs/runtime/dist/container.js'
+import { compileClass } from '@doxajs/compiler/src/internals.js'
 ```
 
 Relative imports across workspace-package boundaries are also forbidden. Adapter and testing
@@ -131,8 +131,8 @@ dependency direction, source imports, and published package contents.
 
 The MVP must prove:
 
-1. A reference Feature imports all ordinary framework vocabulary from `@canopy/core` only.
-2. Test code uses `@canopy/testing` without test APIs leaking through core.
+1. A reference Feature imports all ordinary framework vocabulary from `@doxajs/core` only.
+2. Test code uses `@doxajs/testing` without test APIs leaking through core.
 3. Hono, Drizzle, and pg-boss types appear only in their adapter packages and internal tests.
 4. Swapping an adapter implementation does not rewrite feature or domain code.
 5. Manifest and source diagnostics identify forbidden private-package imports.
@@ -145,7 +145,7 @@ The MVP must prove:
 
 ## References
 
-- [Canopy architecture](../architecture.md#package-boundaries)
-- [Canopy governing dependency rule](../architecture.md#the-governing-dependency-rule)
+- [Doxa architecture](../architecture.md#package-boundaries)
+- [Doxa governing dependency rule](../architecture.md#the-governing-dependency-rule)
 - [MVP toolchain](0007-mvp-toolchain.md)
 - [Path-independent structure and services](0016-path-independent-structure-autowired-services.md)

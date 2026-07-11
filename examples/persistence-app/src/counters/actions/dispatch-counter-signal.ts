@@ -1,4 +1,4 @@
-import { Action } from '@canopy/core'
+import { Action } from '@doxajs/core'
 
 import { CounterTouched } from '../signals/counter-touched.js'
 

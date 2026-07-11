@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Questions and design discussion
-    url: https://github.com/div0ky/canopy/discussions
+    url: https://github.com/div0ky/doxajs/discussions
     about: Ask for help or discuss an idea before proposing a change.
   - name: Security vulnerability
-    url: https://github.com/div0ky/canopy/security/advisories/new
+    url: https://github.com/div0ky/doxajs/security/advisories/new
     about: Report vulnerabilities privately.

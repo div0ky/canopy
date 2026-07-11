@@ -5,12 +5,12 @@ import { CheckIcon, MenuIcon } from 'lucide-react'
 import { toast } from 'sonner'
 
 import {
-  canopyRequest,
-  CanopyClientError,
+  doxaRequest,
+  DoxaClientError,
   type AccessToken,
   type CurrentIdentityResponse,
   type Identity,
-} from '@/lib/canopy-client'
+} from '@/lib/doxa-client'
 import { ActivityPanel, type ActivityEntry } from '@/components/activity-panel'
 import { AppSidebar } from '@/components/app-sidebar'
 import { CounterPanel } from '@/components/counter-panel'
@@ -29,7 +29,7 @@ function now() {
 }
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'The Canopy request failed.'
+  return error instanceof Error ? error.message : 'The Doxa request failed.'
 }
 
 export function FieldGuide() {
@@ -47,11 +47,11 @@ export function FieldGuide() {
 
   const refreshIdentity = useCallback(async () => {
     try {
-      const identity = await canopyRequest<CurrentIdentityResponse>('/auth/me')
+      const identity = await doxaRequest<CurrentIdentityResponse>('/auth/me')
       setCurrent(identity)
       return identity
     } catch (error) {
-      if (error instanceof CanopyClientError && error.status === 401) {
+      if (error instanceof DoxaClientError && error.status === 401) {
         setCurrent(undefined)
         return undefined
       }
@@ -63,9 +63,9 @@ export function FieldGuide() {
     if (initialized.current) return
     initialized.current = true
     void Promise.allSettled([
-      canopyRequest<{ status: string }>('/health').then((health) => {
+      doxaRequest<{ status: string }>('/health').then((health) => {
         setConnected(health.status === 'ok')
-        record({ title: 'Canopy connected', detail: 'GET /health returned ok', kind: 'http' })
+        record({ title: 'Doxa connected', detail: 'GET /health returned ok', kind: 'http' })
       }),
       refreshIdentity().then((identity) => {
         if (identity)
@@ -96,7 +96,7 @@ export function FieldGuide() {
             <SidebarTrigger>
               <MenuIcon aria-hidden="true" />
             </SidebarTrigger>
-            <span className="font-display text-xl">Canopy</span>
+            <span className="font-display text-xl">Doxa</span>
           </div>
           <Badge variant={connected ? 'secondary' : 'outline'}>
             {connected ? 'Connected' : 'Connecting'}
@@ -109,12 +109,12 @@ export function FieldGuide() {
                 Field Guide
               </h1>
               <p className="mt-3 max-w-2xl text-base text-muted-foreground sm:text-lg">
-                A living integration check for the Canopy application model.
+                A living integration check for the Doxa application model.
               </p>
             </div>
             <div className="hidden items-center gap-3 sm:flex">
               <div className="text-right">
-                <p className="font-medium">Canopy API</p>
+                <p className="font-medium">Doxa API</p>
                 <p className="text-sm text-muted-foreground">
                   {connected ? 'Connected' : 'Unavailable'}
                 </p>
@@ -130,7 +130,7 @@ export function FieldGuide() {
                 connected={connected}
                 onHello={(name) =>
                   handle(async () => {
-                    const result = await canopyRequest<{ message: string }>(
+                    const result = await doxaRequest<{ message: string }>(
                       `/hello/${encodeURIComponent(name)}`,
                     )
                     record({
@@ -147,11 +147,11 @@ export function FieldGuide() {
                 onAuthenticate={(mode, credentials) =>
                   handle(async () => {
                     if (mode === 'register')
-                      await canopyRequest<{ identity: Identity }>('/auth/register', {
+                      await doxaRequest<{ identity: Identity }>('/auth/register', {
                         method: 'POST',
                         body: JSON.stringify(credentials),
                       })
-                    await canopyRequest('/auth/login', {
+                    await doxaRequest('/auth/login', {
                       method: 'POST',
                       body: JSON.stringify(credentials),
                     })
@@ -169,7 +169,7 @@ export function FieldGuide() {
                 }
                 onLogout={() =>
                   handle(async () => {
-                    await canopyRequest('/auth/logout', { method: 'POST' })
+                    await doxaRequest('/auth/logout', { method: 'POST' })
                     setCurrent(undefined)
                     record({
                       title: 'Session revoked',
@@ -181,7 +181,7 @@ export function FieldGuide() {
                 }
                 onIssueToken={(name) =>
                   handle(async () => {
-                    const grant = await canopyRequest<{ token: string; accessToken: AccessToken }>(
+                    const grant = await doxaRequest<{ token: string; accessToken: AccessToken }>(
                       '/auth/tokens',
                       {
                         method: 'POST',
@@ -205,7 +205,7 @@ export function FieldGuide() {
                 value={counterValue}
                 onIncrement={(id, amount) =>
                   handle(async () => {
-                    const result = await canopyRequest<{
+                    const result = await doxaRequest<{
                       id: string
                       value: number
                       version: number
@@ -236,11 +236,11 @@ export function FieldGuide() {
         <footer className="flex flex-col gap-3 border-t px-5 py-4 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <p>
             Next.js <span aria-hidden="true">·</span> Tailwind <span aria-hidden="true">·</span>{' '}
-            shadcn/ui <span aria-hidden="true">·</span> Canopy
+            shadcn/ui <span aria-hidden="true">·</span> Doxa
           </p>
           <div className="flex items-center gap-2">
             <span className="size-2 rounded-full bg-primary" aria-hidden="true" />
-            {connected ? 'All systems operational' : 'Canopy API unavailable'}
+            {connected ? 'All systems operational' : 'Doxa API unavailable'}
           </div>
         </footer>
       </SidebarInset>

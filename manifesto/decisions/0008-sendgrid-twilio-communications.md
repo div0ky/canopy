@@ -2,19 +2,19 @@
 
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
-- **Decision owners:** Canopy maintainers
+- **Decision owners:** Doxa maintainers
 
 ## Decision
 
-Canopy will own first-party mail and SMS contracts. The MVP will ship a SendGrid email plugin and a
+Doxa will own first-party mail and SMS contracts. The MVP will ship a SendGrid email plugin and a
 Twilio Programmable Messaging SMS plugin.
 
-Applications will compose Canopy-owned messages, templates, addresses, delivery options, and
+Applications will compose Doxa-owned messages, templates, addresses, delivery options, and
 assertions. Provider SDKs remain private implementation engines inside their plugins.
 
 ## Delivery model
 
-Email and SMS delivery must flow through the transactional outbox and Canopy jobs. A provider API
+Email and SMS delivery must flow through the transactional outbox and Doxa jobs. A provider API
 response records provider acceptance, not final delivery.
 
 The communications contract will normalize at least:
@@ -28,12 +28,12 @@ The communications contract will normalize at least:
 - `suppressed`
 - `cancelled`
 
-The exact valid transitions may differ by channel, but feature code observes Canopy states and
-stable failure codes rather than vendor strings.
+The exact valid transitions may differ by channel, but feature code observes Doxa states and stable
+failure codes rather than vendor strings.
 
-Provider message IDs must correlate back to the Canopy message, job, actor, initiator, tenant,
+Provider message IDs must correlate back to the Doxa message, job, actor, initiator, tenant,
 causation, correlation, and trace context. Webhook ingestion verifies provider signatures before
-updating delivery state or emitting Canopy events.
+updating delivery state or emitting Doxa events.
 
 ## SendGrid plugin
 
@@ -53,7 +53,7 @@ The SendGrid plugin will:
 The Twilio plugin will:
 
 - Use Twilio Programmable Messaging through a Messaging Service for production SMS.
-- Normalize destination phone numbers to the Canopy phone-number contract and transmit E.164 to
+- Normalize destination phone numbers to the Doxa phone-number contract and transmit E.164 to
   Twilio.
 - Track queued, sent, delivered, undelivered, and failed outcomes through status callbacks.
 - Preserve opt-out and permanent-rejection outcomes so they are not retried as transient failures.
@@ -65,7 +65,7 @@ configuration and operational requirements of the plugin, not details applicatio
 
 ## Testing
 
-Canopy's mail and SMS fakes must support assertions for queued messages, recipients, templates,
+Doxa's mail and SMS fakes must support assertions for queued messages, recipients, templates,
 content, causal metadata, provider-independent delivery transitions, retry classification, and
 verified webhook handling.
 

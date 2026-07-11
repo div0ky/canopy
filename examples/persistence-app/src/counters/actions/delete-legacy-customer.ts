@@ -1,4 +1,4 @@
-import { Action } from '@canopy/core'
+import { Action } from '@doxajs/core'
 
 import { LegacyCustomer } from '../models/legacy-customer.js'
 
