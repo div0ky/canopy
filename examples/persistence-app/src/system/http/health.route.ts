@@ -1,4 +1,4 @@
-import { Http, type HttpRequest, Route } from '@canopy/core'
+import { type HttpRequest, Route } from '@canopy/core'
 
 export class HealthRoute extends Route {
   static override readonly id = 'health'
@@ -6,7 +6,7 @@ export class HealthRoute extends Route {
   readonly method = 'GET'
   readonly path = '/health'
 
-  handle(_request: HttpRequest): Response {
-    return Http.json({ status: 'ok' })
+  handle(_request: HttpRequest): { status: string } {
+    return { status: 'ok' }
   }
 }

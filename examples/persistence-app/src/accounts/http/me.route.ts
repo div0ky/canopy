@@ -1,7 +1,6 @@
 import {
   Auth,
   CurrentExecution,
-  Http,
   HttpError,
   type HttpRequest,
   Route,
@@ -13,19 +12,15 @@ export class MeRoute extends Route {
   readonly method = 'GET'
   readonly path = '/auth/me'
 
-  constructor(
-    private readonly auth: Auth,
-    private readonly execution: CurrentExecution,
-  ) {
-    super()
-  }
+  private readonly auth = this.inject(Auth)
+  private readonly execution = this.inject(CurrentExecution)
 
-  async handle(_request: HttpRequest): Promise<Response> {
+  async handle(_request: HttpRequest) {
     const identityId = this.execution.context.authentication.identityId
     if (!identityId) throw new HttpError(401, 'authentication_required', 'Authentication is required.')
     const identity = await this.auth.findIdentity(identityId)
     if (!identity) throw new HttpError(401, 'authentication_required', 'Authentication is required.')
-    return Http.json({
+    return {
       identity: {
         id: identity.id,
         email: identity.email,
@@ -39,6 +34,6 @@ export class MeRoute extends Route {
         credentialId: this.execution.context.authentication.credentialId,
         constraints: this.execution.context.authentication.constraints,
       },
-    })
+    }
   }
 }

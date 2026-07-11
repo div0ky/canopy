@@ -9,7 +9,8 @@ export class SendGridWebhookRoute extends Route {
   static override readonly access = 'public'
   readonly method = 'POST'
   readonly path = '/webhooks/sendgrid'
-  constructor(private readonly actions: ActionBus, private readonly config: CommunicationsConfig) { super() }
+  private readonly actions = this.inject(ActionBus)
+  private readonly config = this.inject(CommunicationsConfig)
   async handle(request: HttpRequest): Promise<Response> {
     const raw = await request.text()
     const timestamp = request.header('x-twilio-email-event-webhook-timestamp') ?? ''

@@ -13,12 +13,8 @@ export class LogoutRoute extends Route {
   readonly method = 'POST'
   readonly path = '/auth/logout'
 
-  constructor(
-    private readonly auth: Auth,
-    private readonly execution: CurrentExecution,
-  ) {
-    super()
-  }
+  private readonly auth = this.inject(Auth)
+  private readonly execution = this.inject(CurrentExecution)
 
   async handle(_request: HttpRequest): Promise<Response> {
     const sessionId = this.execution.context.authentication.sessionId

@@ -50,7 +50,7 @@ Status describes confidence in the contract, not the amount of code written.
 | Application and feature model | Exploring | [How do explicit feature boundaries support automatic build-time registration?](decisions/0014-explicit-features-generated-manifest.md) |
 | Application manifest | Exploring | [How does one versioned representation power boot, tooling, tests, and adapters?](decisions/0014-explicit-features-generated-manifest.md) |
 | Lifecycle and failure semantics | Exploring | [How do startup, readiness, drain, stop, disposal, deadlines, and failures compose?](decisions/0017-deterministic-runtime-lifecycle.md) |
-| Container and execution scopes | Exploring | How does constructor injection remain automatic, explicit, and inspectable in TypeScript? |
+| Container and execution scopes | Exploring | How do role-scoped `this.inject()` and service constructor injection remain automatic, explicit, and inspectable in TypeScript? |
 | Package boundaries | Exploring | [How does one application-facing core remain independent from compiler, runtime, testing, and adapters?](decisions/0018-public-package-surface.md) |
 
 These specifications come first because every other subsystem participates in the application
@@ -105,6 +105,7 @@ remain **Exploring**.
 | --- | --- | --- |
 | HTTP manifest | Exploring; implementation proof | What transport-neutral declaration does application code write? |
 | Hono adapter | Exploring; implementation proof | How is that declaration compiled without leaking Hono into features? |
+| HTTP response envelopes | Implemented | [How does Canopy automatically provide one discriminated success and failure grammar?](specifications/http-response-envelopes.md) |
 | Authentication | Implemented proofs | Email/password identities, Argon2id credentials, browser sessions, opaque bearer tokens, actor resolution, authority propagation, rotation, CSRF origin enforcement, revocation, and audit are proven; verification, reset, abuse controls, renewal, testing helpers, and security review remain. |
 | Existing-table auth mapping | MVP common path implemented | [How can first-party auth use an application's existing identity and credential columns while preserving Canopy security semantics?](decisions/0023-existing-table-model-auth-mapping.md) |
 | Authorization | Implemented proof | [Default-deny manifest policies, entry access, resource decisions, bearer constraints, stable denial, security audit, testing fakes, and diagnostics are proven.](specifications/actor-execution-context-authorization.md) |
@@ -125,7 +126,8 @@ resources, policy, hardening, and the complete HTTP specification remain unsettl
 | Metrics and tracing | Exploring | Which actor and causal fields connect traces, journal entries, jobs, and audit records? |
 | Testing applications and fakes | Exploring | [How do direct unit tests and pre-boot derived test graphs preserve framework semantics?](decisions/0020-preboot-test-overrides.md) |
 | CLI and generators | Exploring | [How do generators support opinionated defaults without making paths semantic?](decisions/0016-path-independent-structure-autowired-services.md) |
-| Diagnostics | Unexplored | How can a developer inspect graph, lifecycle, routing, and delivery decisions? |
+| Development debugger | Implemented | [How does Undergrowth expose safe causal execution evidence without becoming audit or APM storage?](specifications/undergrowth.md) |
+| Diagnostics | Implemented | Arbor inspection, Drizzle Studio, and [Undergrowth](specifications/undergrowth.md) expose the compiled graph, storage, and live execution behavior. |
 | Adapter contracts | Unexplored | Which guarantees and conformance cases apply to infrastructure engines? |
 | Compatibility releases | Unexplored | How does a release declare and prove a supported component matrix? |
 | Cultivate AI-assisted engineering | Accepted direction; implementation deferred | [How can agents safely inspect and work with a Canopy application?](future/ai-assisted-engineering.md) |

@@ -28,6 +28,8 @@ describe('Canopy Field Guide frontend fixture', () => {
     const shell = await readFile(path.join(fieldGuide, 'src/components/field-guide.tsx'), 'utf8')
     const proxy = await readFile(path.join(fieldGuide, 'src/app/api/canopy/[[...path]]/route.ts'), 'utf8')
     expect(client).toContain('fetch(`/api/canopy${path}`')
+    expect(client).toContain('if (!body?.ok)')
+    expect(client).toContain('return body.data')
     expect(shell).toContain('"/health"')
     expect(shell).toContain('"/auth/register"')
     expect(shell).toContain('"/auth/login"')

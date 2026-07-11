@@ -12,7 +12,7 @@ export class DispatchCounterSignal extends Action<DispatchCounterSignalInput, vo
   static override readonly access = 'public'
 
   async handle(input: DispatchCounterSignalInput): Promise<void> {
-    await CounterTouched.dispatch(input.counterId)
+    await CounterTouched.dispatch({ counterId: input.counterId })
     if (input.failAfterDispatch) throw new Error('failed after signal dispatch')
   }
 }

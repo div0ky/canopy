@@ -245,9 +245,9 @@ between domain state and purpose-built projections clear.
 ## Application services and internal modules
 
 Large application behavior may be decomposed into focused services, helpers, and internal modules
-without creating new framework concepts. A concrete class reachable through the constructor graph
-of a declared Feature role is autowired automatically. It requires no base class, decorator,
-provider entry, or Feature role-array registration.
+without creating new framework concepts. A concrete class reached from a declared Feature role's
+`this.inject()` call, or through another service's constructor graph, is autowired automatically.
+It requires no base class, decorator, provider entry, or Feature role-array registration.
 
 Model methods retain entity invariants. Actions retain use-case and transaction coordination.
 Domain and application services hold reusable rules and orchestration that would otherwise make

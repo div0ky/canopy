@@ -1,4 +1,6 @@
-export abstract class Command {
+import { CanopyRole } from './role.js'
+
+export abstract class Command extends CanopyRole {
   static readonly id: string = ''
   static readonly name: string = ''
   static readonly description: string = ''

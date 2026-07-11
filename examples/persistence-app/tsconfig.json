@@ -11,6 +11,7 @@
     { "path": "../../packages/postgres-drizzle" }
     ,{ "path": "../../packages/sendgrid" }
     ,{ "path": "../../packages/twilio-sms" }
+    ,{ "path": "../../packages/undergrowth" }
   ],
   "include": ["src/**/*.ts"]
 }

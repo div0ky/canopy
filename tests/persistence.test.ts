@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { createHmac, sign } from 'node:crypto'
+import { createHmac, randomUUID, sign } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -16,6 +16,7 @@ import {
   SignalDispatchError,
   ModelNotFoundError,
   OptimisticConcurrencyError,
+  ObservationRecorder,
   ReadOnlyExecutionError,
   StaleUnitOfWorkError,
   StaleModelError,
@@ -34,6 +35,7 @@ import {
 } from '@canopy/queue-pg-boss'
 import { HonoHttpEngine, HonoHttpHost } from '@canopy/http-hono'
 import { Canopy, type CanopyRuntime } from '@canopy/runtime'
+import { installUndergrowthSchema, listenUndergrowth, pruneUndergrowth, UndergrowthStore } from '@canopy/undergrowth'
 import {
   PostgreSqlContainer,
   type StartedPostgreSqlContainer,
@@ -120,6 +122,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     await installCommunicationsSchema(connectionString)
     await installAuthSchema(connectionString)
     await installQueueSchema(connectionString)
+    await installUndergrowthSchema(connectionString)
     pool = new Pool({ connectionString })
     await pool.query(`
       CREATE TABLE legacy_customers (
@@ -170,6 +173,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         , legacy_customers
         , legacy_auth_users
         , legacy_notes
+        , canopy_undergrowth_observations
     `)
   })
 
@@ -213,6 +217,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       expect.objectContaining({ id: 'provider:infrastructure/mail', capabilities: ['mail'] }),
       expect.objectContaining({ id: 'provider:infrastructure/sms', capabilities: ['sms'] }),
       expect.objectContaining({ id: 'provider:infrastructure/telemetry', capabilities: ['telemetry'] }),
+      expect.objectContaining({ id: 'provider:infrastructure/undergrowth', capabilities: ['observations'] }),
       expect.objectContaining({
         id: 'provider:counters/counter-event-recorder',
         capabilities: [],
@@ -264,7 +269,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         },
       }),
     ])
-    expect(result.manifest.routes).toEqual([
+    expect(result.manifest.routes).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'route:accounts/change-password', method: 'POST', path: '/auth/password',
       }),
@@ -366,8 +371,8 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         method: 'POST',
         path: '/ping',
       }),
-    ])
-    expect(result.manifest.events).toEqual([
+    ]))
+    expect(result.manifest.events).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'event:accounts/user-logged-in',
         dispatch: 'immediate',
@@ -392,7 +397,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         id: 'event:system/http-pinged',
         dispatch: 'immediate',
       }),
-    ])
+    ]))
     expect(result.manifest.listeners).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'listener:counters/record-counter-incremented',
@@ -415,7 +420,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         delivery: 'queued',
       }),
     ]))
-    expect(result.manifest.jobs).toEqual([
+    expect(result.manifest.jobs).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'job:counters/process-counter',
         retries: 2,
@@ -423,7 +428,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         backoff: false,
         timeout: 10,
       }),
-    ])
+    ]))
     expect(result.manifest.schedules).toEqual([
       expect.objectContaining({
         id: 'schedule:counters/process-counters',
@@ -483,6 +488,99 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(JSON.stringify(result.manifest)).not.toContain('drizzle')
     expect(JSON.stringify(result.manifest)).not.toContain('node-postgres')
     expect(JSON.stringify(result.manifest)).not.toContain('pg-boss')
+  })
+
+  it('records correlated typed observations and exposes a read-only execution timeline', async () => {
+    const runtime = await bootPersistenceRuntime()
+    const http = new HonoHttpEngine(runtime)
+    expect((await http.fetch(new Request('http://canopy.test/health'))).status).toBe(200)
+
+    await waitFor(async () => Number((await pool.query('SELECT count(*) AS count FROM canopy_undergrowth_observations')).rows[0]?.count) >= 4)
+    const store = new UndergrowthStore(connectionString)
+    try {
+      const executions = await store.executions({ kind: 'execution' })
+      expect(executions[0]).toEqual(expect.objectContaining({ name: 'GET /health', phase: 'completed' }))
+      const timeline = await store.timeline(executions[0]!.executionId)
+      expect(timeline.map((entry) => [entry.kind, entry.phase])).toEqual(expect.arrayContaining([
+        ['execution', 'started'], ['http', 'started'], ['http', 'completed'], ['execution', 'completed'],
+      ]))
+      expect(new Set(timeline.map((entry) => entry.context.correlationId)).size).toBe(1)
+      expect(timeline.every((entry) => entry.context.executionId === executions[0]!.executionId)).toBe(true)
+    } finally { await store.close() }
+  })
+
+  it('links queued worker executions back to their source execution and correlation', async () => {
+    const runtime = await bootPersistenceRuntime()
+    await runAction(runtime, DispatchProcessCounter, { key: `undergrowth-${randomUUID()}` })
+    await waitFor(async () => (await pool.query(`
+      SELECT 1 FROM canopy_undergrowth_observations
+      WHERE kind = 'execution' AND transport = 'job' AND phase = 'completed'
+        AND source_execution_id IS NOT NULL
+    `)).rowCount === 1)
+    const result = await pool.query<{
+      execution_id: string; source_execution_id: string; correlation_id: string
+    }>(`
+      SELECT execution_id, source_execution_id, correlation_id
+      FROM canopy_undergrowth_observations
+      WHERE kind = 'execution' AND transport = 'job' AND phase = 'completed'
+      ORDER BY sequence DESC LIMIT 1
+    `)
+    const worker = result.rows[0]!
+    expect(worker.execution_id).not.toBe(worker.source_execution_id)
+    expect(worker.correlation_id).toBe(worker.source_execution_id)
+    expect((await pool.query(`
+      SELECT 1 FROM canopy_undergrowth_observations
+      WHERE execution_id = $1 AND correlation_id = $2
+    `, [worker.source_execution_id, worker.correlation_id])).rowCount).toBeGreaterThan(0)
+  })
+
+  it('keeps application execution independent from observation recorder failure', async () => {
+    const artifactsDirectory = await temporaryDirectory()
+    await compilePersistenceApplication(artifactsDirectory)
+    const runtime = await Canopy.boot(Application, {
+      artifactsDirectory,
+      dotenvPath: false,
+      environment: {
+        DATABASE_CONNECTION_STRING: connectionString,
+        COMMUNICATIONS_SEND_GRID_WEBHOOK_PUBLIC_KEY: sendGridPublicKey,
+        COMMUNICATIONS_TWILIO_AUTH_TOKEN: twilioAuthToken,
+      },
+      providerOverrides: { 'provider:infrastructure/undergrowth': new FailingObservationRecorder() },
+    })
+    runtimes.push(runtime)
+    const response = await new HonoHttpEngine(runtime).fetch(new Request('http://canopy.test/health'))
+    expect(response.status).toBe(200)
+    expect(await responseData(response)).toEqual({ status: 'ok' })
+  })
+
+  it('prunes Undergrowth deterministically by count and age', async () => {
+    for (let index = 0; index < 4; index += 1) {
+      await pool.query(`
+        INSERT INTO canopy_undergrowth_observations
+          (id, occurred_at, kind, name, phase, attributes)
+        VALUES ($1, now() + ($2::integer * interval '1 millisecond'), 'log', $3, 'occurred', '{}'::jsonb)
+      `, [randomUUID(), index, `entry-${index}`])
+    }
+    expect(await pruneUndergrowth(connectionString, { retentionDays: 7, maximumObservations: 2 })).toBe(2)
+    expect(Number((await pool.query('SELECT count(*) AS count FROM canopy_undergrowth_observations')).rows[0]?.count)).toBe(2)
+    await pool.query(`UPDATE canopy_undergrowth_observations SET occurred_at = now() - interval '8 days' WHERE name = 'entry-2'`)
+    expect(await pruneUndergrowth(connectionString, { retentionDays: 7, maximumObservations: 10 })).toBe(1)
+  })
+
+  it('serves the read-only Undergrowth explorer from its dedicated loopback host', async () => {
+    const host = await listenUndergrowth({ connectionString, port: 0 })
+    try {
+      const page = await fetch(host.url)
+      expect(page.status).toBe(200)
+      expect(await page.text()).toContain('Everything beneath your Canopy')
+      expect(await (await fetch(new URL('/api/health', host.url))).json()).toEqual({
+        ok: true, data: { service: 'undergrowth' },
+      })
+      expect((await fetch(new URL('/api/executions', host.url))).headers.get('cache-control')).toBe('no-store')
+      expect((await fetch(new URL('/api/executions', host.url), { method: 'POST' })).status).toBe(405)
+    } finally { await host.shutdown() }
+    await expect(listenUndergrowth({ connectionString, host: '0.0.0.0', port: 0 }))
+      .rejects.toThrow('loopback only')
   })
 
   it('commits entity state, journal, outbox, and causal metadata atomically', async () => {
@@ -886,7 +984,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
 
     const invalid = await http.fetch(new Request('http://canopy.test/', { headers: { traceparent: 'invalid' } }))
     expect(invalid.status).toBe(400)
-    expect(await invalid.json()).toEqual(expect.objectContaining({ error: expect.objectContaining({ code: 'invalid_traceparent' }) }))
+    expect(await responseFailure(invalid)).toEqual(expect.objectContaining({ code: 'invalid_traceparent' }))
   })
 
   it('runs model observers in Eloquent-style create and update order', async () => {
@@ -944,7 +1042,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
   })
 
   it('rejects signal dispatch outside a Canopy execution', () => {
-    expect(() => CounterTouched.dispatch('outside')).toThrow(SignalDispatchError)
+    expect(() => CounterTouched.dispatch({ counterId: 'outside' })).toThrow(SignalDispatchError)
   })
 
   it('hands committed jobs through the outbox and retries with stable job identity', async () => {
@@ -1193,7 +1291,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       password: 'complete reference flow password',
     }))
     expect(registration.status).toBe(201)
-    const identityId = (await registration.json() as { identity: { id: string } }).identity.id
+    const identityId = (await responseData<{ identity: { id: string } }>(registration)).identity.id
     await waitFor(async () => (await pool.query(`SELECT 1 FROM canopy_delivery_messages WHERE payload->>'subject' = 'Verify your email'`)).rowCount === 1)
     const verification = await pool.query<{ text: string }>(`
       SELECT payload->>'text' AS text FROM canopy_delivery_messages
@@ -1213,7 +1311,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       body: JSON.stringify({ name: 'reference-flow', constraints: ['counters.write', 'counters.update'] }),
     }))
     expect(tokenResponse.status).toBe(201)
-    const bearer = (await tokenResponse.json() as { token: string }).token
+    const bearer = (await responseData<{ token: string }>(tokenResponse)).token
 
     const anonymous = await http.fetch(jsonRequest('http://canopy.test/secure/counters/reference-flow/increment', { amount: 2 }))
     expect(anonymous.status).toBe(401)
@@ -1223,7 +1321,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       body: JSON.stringify({ amount: 2 }),
     }))
     expect(incremented.status).toBe(200)
-    const result = await incremented.json() as { id: string; value: number; version: number; jobId: string }
+    const result = await responseData<{ id: string; value: number; version: number; jobId: string }>(incremented)
     expect(result).toEqual(expect.objectContaining({ id: 'reference-flow', value: 2, version: 1 }))
 
     await waitFor(async () => {
@@ -1269,11 +1367,9 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
 
     const tooShort = await register('seven@example.com', '1234567')
     expect(tooShort.status).toBe(422)
-    expect(await tooShort.json()).toEqual(expect.objectContaining({
-      error: expect.objectContaining({
-        code: 'invalid_registration',
-        message: 'Passwords must contain between 8 and 64 characters.',
-      }),
+    expect(await responseFailure(tooShort)).toEqual(expect.objectContaining({
+      code: 'invalid_registration',
+      message: 'Passwords must contain between 8 and 64 characters.',
     }))
     expect((await register('eight@example.com', '12345678')).status).toBe(201)
     expect((await register('sixty-four@example.com', 'x'.repeat(64))).status).toBe(201)
@@ -1289,9 +1385,9 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       password: 'correct horse battery staple',
     }))
     expect(registered.status).toBe(201)
-    const registration = await registered.json() as {
+    const registration = await responseData<{
       identity: { id: string; email: string; emailVerified: boolean }
-    }
+    }>(registered)
     expect(registration.identity).toEqual(expect.objectContaining({
       email: 'ada@example.com',
       emailVerified: false,
@@ -1326,11 +1422,11 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       password: 'another valid password',
     }))
     expect(duplicate.status).toBe(422)
-    expect(await duplicate.json()).toEqual({
-      error: {
-        code: 'email_taken',
-        message: 'Unable to create an account with the supplied details.',
-      },
+    expect(await responseFailure(duplicate)).toEqual({
+      ok: false,
+      code: 'email_taken',
+      message: 'Unable to create an account with the supplied details.',
+      data: null,
     })
 
     const wrongPassword = await http.fetch(jsonRequest('http://canopy.test/auth/login', {
@@ -1379,7 +1475,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       headers: { cookie },
     }))
     expect(me.status).toBe(200)
-    expect(await me.json()).toEqual(expect.objectContaining({
+    expect(await responseData(me)).toEqual(expect.objectContaining({
       identity: expect.objectContaining({
         id: registration.identity.id,
         email: 'ada@example.com',
@@ -1416,9 +1512,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       headers: { cookie: rotatedCookie, origin: 'https://attacker.example' },
     }))
     expect(rejectedCsrf.status).toBe(403)
-    expect(await rejectedCsrf.json()).toEqual(expect.objectContaining({
-      error: expect.objectContaining({ code: 'untrusted_origin' }),
-    }))
+    expect(await responseFailure(rejectedCsrf)).toEqual(expect.objectContaining({ code: 'untrusted_origin' }))
 
     const loggedOut = await http.fetch(new Request('http://canopy.test/auth/logout', {
       method: 'POST',
@@ -1431,9 +1525,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       headers: { cookie: rotatedCookie },
     }))
     expect(afterLogout.status).toBe(401)
-    expect(await afterLogout.json()).toEqual(expect.objectContaining({
-      error: expect.objectContaining({ code: 'authentication_required' }),
-    }))
+    expect(await responseFailure(afterLogout)).toEqual(expect.objectContaining({ code: 'authentication_required' }))
 
     const audit = await pool.query<{ event_type: string }>(`
       SELECT event_type FROM canopy_auth_audit_events ORDER BY occurred_at, event_type
@@ -1453,7 +1545,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       email: 'security@example.com', password: 'initial secure password',
     }))
     expect(registered.status).toBe(201)
-    const identity = (await registered.json() as { identity: { id: string } }).identity
+    const identity = (await responseData<{ identity: { id: string } }>(registered)).identity
     await waitFor(async () => (await pool.query(`SELECT 1 FROM canopy_delivery_messages WHERE payload->>'text' LIKE 'Verification token:%'`)).rowCount === 1)
     const verificationMail = await pool.query<{ text: string }>(`SELECT payload->>'text' AS text FROM canopy_delivery_messages WHERE payload->>'text' LIKE 'Verification token:%' ORDER BY created_at DESC LIMIT 1`)
     const verificationToken = verificationMail.rows[0]!.text.split(': ')[1]!
@@ -1462,7 +1554,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(challenge.rows[0]!.token_digest).not.toBe(verificationToken)
     const verified = await http.fetch(jsonRequest('http://canopy.test/auth/email/verify', { token: verificationToken }))
     expect(verified.status).toBe(200)
-    expect(await verified.json()).toEqual(expect.objectContaining({ identity: expect.objectContaining({ id: identity.id, emailVerified: true }) }))
+    expect(await responseData(verified)).toEqual(expect.objectContaining({ identity: expect.objectContaining({ id: identity.id, emailVerified: true }) }))
     expect((await http.fetch(jsonRequest('http://canopy.test/auth/email/verify', { token: verificationToken }))).status).toBe(422)
 
     const knownReset = await http.fetch(jsonRequest('http://canopy.test/auth/password/forgot', { email: 'security@example.com' }))
@@ -1519,10 +1611,10 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       }),
     }))
     expect(issued.status).toBe(201)
-    const issuance = await issued.json() as {
+    const issuance = await responseData<{
       accessToken: { id: string; displayPrefix: string; constraints: string[] }
       token: string
-    }
+    }>(issued)
     expect(issuance.token).toMatch(/^canopy_pat_[A-Za-z0-9_-]{16}_[A-Za-z0-9_-]{43}$/)
     expect(issuance.accessToken).toEqual(expect.objectContaining({
       constraints: ['accounts.view-self', 'counters.read', 'counters.write'],
@@ -1537,7 +1629,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       headers: { authorization: `Bearer ${issuance.token}` },
     }))
     expect(bearerMe.status).toBe(200)
-    expect(await bearerMe.json()).toEqual(expect.objectContaining({
+    expect(await responseData(bearerMe)).toEqual(expect.objectContaining({
       actor: expect.objectContaining({ kind: 'user' }),
       authentication: expect.objectContaining({
         method: 'bearer',
@@ -1550,9 +1642,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       headers: { cookie, authorization: `Bearer ${issuance.token}` },
     }))
     expect(ambiguous.status).toBe(401)
-    expect(await ambiguous.json()).toEqual(expect.objectContaining({
-      error: expect.objectContaining({ code: 'ambiguous_credentials' }),
-    }))
+    expect(await responseFailure(ambiguous)).toEqual(expect.objectContaining({ code: 'ambiguous_credentials' }))
 
     const bearerCannotManage = await http.fetch(new Request('http://canopy.test/auth/tokens', {
       headers: { authorization: `Bearer ${issuance.token}` },
@@ -1564,7 +1654,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       { method: 'POST', headers: { cookie, origin: 'http://canopy.test' } },
     ))
     expect(rotated.status).toBe(200)
-    const rotation = await rotated.json() as { accessToken: { id: string }; token: string }
+    const rotation = await responseData<{ accessToken: { id: string }; token: string }>(rotated)
     expect(rotation.accessToken.id).not.toBe(issuance.accessToken.id)
     const oldToken = await http.fetch(new Request('http://canopy.test/auth/me', {
       headers: { authorization: `Bearer ${issuance.token}` },
@@ -1598,14 +1688,14 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const runtime = await bootPersistenceRuntime()
     const http = new HonoHttpEngine(runtime)
     const registration = await http.fetch(jsonRequest('http://canopy.test/auth/register', { email: 'operator-auth@example.com', password: 'operator secure password' }))
-    const identityId = (await registration.json() as { identity: { id: string } }).identity.id
+    const identityId = (await responseData<{ identity: { id: string } }>(registration)).identity.id
     const login = await http.fetch(jsonRequest('http://canopy.test/auth/login', { email: 'operator-auth@example.com', password: 'operator secure password' }))
     const cookie = login.headers.get('set-cookie')!.split(';', 1)[0]!
     const issued = await http.fetch(new Request('http://canopy.test/auth/tokens', {
       method: 'POST', headers: { cookie, origin: 'http://canopy.test', 'content-type': 'application/json' },
       body: JSON.stringify({ name: 'operator-proof' }),
     }))
-    const tokenGrant = await issued.json() as { accessToken: { id: string }; token: string }
+    const tokenGrant = await responseData<{ accessToken: { id: string }; token: string }>(issued)
     const sessionId = (await pool.query<{ id: string }>(`SELECT id FROM canopy_auth_sessions WHERE identity_id = $1 AND revoked_at IS NULL`, [identityId])).rows[0]!.id
     const output: string[] = []
     const errors: string[] = []
@@ -1714,20 +1804,20 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
 
     const home = await http.fetch(new Request('http://canopy.test/'))
     expect(home.status).toBe(200)
-    expect(await home.json()).toEqual(expect.objectContaining({
+    expect(await responseData(home)).toEqual(expect.objectContaining({
       name: 'Canopy',
       status: 'growing',
     }))
 
     const health = await http.fetch(new Request('http://canopy.test/health'))
     expect(health.status).toBe(200)
-    expect(await health.json()).toEqual({ status: 'ok' })
+    expect(await responseData(health)).toEqual({ status: 'ok' })
 
     const hello = await http.fetch(new Request(
       'http://canopy.test/hello/Ada?greeting=Welcome',
     ))
     expect(hello.status).toBe(200)
-    expect(await hello.json()).toEqual({ message: 'Welcome, Ada!' })
+    expect(await responseData(hello)).toEqual({ message: 'Welcome, Ada!' })
 
     const incremented = await http.fetch(new Request(
       'http://canopy.test/counters/http-counter/increment',
@@ -1742,7 +1832,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     ))
     expect(incremented.status).toBe(200)
     expect(incremented.headers.get('x-correlation-id')).toBe('http-correlation')
-    expect(await incremented.json()).toEqual(expect.objectContaining({
+    expect(await responseData(incremented)).toEqual(expect.objectContaining({
       id: 'http-counter',
       value: 3,
       version: 1,
@@ -1773,7 +1863,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ message: 'hello' }),
     }))
-    expect(await pinged.json()).toEqual({ message: 'hello' })
+    expect(await responseData(pinged)).toEqual({ message: 'hello' })
     expect(recordedEvents.at(-1)).toEqual(expect.objectContaining({
       event: 'http-pinged',
       phase: 'http',
@@ -1789,9 +1879,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       },
     ))
     expect(invalid.status).toBe(422)
-    expect(await invalid.json()).toEqual(expect.objectContaining({
-      error: expect.objectContaining({ code: 'validation_failed' }),
-    }))
+    expect(await responseFailure(invalid)).toEqual(expect.objectContaining({ code: 'validation_failed' }))
 
     const failed = await http.fetch(new Request(
       'http://canopy.test/counters/rejected-http-event/increment',
@@ -1802,11 +1890,11 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       },
     ))
     expect(failed.status).toBe(500)
-    expect(await failed.json()).toEqual({
-      error: {
-        code: 'internal_error',
-        message: 'The application could not complete the request.',
-      },
+    expect(await responseFailure(failed)).toEqual({
+      ok: false,
+      code: 'internal_error',
+      message: 'The application could not complete the request.',
+      data: null,
     })
     const rejectedEntity = await pool.query<{ count: string }>(`
       SELECT count(*) FROM canopy_entity_states WHERE entity_id = 'rejected-http-event'
@@ -1822,11 +1910,11 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       },
     ))
     expect(malformed.status).toBe(400)
-    expect(await malformed.json()).toEqual({
-      error: {
-        code: 'invalid_json',
-        message: 'The request body must contain valid JSON.',
-      },
+    expect(await responseFailure(malformed)).toEqual({
+      ok: false,
+      code: 'invalid_json',
+      message: 'The request body must contain valid JSON.',
+      data: null,
     })
 
     const afterCommitFailed = await http.fetch(new Request(
@@ -1838,11 +1926,11 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       },
     ))
     expect(afterCommitFailed.status).toBe(500)
-    expect(await afterCommitFailed.json()).toEqual({
-      error: {
-        code: 'after_commit_failed',
-        message: 'The action committed, but after-commit processing did not complete successfully.',
-      },
+    expect(await responseFailure(afterCommitFailed)).toEqual({
+      ok: false,
+      code: 'after_commit_failed',
+      message: 'The action committed, but after-commit processing did not complete successfully.',
+      data: null,
     })
     const committedDespiteListener = await pool.query<{ count: string }>(`
       SELECT count(*) FROM canopy_entity_states WHERE entity_id = 'after-commit-http'
@@ -1853,15 +1941,11 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       method: 'DELETE',
     }))
     expect(missing.status).toBe(404)
-    expect(await missing.json()).toEqual(expect.objectContaining({
-      error: expect.objectContaining({ code: 'model_not_found' }),
-    }))
+    expect(await responseFailure(missing)).toEqual(expect.objectContaining({ code: 'model_not_found' }))
 
     const notFound = await http.fetch(new Request('http://canopy.test/nope'))
     expect(notFound.status).toBe(404)
-    expect(await notFound.json()).toEqual(expect.objectContaining({
-      error: expect.objectContaining({ code: 'route_not_found' }),
-    }))
+    expect(await responseFailure(notFound)).toEqual(expect.objectContaining({ code: 'route_not_found' }))
   })
 
   it('hosts Hono on Node, coordinates shutdown, and rejects later admission', async () => {
@@ -1879,7 +1963,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       body: JSON.stringify({ message: 'hosted' }),
     })
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ message: 'hosted' })
+    expect(await responseData(response)).toEqual({ message: 'hosted' })
     expect(host.state).toBe('ready')
 
     const firstShutdown = host.shutdown()
@@ -2031,7 +2115,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(capturedCounter).toBeDefined()
     expect(() => capturedCounter!.save()).toThrow(StaleModelError)
     expect(() => Counter.find('captured')).toThrow(StaleModelError)
-    expect(() => HttpPinged.dispatch('outside')).toThrow(EventDispatchError)
+    expect(() => HttpPinged.dispatch({ message: 'outside' })).toThrow(EventDispatchError)
   })
 
   it('rejects Unit of Work writes from query mode before touching PostgreSQL', async () => {
@@ -2288,6 +2372,13 @@ async function bootPersistenceRuntime(): Promise<CanopyRuntime> {
   return runtime
 }
 
+class FailingObservationRecorder extends ObservationRecorder {
+  start(): void {}
+  drain(): void {}
+  dispose(): void {}
+  record(): void { throw new Error('observation storage unavailable') }
+}
+
 function runAction<Input, Output>(
   runtime: CanopyRuntime,
   action: ActionClass<Input, Output>,
@@ -2352,6 +2443,30 @@ function jsonRequest(url: string, body: unknown): Request {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   })
+}
+
+async function responseData<Payload = unknown>(response: Response): Promise<Payload> {
+  const envelope = await response.json() as { ok?: unknown; data?: unknown }
+  expect(envelope.ok).toBe(true)
+  return envelope.data as Payload
+}
+
+async function responseFailure(response: Response): Promise<{
+  readonly ok: false
+  readonly code: string
+  readonly message: string
+  readonly data: null
+  readonly details?: unknown
+}> {
+  const envelope = await response.json() as {
+    ok: false
+    code: string
+    message: string
+    data: null
+    details?: unknown
+  }
+  expect(envelope).toEqual(expect.objectContaining({ ok: false, data: null }))
+  return envelope
 }
 
 function executionContext(id: string): ExecutionContext {

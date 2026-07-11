@@ -6,9 +6,7 @@ export class FailCounter extends Action<number, never> {
   static id = 'fail-counter'
   static override readonly access = 'public'
 
-  constructor(private readonly counter: ExecutionCounter) {
-    super()
-  }
+  private readonly counter = this.inject(ExecutionCounter)
 
   handle(amount: number): never {
     this.counter.increment(amount)

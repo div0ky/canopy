@@ -90,10 +90,10 @@ export class PricingService {
 }
 ```
 
-When a declared Action, Query, Listener, Job, Controller, or other root depends on a concrete
-class, Canopy recursively follows and autowires that constructor dependency. Concrete services do
-not require a Canopy base class, decorator, Feature role array, provider entry, or service
-registration.
+When a declared Action, Query, Listener, Job, Route, or other role injects a concrete class through
+`this.inject()`, Canopy recursively follows and autowires that service's constructor dependencies.
+Concrete services do not require a Canopy base class, decorator, Feature role array, provider
+entry, or service registration.
 
 Abstract ports, aliases, primitive values, factories, and non-default scopes remain explicit
 Feature bindings because the compiler cannot or should not infer application intent.

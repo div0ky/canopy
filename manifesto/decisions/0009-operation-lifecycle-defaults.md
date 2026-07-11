@@ -23,16 +23,15 @@ adapter.
 
 ## Initial authoring contract
 
-The initial implementation gives each operation one class. Dependencies use ordinary constructor
-injection, while invocation input belongs to the intention-revealing `handle(input)` method:
+The initial implementation gives each operation one class. Framework roles receive scoped
+dependencies through `this.inject()`, while invocation input belongs to the intention-revealing
+`handle(input)` method:
 
 ```ts
 export class CreateOrder extends Action<CreateOrderInput, Order> {
   static id = 'create-order'
 
-  constructor(private readonly orders: OrderService) {
-    super()
-  }
+  private readonly orders = this.inject(OrderService)
 
   handle(input: CreateOrderInput): Promise<Order> {
     return this.orders.create(input)
@@ -47,10 +46,11 @@ Features declare `actions` and `queries` through the accepted role arrays. Calle
 await actions.execute(CreateOrder, input)
 ```
 
-This keeps the Feature declaration concise, preserves constructor injection, makes one handler
-obvious to humans and Cultivate, and avoids separate command and handler registration ceremony.
-The compiler records the exact operation, dependency graph, scope, and transaction semantics in
-the manifest.
+This keeps the Feature declaration concise, removes routine constructor and `super()` ceremony,
+makes one handler obvious to humans and Cultivate, and avoids separate command and handler
+registration. The compiler records the exact operation, dependency graph, scope, and transaction
+semantics in the manifest. Ordinary services beneath the operation continue to use constructor
+injection.
 
 ## Consequences
 

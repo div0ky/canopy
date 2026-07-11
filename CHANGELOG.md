@@ -15,8 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Artifact-only runtime boot with injectable configuration classes, dependency ordering, startup
   unwind, readiness, and idempotent shutdown.
 - A reference application and compile-to-boot conformance suite.
-- Class-first actions and queries with constructor-injected dependencies and typed `handle(input)`
-  methods.
+- Class-first actions and queries with scoped `this.inject()` dependencies and typed
+  `handle(input)` methods.
 - Immutable actor-aware execution contexts carried privately through `AsyncLocalStorage`.
 - One dependency scope per admitted execution with explicit `implements ExecutionScoped` caching
   and deterministic disposal.
@@ -35,7 +35,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Model-driven journal and outbox staging with automatic optimistic concurrency and stable missing,
   detached, and stale model failures.
 - Feature-declared class events and listeners with compiler-inferred typed relationships, static
-  dispatch, constructor injection, and execution-local isolation.
+  typed-payload dispatch, scoped role injection, and execution-local isolation.
+- Automatic class-bound `this.logger` for every framework role, required and optional
+  `this.inject()` edges in manifest format v11, and constructor injection retained for ordinary
+  services.
+- `arbor db:studio`, backed by framework-pinned Drizzle Kit and `.env` database discovery without
+  exposing credentials in process arguments.
+- Undergrowth, the optional first-party development debugger with typed runtime observations,
+  recursive secret redaction, PostgreSQL retention, causal timelines, a read-only loopback UI,
+  Cultivate knowledge, and `arbor add undergrowth`, `undergrowth`, and `undergrowth:prune` commands.
 - Local listener failure propagation plus Laravel-aligned event-level and listener-level
   after-commit delivery that is discarded on rollback.
 - Feature-declared HTTP routes compiled into the manifest with stable identities, methods, paths,

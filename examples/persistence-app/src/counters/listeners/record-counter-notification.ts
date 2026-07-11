@@ -15,13 +15,9 @@ export class RecordCounterNotification
   static id = 'record-counter-notification'
   static override readonly access = 'public'
 
-  constructor(
-    private readonly recorder: CounterEventRecorder,
-    private readonly execution: CurrentExecution,
-    private readonly job: CurrentJob,
-  ) {
-    super()
-  }
+  private readonly recorder = this.inject(CounterEventRecorder)
+  private readonly execution = this.inject(CurrentExecution)
+  private readonly job = this.inject(CurrentJob)
 
   handle(_event: CounterNotificationRequested): void {
     this.recorder.record({

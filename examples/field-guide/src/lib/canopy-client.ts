@@ -31,6 +31,10 @@ export class CanopyClientError extends Error {
   }
 }
 
+type CanopyEnvelope<Payload> =
+  | { readonly ok: true; readonly data: Payload }
+  | { readonly ok: false; readonly code: string; readonly message: string; readonly data: null; readonly details?: unknown };
+
 export async function canopyRequest<Output>(path: string, init?: RequestInit): Promise<Output> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("content-type")) headers.set("content-type", "application/json");
@@ -40,14 +44,15 @@ export async function canopyRequest<Output>(path: string, init?: RequestInit): P
     credentials: "same-origin",
     cache: "no-store",
   });
+  if (response.status === 204 || response.headers.get("content-length") === "0") return undefined as Output;
+  const body = await response.json().catch(() => undefined) as CanopyEnvelope<Output> | undefined;
   if (!response.ok) {
-    const body = await response.json().catch(() => undefined) as { error?: { code?: string; message?: string } } | undefined;
     throw new CanopyClientError(
       response.status,
-      body?.error?.code ?? "request_failed",
-      body?.error?.message ?? `Canopy returned HTTP ${response.status}.`,
+      body && !body.ok ? body.code : "request_failed",
+      body && !body.ok ? body.message : `Canopy returned HTTP ${response.status}.`,
     );
   }
-  if (response.status === 204 || response.headers.get("content-length") === "0") return undefined as Output;
-  return await response.json() as Output;
+  if (!body?.ok) throw new CanopyClientError(response.status, "invalid_response", "Canopy returned an invalid success envelope.");
+  return body.data;
 }

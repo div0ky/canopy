@@ -6,9 +6,7 @@ export class ReadCounter extends Query<void, number> {
   static id = 'read-counter'
   static override readonly access = 'public'
 
-  constructor(private readonly counter: ExecutionCounter) {
-    super()
-  }
+  private readonly counter = this.inject(ExecutionCounter)
 
   handle(_input: void): number {
     return this.counter.value

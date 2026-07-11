@@ -33,7 +33,7 @@ Policies remain the single decision point:
 export class OrderPolicy extends Policy<Order> {
   static abilities = ['orders.view', 'orders.update']
 
-  constructor(private readonly access: ApplicationAccess) { super() }
+  private readonly access = this.inject(ApplicationAccess)
 
   async decide(request: PolicyRequest<Order>) {
     if (!await this.access.has(request.actor, request.ability, request.tenant)) {

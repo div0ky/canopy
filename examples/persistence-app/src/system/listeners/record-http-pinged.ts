@@ -7,12 +7,8 @@ export class RecordHttpPinged extends Listener<HttpPinged> {
   static id = 'record-http-pinged'
   static override readonly access = 'public'
 
-  constructor(
-    private readonly recorder: SystemEventRecorder,
-    private readonly execution: CurrentExecution,
-  ) {
-    super()
-  }
+  private readonly recorder = this.inject(SystemEventRecorder)
+  private readonly execution = this.inject(CurrentExecution)
 
   handle(_event: HttpPinged): void {
     this.recorder.record({

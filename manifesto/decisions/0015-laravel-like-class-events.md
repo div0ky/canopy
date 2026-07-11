@@ -10,8 +10,8 @@
 Canopy will provide a Laravel-like, class-first event experience. An event is a named data-bearing
 class that may be dispatched from ordinary application code anywhere a Canopy application is
 running. Listener classes declare the event they consume through their typed `handle` method,
-receive constructor-injected dependencies, and opt into queued or after-commit execution through
-the accepted capability interfaces.
+receive scoped dependencies through `this.inject()`, and opt into queued or after-commit execution
+through the accepted capability interfaces.
 
 The Canopy compiler will turn event, listener, dispatch, transaction, queue, and observability
 relationships into explicit manifest facts. The runtime does not discover listeners through
@@ -22,18 +22,14 @@ reflection or a second event registry.
 The intended MVP experience is:
 
 ```ts
-export class OrderShipped extends Event {
+export class OrderShipped extends Event<{ orderId: string }> {
   static id = 'order-shipped'
-
-  constructor(public readonly order: Order) {
-    super()
-  }
 }
 
-await OrderShipped.dispatch(order)
+await OrderShipped.dispatch({ orderId: order.id })
 ```
 
-`dispatch()` is inherited framework behavior. It constructs the event from the supplied arguments
+`dispatch()` is inherited framework behavior. It creates the event with the supplied typed payload
 and routes it through the active Canopy application and execution context. Developers do not need
 to inject a dispatcher merely to raise a named event from an action, model method, listener, job,
 schedule, controller, command, or other framework-managed entry point.
@@ -45,19 +41,17 @@ use one process-global dispatcher that makes multiple applications or tests inte
 
 ## Listener authoring
 
-Listeners are ordinary constructor-injected classes:
+Listeners are framework role classes with scoped injection:
 
 ```ts
 export class SendShipmentNotification
   extends Listener
   implements ShouldQueue
 {
-  constructor(private readonly mail: Mailer) {
-    super()
-  }
+  private readonly mail = this.inject(Mailer)
 
   async handle(event: OrderShipped): Promise<void> {
-    // ...
+    await this.mail.sendShipmentNotice(event.payload.orderId)
   }
 }
 ```

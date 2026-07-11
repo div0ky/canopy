@@ -4,6 +4,39 @@ export interface HttpEngine {
   fetch(request: Request): Promise<Response>
 }
 
+export interface HttpSuccess<Payload> {
+  readonly ok: true
+  readonly data: Payload
+}
+
+export interface HttpFailure {
+  readonly ok: false
+  readonly code: string
+  readonly message: string
+  readonly data: null
+  readonly details?: unknown
+}
+
+export type HttpEnvelope<Payload> = HttpSuccess<Payload> | HttpFailure
+
+export function httpSuccess<Payload>(data: Payload): HttpSuccess<Payload> {
+  return Object.freeze({ ok: true, data })
+}
+
+export function httpFailure(
+  code: string,
+  message: string,
+  details?: unknown,
+): HttpFailure {
+  return Object.freeze({
+    ok: false,
+    code,
+    message,
+    data: null,
+    ...(details === undefined ? {} : { details }),
+  })
+}
+
 export interface StandardSchemaIssue {
   readonly message: string
   readonly path?: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }> | undefined
@@ -115,7 +148,7 @@ export class HttpRequest {
   }
 }
 
-export abstract class Route<Output = unknown> {
+export abstract class Route<Output = unknown> extends CanopyRole {
   static readonly id: string = ''
   static readonly access: string = ''
   abstract readonly method: HttpMethod
@@ -125,10 +158,13 @@ export abstract class Route<Output = unknown> {
 
 export const Http = Object.freeze({
   json(value: unknown, status = 200, headers?: HttpHeaders): Response {
-    return Response.json(value, { status, ...(headers ? { headers } : {}) })
+    return Response.json(httpSuccess(value), { status, ...(headers ? { headers } : {}) })
   },
   created(value: unknown, headers?: HttpHeaders): Response {
-    return Response.json(value, { status: 201, ...(headers ? { headers } : {}) })
+    return Response.json(httpSuccess(value), { status: 201, ...(headers ? { headers } : {}) })
+  },
+  accepted(value: unknown, headers?: HttpHeaders): Response {
+    return Response.json(httpSuccess(value), { status: 202, ...(headers ? { headers } : {}) })
   },
   noContent(headers?: HttpHeaders): Response {
     return new Response(null, { status: 204, ...(headers ? { headers } : {}) })
@@ -136,3 +172,4 @@ export const Http = Object.freeze({
 })
 
 type HttpHeaders = Headers | Record<string, string> | Array<[string, string]>
+import { CanopyRole } from './role.js'

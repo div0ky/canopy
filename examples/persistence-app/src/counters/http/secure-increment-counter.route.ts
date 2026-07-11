@@ -1,4 +1,4 @@
-import { ActionBus, Http, type HttpRequest, Route } from '@canopy/core'
+import { ActionBus, type HttpRequest, Route } from '@canopy/core'
 import { z } from 'zod'
 
 import { SecureIncrementCounter } from '../actions/secure-increment-counter.js'
@@ -11,13 +11,13 @@ export class SecureIncrementCounterRoute extends Route {
   readonly method = 'POST'
   readonly path = '/secure/counters/:id/increment'
 
-  constructor(private readonly actions: ActionBus) { super() }
+  private readonly actions = this.inject(ActionBus)
 
-  async handle(request: HttpRequest): Promise<Response> {
+  async handle(request: HttpRequest) {
     const body = await request.validate(Body, await request.json())
-    return Http.json(await this.actions.execute(SecureIncrementCounter, {
+    return await this.actions.execute(SecureIncrementCounter, {
       id: request.param('id'),
       amount: body.amount,
-    }))
+    })
   }
 }

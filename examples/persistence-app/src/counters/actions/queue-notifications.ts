@@ -6,7 +6,8 @@ export class QueueNotifications extends Action<{ failAfterQueue?: boolean } | un
   static id = 'queue-notifications'
   static override readonly access = 'public'
 
-  constructor(private readonly mailer: Mailer, private readonly sms: Sms) { super() }
+  private readonly mailer = this.inject(Mailer)
+  private readonly sms = this.inject(Sms)
 
   async handle(input?: { failAfterQueue?: boolean }): Promise<{ mailId: string; smsId: string }> {
     const mailId = randomUUID()

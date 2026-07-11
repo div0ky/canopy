@@ -8,7 +8,8 @@ export class RevokeAccessTokenRoute extends Route {
   readonly method = 'DELETE'
   readonly path = '/auth/tokens/:id'
 
-  constructor(private readonly auth: Auth, private readonly execution: CurrentExecution) { super() }
+  private readonly auth = this.inject(Auth)
+  private readonly execution = this.inject(CurrentExecution)
 
   async handle(request: HttpRequest): Promise<Response> {
     await this.auth.revokeAccessToken(requirePasswordSession(this.execution), request.param('id'))

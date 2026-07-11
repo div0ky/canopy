@@ -1,16 +1,17 @@
 # Arbor Runtime and Observability Vertical Slice
 
 - **Status:** Implemented proof
-- **Manifest format:** 10
+- **Manifest format:** 11
 - **Completed:** 2026-07-10
 
 Arbor now owns Canopy's complete daily command surface: application creation, all canonical role
 generators, TypeScript/manifest builds, forward migrations with checksums and advisory locking,
 independent `serve`, `work`, and `schedule` roles, combined `dev`, application console commands,
-focused manifest inspection, queue recovery, and communications recovery.
+focused manifest inspection, database browsing through `db:studio`, queue recovery, and
+communications recovery.
 
-Application commands are explicit Feature roles. They compile into the manifest, use constructor
-injection and default-deny authorization, receive one normal admitted execution scope, and run as a
+Application commands are explicit Feature roles. They compile into the manifest, use scoped
+`this.inject()` dependencies and default-deny authorization, receive one normal admitted execution scope, and run as a
 system actor through `arbor namespace:command`. Arbor installs process signal handlers as the host;
 `Canopy.boot()` remains free of process-global side effects.
 

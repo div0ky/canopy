@@ -6,9 +6,7 @@ import { observerLog } from '../../support/observer-log.js'
 export class CounterObserver extends Observer<Counter> {
   static id = 'counter'
 
-  constructor(private readonly execution: CurrentExecution) {
-    super()
-  }
+  private readonly execution = this.inject(CurrentExecution)
 
   retrieved(model: Counter): void { this.record('retrieved', model) }
   saving(model: Counter): void { this.record('saving', model) }

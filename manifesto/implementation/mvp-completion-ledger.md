@@ -42,7 +42,7 @@ applications and tools do not depend on undocumented behavior.
 | Configuration and secrets | Complete | Declared-only environment loading, typed groups, secrets, diagnostics, and overrides are proven. |
 | Runtime lifecycle | Complete | Independent roles, bounded boot/readiness/drain/stop/dispose, unwind, and lifecycle telemetry are proven. |
 | Actions and queries | Complete | Transactions, read-only enforcement, authorization, resources, and operation rules are proven. |
-| Stable HTTP errors and validation | Complete | Validation, response normalization, trace headers, auth errors, and shutdown behavior are proven. |
+| HTTP envelopes, errors, and validation | Complete | Automatic payload wrapping, discriminated failures, validation details, trace headers, auth errors, raw exceptions, and shutdown behavior are proven. |
 | Eloquent-style models and persistence | Complete | Hydration, identity, dirty state, save/delete/refresh, observers, concurrency, and migrations are proven. |
 | Journal and outbox | Complete | Atomic writes, causal context, rollback, visibility, queue handoff, and inspection are proven. |
 
@@ -82,10 +82,11 @@ applications and tools do not depend on undocumented behavior.
 
 | Capability | State | Remaining acceptance work |
 | --- | --- | --- |
-| Structured logs | Complete | Built-in constructor injection, recursive redaction, contextual framework channels, colored TTY output, NDJSON output, and in-memory assertions are proven. |
+| Structured logs | Complete | Automatic role-bound loggers, ordinary-service constructor injection, recursive redaction, contextual framework channels, colored TTY output, NDJSON output, and in-memory assertions are proven. |
 | W3C trace context | Complete | HTTP validation/propagation plus durable queue, delivery, journal, and outbox correlation are proven. |
 | Metrics | Complete | Lifecycle, execution/HTTP, persistence, auth, authorization, queue/schedule, and communications instruments are proven. |
-| Diagnostics | Complete | Graph, routes, policies, observers, listeners, jobs, schedules, auth, delivery, journal, outbox, and cache are inspectable through Arbor. |
+| Diagnostics | Complete | Graph, routes, policies, observers, listeners, jobs, schedules, auth, delivery, journal, outbox, and cache are inspectable through Arbor; `db:studio` provides safe local database browsing. |
+| Development execution debugger | Complete | Optional Undergrowth capture, redaction, causal PostgreSQL timelines, bounded retention, loopback UI, Arbor workflow, Cultivate knowledge, and an automatic test fake are proven. |
 | Operator recovery | Complete | Queue, delivery, schedule, session, token, cache, and auth-pruning operations are proven through Arbor. |
 | Production topology | Complete | The same manifest boots independent HTTP, worker, and scheduler roles; combined dev and bounded shutdown are proven. |
 
@@ -97,7 +98,7 @@ applications and tools do not depend on undocumented behavior.
 | `new` application generator | Complete | A clean generated app compiles and boots auth, HTTP, persistence, policy, model, observer, event, signal, job, schedule, mail, SMS, telemetry, and tests. |
 | `make:*` generators | Complete | Every canonical role is generated, registered, overwrite-safe, and authorization-explicit. |
 | Database commands | Complete | Forward migration, status, batching, checksums, advisory lock, and drift refusal are proven; destructive rollback is intentionally excluded. |
-| Runtime commands | Complete | Independent serve/work/schedule and combined dev hosts are proven. |
+| Runtime commands | Complete | Independent serve/work/schedule, combined dev, and fail-safe fresh-runtime hot reload are proven. |
 | Inspection commands | Complete | Graph, routes, reactive roles, policies, commands, queues, deliveries, infrastructure, auth, and schedules are proven. |
 | Testing package and fakes | Complete | HTTP/auth/persistence/queue/comms/cache/telemetry plus direct event, signal, job, and schedule APIs are proven against real manifests. |
 | Cultivate integration | Complete | Derived manifest knowledge, command discovery, conventions, principles, and safe mutation guidance are generated. |

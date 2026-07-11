@@ -15,7 +15,8 @@ export class IssueAccessTokenRoute extends Route {
   readonly method = 'POST'
   readonly path = '/auth/tokens'
 
-  constructor(private readonly auth: Auth, private readonly execution: CurrentExecution) { super() }
+  private readonly auth = this.inject(Auth)
+  private readonly execution = this.inject(CurrentExecution)
 
   async handle(request: HttpRequest): Promise<Response> {
     const identityId = requirePasswordSession(this.execution)

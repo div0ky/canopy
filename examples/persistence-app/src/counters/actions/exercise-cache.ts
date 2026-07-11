@@ -11,7 +11,7 @@ export class ExerciseCache extends Action<string, ExerciseCacheResult> {
   static id = 'exercise-cache'
   static override readonly access = 'public'
 
-  constructor(private readonly cache: Cache) { super() }
+  private readonly cache = this.inject(Cache)
 
   async handle(key: string): Promise<ExerciseCacheResult> {
     const added = await this.cache.add(`${key}:counter`, 1, { ttlSeconds: 60 })

@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
 
 import {
   Auth,
@@ -27,6 +29,7 @@ import {
   type LoginInput,
   MemoryCache,
   MemoryLogSink,
+  MemoryObservationRecorder,
   MemoryTelemetry,
   type OutboxMessage,
   type PersistedEntity,
@@ -49,7 +52,13 @@ import {
 import { HonoHttpEngine } from '@canopy/http-hono'
 import { Canopy, type BootOptions, type CanopyRuntime } from '@canopy/runtime'
 
-export { FakeMailTransport, FakeSmsTransport, MemoryCache, MemoryLogSink, MemoryTelemetry }
+export { FakeMailTransport, FakeSmsTransport, MemoryCache, MemoryLogSink, MemoryObservationRecorder, MemoryTelemetry }
+
+export class TestObservationRecorder extends MemoryObservationRecorder {
+  start(): void {}
+  drain(): void {}
+  dispose(): void {}
+}
 
 export class CanopyTestHarness {
   readonly http: HonoHttpEngine
@@ -57,7 +66,12 @@ export class CanopyTestHarness {
   #actor: ActorRef = { kind: 'anonymous' }
   #authentication: AuthenticationContext = { state: 'anonymous' }
 
-  private constructor(readonly runtime: CanopyRuntime, logs: MemoryLogSink, readonly auth?: TestAuth) {
+  private constructor(
+    readonly runtime: CanopyRuntime,
+    logs: MemoryLogSink,
+    readonly auth?: TestAuth,
+    readonly observations?: TestObservationRecorder,
+  ) {
     this.http = new HonoHttpEngine(runtime)
     this.logs = logs
   }
@@ -67,7 +81,11 @@ export class CanopyTestHarness {
     options: BootOptions & { readonly authProviderId?: string } = {},
   ): Promise<CanopyTestHarness> {
     const auth = options.authProviderId ? new TestAuth() : undefined
+    const observation = await testObservationOverride(options.artifactsDirectory)
     const overrides = {
+      ...(observation && !(observation.providerId in (options.providerOverrides ?? {}))
+        ? { [observation.providerId]: observation.recorder }
+        : {}),
       ...options.providerOverrides,
       ...(auth && options.authProviderId ? { [options.authProviderId]: auth } : {}),
     }
@@ -76,7 +94,7 @@ export class CanopyTestHarness {
       ? false as const
       : { level: 'debug' as const, ...options.logging, sink: logs }
     const runtime = await Canopy.boot(application, { ...options, providerOverrides: overrides, logging })
-    return new CanopyTestHarness(runtime, logs, auth)
+    return new CanopyTestHarness(runtime, logs, auth, observation?.recorder)
   }
 
   actingAs(actor: ActorRef, authentication?: AuthenticationContext): this {
@@ -98,14 +116,14 @@ export class CanopyTestHarness {
     return this.admit(() => this.runtime.queries.execute(query, input), 'test:query')
   }
 
-  event<Arguments extends readonly unknown[], Instance extends Event>(
+  event<Arguments extends readonly unknown[], Instance extends Event<unknown>>(
     event: (new (...arguments_: Arguments) => Instance) & { readonly id: string; dispatch(...arguments_: Arguments): Promise<void> },
     ...arguments_: Arguments
   ): Promise<void> {
     return this.admit(() => event.dispatch(...arguments_), `test:event:${event.id}`)
   }
 
-  signal<Arguments extends readonly unknown[], Instance extends Signal>(
+  signal<Arguments extends readonly unknown[], Instance extends Signal<unknown>>(
     signal: (new (...arguments_: Arguments) => Instance) & { readonly id: string; dispatch(...arguments_: Arguments): Promise<void> },
     ...arguments_: Arguments
   ): Promise<void> {
@@ -138,6 +156,19 @@ export class CanopyTestHarness {
       transport: { kind: 'test', name },
     }, work)
   }
+}
+
+async function testObservationOverride(
+  artifactsDirectory: string | undefined,
+): Promise<{ readonly providerId: string; readonly recorder: TestObservationRecorder } | undefined> {
+  const manifestPath = path.join(path.resolve(artifactsDirectory ?? '.canopy'), 'manifest.json')
+  try {
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
+      providers?: Array<{ id: string; capabilities?: readonly string[] }>
+    }
+    const provider = manifest.providers?.find((entry) => entry.capabilities?.includes('observations'))
+    return provider ? { providerId: provider.id, recorder: new TestObservationRecorder() } : undefined
+  } catch { return undefined }
 }
 
 export class TestAuth extends Auth {

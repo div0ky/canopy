@@ -1,8 +1,9 @@
 # First-class logging
 
 Canopy owns logging as a framework primitive. Logging is not an application-selected provider and
-it is not a synonym for metrics or tracing. `Logger` is always constructor-injectable, including in
-ordinary concrete services reached through the dependency graph.
+it is not a synonym for metrics or tracing. Every framework role automatically inherits a
+class-bound `this.logger`. `Logger` remains constructor-injectable in ordinary concrete services
+reached through the dependency graph.
 
 ```ts
 import { Logger } from '@canopy/core'

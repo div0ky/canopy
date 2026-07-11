@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import { compileApplication } from '@canopy/compiler'
-import { MemoryCache, SecretString } from '@canopy/core'
+import { MemoryCache, RoleInjectionError, SecretString, sanitizeObservationAttributes, sanitizeObservationError } from '@canopy/core'
 import {
   Canopy,
   ConfigurationValidationError,
@@ -13,6 +13,7 @@ import {
   RuntimeBootError,
   RuntimeIntegrityError,
 } from '@canopy/runtime'
+import { PostgresUndergrowth } from '@canopy/undergrowth'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { Application } from '../examples/reference-app/dist/application.js'
@@ -52,6 +53,38 @@ describe('foundational compile-to-boot slice', () => {
     expect(String(secret)).toBe('[REDACTED]')
     expect(JSON.stringify({ secret })).toBe('{"secret":"[REDACTED]"}')
     expect(secret.reveal()).toBe('database-password')
+  })
+
+  it('recursively redacts observation evidence before a recorder can receive it', () => {
+    const attributes = sanitizeObservationAttributes({
+      email: 'ada@example.com',
+      password: 'correct horse battery staple',
+      headers: { authorization: 'Bearer dangerously-visible', accept: 'application/json' },
+      database: 'postgresql://canopy:private@localhost/canopy',
+      circular: (() => { const value: Record<string, unknown> = {}; value.self = value; return value })(),
+    })
+    expect(attributes).toEqual(expect.objectContaining({
+      email: 'ada@example.com', password: '[REDACTED]',
+      headers: { authorization: '[REDACTED]', accept: 'application/json' },
+      database: 'postgresql://canopy:[REDACTED]@localhost/canopy',
+      circular: { self: '[CIRCULAR]' },
+    }))
+    expect(sanitizeObservationError(new Error('token=visible-secret')).message).toBe('token=[REDACTED]')
+  })
+
+  it('requires an explicit production override before Undergrowth can start', async () => {
+    const recorder = new PostgresUndergrowth({
+      connectionString: 'postgresql://unused:unused@127.0.0.1:1/unused',
+      environment: 'production',
+    })
+    await expect(recorder.start({
+      signal: new AbortController().signal,
+      deadline: new Date(Date.now() + 1_000),
+    })).rejects.toThrow('disabled in production')
+  })
+
+  it('fails clearly when a role with required scoped dependencies is constructed directly', () => {
+    expect(() => new IncrementCounter()).toThrow(RoleInjectionError)
   })
 
   it('provides a deterministic in-memory cache with TTL and atomic-style primitives', async () => {
@@ -103,6 +136,26 @@ describe('foundational compile-to-boot slice', () => {
       ['query:operations/mutate-counter', false],
       ['query:operations/read-counter', false],
     ])
+    expect(first.manifest.actions.find((action) => action.id.endsWith('/increment-counter'))?.dependencies)
+      .toEqual([
+        expect.objectContaining({
+          kind: 'role',
+          parameter: 'counter',
+          targetId: 'service:operations/execution-counter',
+        }),
+        expect.objectContaining({
+          kind: 'role',
+          parameter: 'audit',
+          token: 'OptionalCounterAudit',
+          optional: true,
+        }),
+      ])
+    expect(first.manifest.providers.find((provider) => provider.id.endsWith('/execution-counter'))?.dependencies)
+      .toEqual([expect.objectContaining({
+        kind: 'constructor',
+        parameter: 'execution',
+        targetId: 'canopy:current-execution',
+      })])
     expect(firstRegistry).not.toContain('dependencies')
     expect(firstRegistry).not.toContain('lifecycle')
   })
@@ -240,7 +293,7 @@ describe('foundational compile-to-boot slice', () => {
       artifactsDirectory,
       dotenvPath: false,
       environment: {},
-    })).rejects.toThrow('Unsupported Canopy manifest format 2; expected 10')
+    })).rejects.toThrow('Unsupported Canopy manifest format 2; expected 11')
   })
 
   it('rejects an Application constructor that does not match the generated registry', async () => {

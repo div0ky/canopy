@@ -497,6 +497,9 @@ export async function compileApplication(
         ...(extendsNamedClass(declaration, 'Telemetry', checker)
           ? ['telemetry' as const]
           : []),
+        ...(extendsNamedClass(declaration, 'ObservationRecorder', checker)
+          ? ['observations' as const]
+          : []),
       ],
       source: sourceOf(declaration, normalized.projectRoot),
       dependencies: [],
@@ -516,10 +519,54 @@ export async function compileApplication(
     ownerId: string,
   ): readonly DependencyManifestEntry[] {
     const constructor = declaration.members.find(ts.isConstructorDeclaration)
-    return constructor?.parameters.map((parameter) => {
-      const optional = Boolean(parameter.questionToken || parameter.initializer)
-        || includesUndefined(checker.getTypeAtLocation(parameter))
-      const dependencyDeclaration = classDeclarationForType(parameter, checker)
+    const frameworkRole = [
+      'Action', 'Query', 'Route', 'Listener', 'Job', 'Policy', 'SignalHandler', 'Observer', 'Command',
+    ].some((role) => extendsNamedClass(declaration, role, checker))
+    if (frameworkRole && constructor && constructor.parameters.length > 0) {
+      fail(
+        constructor,
+        `${requiredClassName(declaration)} is a framework role; declare scoped dependencies with this.inject() instead of constructor parameters.`,
+      )
+    }
+    const constructorDependencies = constructor?.parameters.map((parameter) => dependencyFor(
+      parameter,
+      parameter.name.getText(),
+      Boolean(parameter.questionToken || parameter.initializer)
+        || includesUndefined(checker.getTypeAtLocation(parameter)),
+      'constructor',
+      classDeclarationForType(parameter, checker),
+    )) ?? []
+    const injectionCalls: ts.CallExpression[] = []
+    const visit = (node: ts.Node): void => {
+      if (ts.isCallExpression(node) && roleInjectionKind(node)) {
+        injectionCalls.push(node)
+      }
+      ts.forEachChild(node, visit)
+    }
+    declaration.members.forEach(visit)
+    const roleDependencies = injectionCalls.map((call) => {
+      const member = call.parent
+      if (!ts.isPropertyDeclaration(member) || member.initializer !== call || member.parent !== declaration) {
+        fail(call, 'this.inject() must be the direct initializer of a role class property.')
+      }
+      const injectionKind = roleInjectionKind(call)
+      if (!injectionKind || call.arguments.length !== 1) {
+        fail(call, 'this.inject() requires exactly one statically identifiable dependency token.')
+      }
+      const name = propertyName(member.name)
+      if (!name) fail(member, 'Injected role properties must use an identifier or string literal name.')
+      const dependencyDeclaration = resolveClassReference(call.arguments[0]!, checker)
+      return dependencyFor(call, name, injectionKind === 'optional', 'role', dependencyDeclaration)
+    })
+    return [...constructorDependencies, ...roleDependencies]
+
+    function dependencyFor(
+      source: ts.Node,
+      parameter: string,
+      optional: boolean,
+      kind: DependencyManifestEntry['kind'],
+      dependencyDeclaration: ts.ClassDeclaration | undefined,
+    ): DependencyManifestEntry {
       let targetId: string | undefined
 
       if (dependencyDeclaration) {
@@ -528,9 +575,9 @@ export async function compileApplication(
         const capabilityProvider = capability
           ? providers.find((provider) => provider.capabilities.includes(capability))
           : undefined
-        if (capability && !capabilityProvider) {
+        if (capability && !capabilityProvider && !optional) {
           fail(
-            parameter,
+            source,
             `${requiredClassName(dependencyDeclaration)} requires one selected ${capability} provider.`,
           )
         }
@@ -550,42 +597,47 @@ export async function compileApplication(
         const commandRoot = commandRoots.get(dependencyDeclaration)
         if (operationRoot) {
           fail(
-            parameter,
+            source,
             `${requiredClassName(dependencyDeclaration)} is an operation class; inject ActionBus or QueryBus instead.`,
           )
         }
         if (modelRoot) {
-          fail(parameter, `${requiredClassName(dependencyDeclaration)} is a model class and is not a dependency; use its static retrieval API.`)
+          fail(source, `${requiredClassName(dependencyDeclaration)} is a model class and is not a dependency; use its static retrieval API.`)
         }
         if (routeRoot || eventRoot || listenerRoot || jobRoot || scheduleRoot || policyRoot || observerRoot
           || signalRoot || signalHandlerRoot || commandRoot) {
           fail(
-            parameter,
+            source,
             `${requiredClassName(dependencyDeclaration)} is a framework role class and cannot be injected directly.`,
           )
         }
         if (providerRoot && providerRoot.ownerId !== ownerId) {
-          fail(parameter, `${requiredClassName(dependencyDeclaration)} is private to Feature ${providerRoot.ownerId}.`)
+          fail(source, `${requiredClassName(dependencyDeclaration)} is private to Feature ${providerRoot.ownerId}.`)
         }
+        const abstractDependency = hasModifier(dependencyDeclaration, ts.SyntaxKind.AbstractKeyword)
         targetId = builtinId ?? capabilityProvider?.id ?? configuration?.id
-          ?? registerProvider(
-            dependencyDeclaration,
-            providerRoot?.ownerId ?? ownerId,
-            providerRoot ? 'provider' : 'service',
-          ).id
+          ?? (optional && abstractDependency
+            ? undefined
+            : registerProvider(
+              dependencyDeclaration,
+              providerRoot?.ownerId ?? ownerId,
+              providerRoot ? 'provider' : 'service',
+            ).id)
       }
 
       if (!targetId && !optional) {
-        fail(parameter, `Required constructor dependency ${parameter.name.getText()} cannot be resolved to a declared configuration or concrete class.`)
+        fail(source, `Required ${kind === 'role' ? 'role' : 'constructor'} dependency ${parameter} cannot be resolved to a declared configuration or concrete class.`)
       }
 
       return {
-        parameter: parameter.name.getText(),
+        kind,
+        parameter,
+        token: dependencyDeclaration ? requiredClassName(dependencyDeclaration) : parameter,
         ...(targetId ? { targetId } : {}),
         optional,
-        source: sourceOf(parameter, normalized.projectRoot),
+        source: sourceOf(source, normalized.projectRoot),
       } satisfies DependencyManifestEntry
-    }) ?? []
+    }
   }
 
   function registerOperation(
@@ -1301,6 +1353,19 @@ function classDeclarationForType(
   return declaration && ts.isClassDeclaration(declaration) ? declaration : undefined
 }
 
+function roleInjectionKind(call: ts.CallExpression): 'required' | 'optional' | undefined {
+  if (!ts.isPropertyAccessExpression(call.expression)) return undefined
+  if (call.expression.name.text === 'inject'
+    && call.expression.expression.kind === ts.SyntaxKind.ThisKeyword) return 'required'
+  const receiver = call.expression.expression
+  return call.expression.name.text === 'optional'
+    && ts.isPropertyAccessExpression(receiver)
+    && receiver.name.text === 'inject'
+    && receiver.expression.kind === ts.SyntaxKind.ThisKeyword
+    ? 'optional'
+    : undefined
+}
+
 function compileConfigurationProperty(
   configurationName: string,
   property: ts.PropertyDeclaration,
@@ -1460,13 +1525,18 @@ function providerCapabilityForDeclaration(
   declaration: ts.ClassDeclaration,
 ): ProviderManifestEntry['capabilities'][number] | undefined {
   const name = requiredClassName(declaration)
-  if (name !== 'Auth' && name !== 'Cache' && name !== 'MailTransport' && name !== 'SmsTransport' && name !== 'Telemetry') return undefined
+  if (name !== 'Auth' && name !== 'TransactionManager' && name !== 'QueueManager'
+    && name !== 'Cache' && name !== 'MailTransport' && name !== 'SmsTransport'
+    && name !== 'Telemetry' && name !== 'ObservationRecorder') return undefined
   const source = declaration.getSourceFile().fileName.split(path.sep).join('/')
   return source.includes('/packages/core/') || source.includes('/@canopy/core/')
     ? name === 'Auth' ? 'authentication'
-      : name === 'Cache' ? 'cache'
-        : name === 'MailTransport' ? 'mail'
-          : name === 'SmsTransport' ? 'sms' : 'telemetry'
+      : name === 'TransactionManager' ? 'transactions'
+        : name === 'QueueManager' ? 'queues'
+          : name === 'Cache' ? 'cache'
+            : name === 'MailTransport' ? 'mail'
+              : name === 'SmsTransport' ? 'sms'
+                : name === 'Telemetry' ? 'telemetry' : 'observations'
     : undefined
 }
 

@@ -6,6 +6,8 @@ import {
   AuthenticationRateLimitError,
   AuthorizationError,
   HttpError,
+  httpFailure,
+  httpSuccess,
   type HttpEngine,
   ModelNotFoundError,
   OptimisticConcurrencyError,
@@ -195,7 +197,7 @@ function formatTraceparent(trace: TraceContext): string | undefined {
 function normalizeResponse(value: unknown): Response {
   if (value instanceof Response) return value
   if (value === undefined) return new Response(null, { status: 204 })
-  return Response.json(value)
+  return Response.json(httpSuccess(value))
 }
 
 function withCorrelation(response: Response, correlationId?: string, traceparent?: string): Response {
@@ -233,10 +235,13 @@ function errorResponse(error: unknown, correlationId?: string): Response {
     )
   }
   if (error instanceof AuthenticationRateLimitError) {
-    return withCorrelation(Response.json({ error: { code: 'rate_limited', message: error.message } }, {
-      status: 429,
-      headers: { 'retry-after': String(error.retryAfterSeconds) },
-    }), correlationId)
+    return withCorrelation(errorDocument(
+      429,
+      'rate_limited',
+      error.message,
+      undefined,
+      { 'retry-after': String(error.retryAfterSeconds) },
+    ), correlationId)
   }
   if (error instanceof AuthorizationError) {
     const status = error.decision.code === 'authentication_required' ? 401 : 403
@@ -288,12 +293,7 @@ function errorDocument(
   code: string,
   message: string,
   details?: unknown,
+  headers?: Headers | Record<string, string> | Array<[string, string]>,
 ): Response {
-  return Response.json({
-    error: {
-      code,
-      message,
-      ...(details === undefined ? {} : { details }),
-    },
-  }, { status })
+  return Response.json(httpFailure(code, message, details), { status, ...(headers ? { headers } : {}) })
 }

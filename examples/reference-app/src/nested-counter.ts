@@ -6,9 +6,7 @@ export class NestedCounter extends Action<number, number> {
   static id = 'nested-counter'
   static override readonly access = 'public'
 
-  constructor(private readonly actions: ActionBus) {
-    super()
-  }
+  private readonly actions = this.inject(ActionBus)
 
   handle(amount: number): Promise<number> {
     return this.actions.execute(IncrementCounter, { amount })

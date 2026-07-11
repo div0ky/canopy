@@ -13,9 +13,7 @@ export class DeleteCounterRoute extends Route {
   readonly method = 'DELETE'
   readonly path = '/counters/:id'
 
-  constructor(private readonly actions: ActionBus) {
-    super()
-  }
+  private readonly actions = this.inject(ActionBus)
 
   async handle(request: HttpRequest): Promise<Response> {
     await this.actions.execute(DeleteCounter, request.param('id'))

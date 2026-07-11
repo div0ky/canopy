@@ -15,12 +15,8 @@ export class LoginRoute extends Route {
   readonly method = 'POST'
   readonly path = '/auth/login'
 
-  constructor(
-    private readonly auth: Auth,
-    private readonly execution: CurrentExecution,
-  ) {
-    super()
-  }
+  private readonly auth = this.inject(Auth)
+  private readonly execution = this.inject(CurrentExecution)
 
   async handle(request: HttpRequest): Promise<Response> {
     const userAgent = request.header('user-agent')
@@ -29,7 +25,7 @@ export class LoginRoute extends Route {
     })
     const previousSessionId = this.execution.context.authentication.sessionId
     if (previousSessionId) await this.auth.revokeSession(previousSessionId)
-    await UserLoggedIn.dispatch(grant.identity.id, grant.session.id)
+    await UserLoggedIn.dispatch({ identityId: grant.identity.id, sessionId: grant.session.id })
     return Http.json({
       identity: {
         id: grant.identity.id,

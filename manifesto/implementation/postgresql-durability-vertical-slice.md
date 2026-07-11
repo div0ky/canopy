@@ -30,9 +30,7 @@ Application operations import persistence vocabulary from `@canopy/core` only:
 export class SaveCounter extends Action<SaveCounterInput, SaveCounterResult> {
   static id = 'save-counter'
 
-  constructor(private readonly unitOfWork: UnitOfWork) {
-    super()
-  }
+  private readonly unitOfWork = this.inject(UnitOfWork)
 }
 ```
 

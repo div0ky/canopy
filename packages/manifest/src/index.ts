@@ -1,4 +1,4 @@
-export const MANIFEST_FORMAT_VERSION = 10 as const
+export const MANIFEST_FORMAT_VERSION = 11 as const
 
 export type Scope = 'singleton' | 'execution' | 'transient'
 
@@ -45,7 +45,9 @@ export interface ConfigurationManifestEntry {
 }
 
 export interface DependencyManifestEntry {
+  readonly kind: 'constructor' | 'role'
   readonly parameter: string
+  readonly token: string
   readonly targetId?: string
   readonly optional: boolean
   readonly source: SourceProvenance
@@ -66,7 +68,7 @@ export interface ProviderManifestEntry {
   readonly role: 'provider' | 'service'
   readonly scope: Scope
   readonly durableIdentity: boolean
-  readonly capabilities: readonly ('authentication' | 'queues' | 'transactions' | 'cache' | 'mail' | 'sms' | 'telemetry')[]
+  readonly capabilities: readonly ('authentication' | 'queues' | 'transactions' | 'cache' | 'mail' | 'sms' | 'telemetry' | 'observations')[]
   readonly source: SourceProvenance
   readonly dependencies: readonly DependencyManifestEntry[]
   readonly lifecycle: LifecycleManifestEntry

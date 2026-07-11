@@ -3,7 +3,8 @@ import { Auth, CurrentExecution, type HttpRequest, Route } from '@canopy/core'
 export class ChangePasswordRoute extends Route {
   static override readonly id = 'change-password'; static override readonly access = 'accounts.password.change'
   readonly method = 'POST'; readonly path = '/auth/password'
-  constructor(private readonly auth: Auth, private readonly execution: CurrentExecution) { super() }
+  private readonly auth = this.inject(Auth)
+  private readonly execution = this.inject(CurrentExecution)
   async handle(request: HttpRequest): Promise<Response> {
     const identityId = this.execution.context.authentication.identityId!
     const body = await request.json<{ currentPassword?: unknown; newPassword?: unknown }>()

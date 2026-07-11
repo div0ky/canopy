@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Signal } from './signal.js'
 
 export interface SignalDispatcher {
-  dispatch(signal: Signal): Promise<void>
+  dispatch(signal: Signal<unknown>): Promise<void>
 }
 
 const dispatchers = new AsyncLocalStorage<SignalDispatcher>()

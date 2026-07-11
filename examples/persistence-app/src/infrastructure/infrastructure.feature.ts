@@ -12,11 +12,12 @@ import { RecordDeliveryUpdates } from './communications/record-delivery-updates.
 import { SendGridWebhookRoute } from './communications/sendgrid-webhook.route.js'
 import { TwilioSmsWebhookRoute } from './communications/twilio-sms-webhook.route.js'
 import { ReferenceTelemetry } from './telemetry/reference-telemetry.js'
+import { ApplicationUndergrowth } from './undergrowth/application-undergrowth.js'
 
 export class InfrastructureFeature extends Feature {
   id = 'infrastructure'
   configs = [DatabaseConfig, CommunicationsConfig]
-  providers = [PersistenceTransactions, CanopyQueues, CanopyAuth, CanopyCache, ReferenceMail, ReferenceSms, ReferenceTelemetry]
+  providers = [PersistenceTransactions, CanopyQueues, CanopyAuth, CanopyCache, ReferenceMail, ReferenceSms, ReferenceTelemetry, ApplicationUndergrowth]
   actions = [RecordDeliveryUpdates]
   routes = [SendGridWebhookRoute, TwilioSmsWebhookRoute]
 }

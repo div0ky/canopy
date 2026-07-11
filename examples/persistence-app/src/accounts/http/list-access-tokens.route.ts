@@ -1,4 +1,4 @@
-import { Auth, CurrentExecution, Http, type HttpRequest, Route } from '@canopy/core'
+import { Auth, CurrentExecution, type HttpRequest, Route } from '@canopy/core'
 
 import { publicAccessToken, requirePasswordSession } from './token-management.js'
 
@@ -8,12 +8,13 @@ export class ListAccessTokensRoute extends Route {
   readonly method = 'GET'
   readonly path = '/auth/tokens'
 
-  constructor(private readonly auth: Auth, private readonly execution: CurrentExecution) { super() }
+  private readonly auth = this.inject(Auth)
+  private readonly execution = this.inject(CurrentExecution)
 
-  async handle(_request: HttpRequest): Promise<Response> {
+  async handle(_request: HttpRequest) {
     const identityId = requirePasswordSession(this.execution)
-    return Http.json({
+    return {
       accessTokens: (await this.auth.listAccessTokens(identityId)).map(publicAccessToken),
-    })
+    }
   }
 }

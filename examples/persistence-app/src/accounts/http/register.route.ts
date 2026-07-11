@@ -10,15 +10,14 @@ export class RegisterRoute extends Route {
   readonly method = 'POST'
   readonly path = '/auth/register'
 
-  constructor(private readonly auth: Auth, private readonly actions: ActionBus) {
-    super()
-  }
+  private readonly auth = this.inject(Auth)
+  private readonly actions = this.inject(ActionBus)
 
   async handle(request: HttpRequest): Promise<Response> {
     const identity = await this.auth.register(await credentials(request))
     const verification = await this.auth.issueEmailVerification(identity.id)
     await this.actions.execute(SendAuthEmail, { kind: 'verification', to: identity.email, token: verification.token.reveal() })
-    await UserRegistered.dispatch(identity.id)
+    await UserRegistered.dispatch({ identityId: identity.id })
     return Http.created({ identity: publicIdentity(identity) })
   }
 }

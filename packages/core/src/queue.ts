@@ -1,4 +1,5 @@
 import { currentJobDispatcher } from './queue-context.js'
+import { CanopyRole } from './role.js'
 import type {
   ActorRef,
   JsonValue,
@@ -23,7 +24,7 @@ export class JobDispatchError extends Error {
   override readonly name = 'JobDispatchError'
 }
 
-export abstract class Job<Input = unknown, Output = void> {
+export abstract class Job<Input = unknown, Output = void> extends CanopyRole {
   static readonly id: string = ''
   static readonly access: string = ''
   static readonly retries: number = 3

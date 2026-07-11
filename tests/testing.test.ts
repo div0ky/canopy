@@ -72,13 +72,16 @@ describe('@canopy/testing', () => {
 
       const me = await harness.request('http://canopy.test/auth/me')
       expect(me.status).toBe(200)
-      expect(await me.json()).toEqual(expect.objectContaining({ actor: { kind: 'user', id: 'ada' } }))
+      expect(await me.json()).toEqual(expect.objectContaining({
+        ok: true,
+        data: expect.objectContaining({ actor: { kind: 'user', id: 'ada' } }),
+      }))
       const home = await harness.request('http://canopy.test/')
       expect(home.status).toBe(200)
       expect((await harness.request('http://canopy.test/missing')).status).toBe(404)
       expect(harness.logs.records).toEqual(expect.arrayContaining([
         expect.objectContaining({
-          channel: 'app',
+          channel: 'home-route',
           message: 'Canopy home visited',
           context: expect.objectContaining({ transport: 'http', actorKind: 'user' }),
         }),
@@ -95,6 +98,10 @@ describe('@canopy/testing', () => {
       expect(transactions.state.deliveries.get(ids.mailId)?.state).toBe('accepted')
       expect(transactions.state.deliveries.get(ids.smsId)?.state).toBe('accepted')
       expect(telemetry.records.some((record) => record.kind === 'span')).toBe(true)
+      expect(harness.observations?.observations).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: 'action', phase: 'completed' }),
+        expect.objectContaining({ kind: 'log', name: 'Canopy home visited' }),
+      ]))
     } finally { await harness.shutdown() }
   })
 
@@ -173,8 +180,8 @@ describe('@canopy/testing', () => {
     })
     try {
       harness.actingAsSystem()
-      await harness.event(CounterIncremented, 'direct-event', 2, 2)
-      await harness.signal(CounterTouched, 'direct-signal')
+      await harness.event(CounterIncremented, { counterId: 'direct-event', amount: 2, value: 2 })
+      await harness.signal(CounterTouched, { counterId: 'direct-signal' })
       const jobId = await harness.job(ProcessCounterJob, { key: 'direct-job' })
       expect(queue.hasQueued(ProcessCounterJob)).toBe(true)
       await queue.runNext()

@@ -13,6 +13,7 @@
     { "path": "packages/auth-postgres" },
     { "path": "packages/postgres-drizzle" },
     { "path": "packages/queue-pg-boss" },
+    { "path": "packages/undergrowth" },
     { "path": "examples/reference-app" },
     { "path": "examples/persistence-app" }
   ]

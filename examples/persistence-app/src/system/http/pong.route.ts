@@ -1,4 +1,4 @@
-import { Http, type HttpRequest, Route } from '@canopy/core'
+import { type HttpRequest, Route } from '@canopy/core'
 
 import { HttpPinged } from '../events/http-pinged.js'
 
@@ -8,9 +8,9 @@ export class PongRoute extends Route {
   readonly method = 'GET'
   readonly path = '/pong'
 
-  async handle(request: HttpRequest): Promise<Response> {
+  async handle(_request: HttpRequest): Promise<{ message: string }> {
     const message = "ping";
-    await HttpPinged.dispatch(message)
-    return Http.json({ message })
+    await HttpPinged.dispatch({ message })
+    return { message }
   }
 }

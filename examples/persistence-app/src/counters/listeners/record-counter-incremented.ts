@@ -7,21 +7,17 @@ export class RecordCounterIncremented extends Listener<CounterIncremented> {
   static id = 'record-counter-incremented'
   static override readonly access = 'public'
 
-  constructor(
-    private readonly recorder: CounterEventRecorder,
-    private readonly execution: CurrentExecution,
-  ) {
-    super()
-  }
+  private readonly recorder = this.inject(CounterEventRecorder)
+  private readonly execution = this.inject(CurrentExecution)
 
   handle(event: CounterIncremented): void {
-    if (event.amount === 13) throw new Error('Unlucky counter increments are rejected locally.')
+    if (event.payload.amount === 13) throw new Error('Unlucky counter increments are rejected locally.')
     this.recorder.record({
       event: 'counter-incremented',
       phase: 'local',
       correlationId: this.execution.context.correlationId,
       actor: this.execution.context.actor.kind,
-      value: event.value,
+      value: event.payload.value,
     })
   }
 }

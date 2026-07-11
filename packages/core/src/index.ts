@@ -19,6 +19,18 @@ export {
 export { Command } from './command.js'
 export { MemoryTelemetry, NoopTelemetry, Telemetry, type TelemetryRecord } from './telemetry.js'
 export {
+  MemoryObservationRecorder,
+  NoopObservationRecorder,
+  ObservationRecorder,
+  sanitizeObservationAttributes,
+  sanitizeObservationError,
+  type Observation,
+  type ObservationContext,
+  type ObservationError,
+  type ObservationKind,
+  type ObservationPhase,
+} from './observation.js'
+export {
   ConsoleLogSink,
   formatPrettyLog,
   Logger,
@@ -79,6 +91,10 @@ import type { Job, Schedule } from './queue.js'
 import type { Observer } from './observer.js'
 import type { Command } from './command.js'
 import type { DeliveryTransition, StagedDelivery } from './communications.js'
+import { CanopyRole } from './role.js'
+
+export { CanopyRole, RoleInjectionError, type RoleInjector } from './role.js'
+export type { RoleInjectionToken } from './role-context.js'
 
 export type ConfigurationClass<T extends Configuration = Configuration> = abstract new () => T
 
@@ -105,13 +121,13 @@ export abstract class Feature {
   declare readonly models?: readonly Class<Model>[]
   declare readonly observers?: readonly Class<Observer>[]
   declare readonly routes?: readonly Class<Route>[]
-  declare readonly events?: readonly Class<Event>[]
-  declare readonly listeners?: readonly Class<Listener>[]
+  declare readonly events?: readonly Class<Event<unknown>>[]
+  declare readonly listeners?: readonly Class<Listener<any>>[]
   declare readonly jobs?: readonly Class<Job>[]
   declare readonly schedules?: readonly Class<Schedule>[]
   declare readonly policies?: readonly Class<Policy>[]
-  declare readonly signals?: readonly Class<Signal>[]
-  declare readonly signalHandlers?: readonly Class<SignalHandler>[]
+  declare readonly signals?: readonly Class<Signal<unknown>>[]
+  declare readonly signalHandlers?: readonly Class<SignalHandler<any>>[]
   declare readonly commands?: readonly Class<Command>[]
 }
 
@@ -149,9 +165,14 @@ export {
 export {
   Http,
   HttpError,
+  httpFailure,
+  httpSuccess,
+  type HttpEnvelope,
   type HttpEngine,
+  type HttpFailure,
   type HttpMethod,
   HttpRequest,
+  type HttpSuccess,
   type HttpValidationIssue,
   HttpValidationError,
   Route,
@@ -213,12 +234,12 @@ export class SecretString {
   }
 }
 
-export abstract class Action<Input = void, Output = void> {
+export abstract class Action<Input = void, Output = void> extends CanopyRole {
   static readonly access: string = ''
   abstract handle(input: Input): Output | Promise<Output>
 }
 
-export abstract class Query<Input = void, Output = void> {
+export abstract class Query<Input = void, Output = void> extends CanopyRole {
   static readonly access: string = ''
   abstract handle(input: Input): Output | Promise<Output>
 }
@@ -291,6 +312,7 @@ export interface TraceContext {
 
 export interface ExecutionContext {
   readonly executionId: string
+  readonly sourceExecutionId?: string
   readonly correlationId: string
   readonly causationId?: string
   readonly actor: ActorRef
@@ -307,6 +329,7 @@ export interface ExecutionContext {
 }
 
 export interface ExecutionContextSeed {
+  readonly sourceExecutionId?: string
   readonly correlationId?: string
   readonly causationId?: string
   readonly actor: ActorRef

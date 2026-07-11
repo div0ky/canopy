@@ -75,12 +75,8 @@ export class ProcessCounterJob extends Job<ProcessCounterInput> {
   static backoff = false
   static timeout = 10
 
-  constructor(
-    private readonly job: CurrentJob,
-    private readonly execution: CurrentExecution,
-  ) {
-    super()
-  }
+  private readonly job = this.inject(CurrentJob)
+  private readonly execution = this.inject(CurrentExecution)
 
   async handle(input: ProcessCounterInput): Promise<void> {
     // normal services and model APIs are available here
@@ -89,7 +85,7 @@ export class ProcessCounterJob extends Job<ProcessCounterInput> {
 ```
 
 The Feature declares `jobs = [ProcessCounterJob]`. The compiler verifies the stable ID, typed
-handler, constructor graph, retry policy, timeout, and lifecycle restrictions. This proof recorded
+handler, role-injection graph, retry policy, timeout, and lifecycle restrictions. This proof recorded
 them in manifest format v3; scheduling later advanced the required artifact contract to v4.
 
 `Job.dispatch(input)` is inherited and uses the current application execution rather than a

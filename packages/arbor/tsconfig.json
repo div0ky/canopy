@@ -11,6 +11,7 @@
     { "path": "../http-hono" },
     { "path": "../queue-pg-boss" },
     { "path": "../runtime" }
+    ,{ "path": "../undergrowth" }
   ],
   "include": ["src/**/*.ts"]
 }

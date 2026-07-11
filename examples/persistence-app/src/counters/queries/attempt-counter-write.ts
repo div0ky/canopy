@@ -4,9 +4,7 @@ export class AttemptCounterWrite extends Query<string, number> {
   static id = 'attempt-counter-write'
   static override readonly access = 'public'
 
-  constructor(private readonly unitOfWork: UnitOfWork) {
-    super()
-  }
+  private readonly unitOfWork = this.inject(UnitOfWork)
 
   handle(id: string): Promise<number> {
     return this.unitOfWork.saveEntity({

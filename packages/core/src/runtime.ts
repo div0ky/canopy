@@ -10,3 +10,8 @@ export {
   runWithJobDispatcher,
 } from './queue-context.js'
 export { runWithLogContext } from './logging.js'
+export {
+  runWithRoleConstruction,
+  type RoleConstructionContext,
+  type RoleInjectionToken,
+} from './role-context.js'

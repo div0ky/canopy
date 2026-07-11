@@ -11,11 +11,11 @@ The fifth Canopy implementation proves Laravel-like class events across the acti
 transaction boundary:
 
 ```text
-await CounterIncremented.dispatch(counterId, amount, value)
+await CounterIncremented.dispatch({ counterId, amount, value })
   → execution-local Canopy event dispatcher
   → declared event manifest identity
   → typed listener association
-  → constructor-injected local listeners
+  → role-scoped local listeners
   → optional after-commit registration in the active Unit of Work
   → rollback discard or post-durability execution
 ```
@@ -29,15 +29,11 @@ applications cannot share a process-global event registry accidentally.
 Events are ordinary data-bearing classes:
 
 ```ts
-export class CounterSaved extends Event implements ShouldDispatchAfterCommit {
+export class CounterSaved
+  extends Event<{ counterId: string; value: number }>
+  implements ShouldDispatchAfterCommit
+{
   static id = 'counter-saved'
-
-  constructor(
-    readonly counterId: string,
-    readonly value: number,
-  ) {
-    super()
-  }
 }
 ```
 
@@ -47,9 +43,7 @@ Listeners state the event they consume through the type of `handle(event)`:
 export class RecordCounterSaved extends Listener<CounterSaved> {
   static id = 'record-counter-saved'
 
-  constructor(private readonly recorder: EventRecorder) {
-    super()
-  }
+  private readonly recorder = this.inject(EventRecorder)
 
   handle(event: CounterSaved): void {
     this.recorder.record(event)
@@ -108,7 +102,7 @@ hidden global application.
 The complete suite contains thirty-three passing tests. Event-specific conformance proves:
 
 1. Events and listeners compile into stable, source-aware manifest relationships.
-2. Listener constructor injection and `CurrentExecution` access work normally.
+2. Listener `this.inject()` dependencies and `CurrentExecution` access work normally.
 3. A model dispatches an event through the inherited static API.
 4. Local listeners run before commit and propagate failures.
 5. Listener-level and event-level after-commit behavior runs after successful durability.

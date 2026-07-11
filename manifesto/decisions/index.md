@@ -99,6 +99,7 @@ must still be intelligible if an engine is replaced.
 | Existing-table model mapping | Laravel-like table/key/column overrides on models, with explicit advanced mappers | Accepted | [Existing tables](0023-existing-table-model-auth-mapping.md) |
 | Existing-table auth mapping | Explicit auth field/table configuration; never inferred | Accepted | [Existing tables](0023-existing-table-model-auth-mapping.md) |
 | AI-assisted engineering | Cultivate: local MCP server, guidelines, and skills; implementation deferred | Accepted | [Cultivate](0013-first-party-ai-engineering-mcp.md) |
+| Development debugger | Undergrowth: typed, correlation-driven local execution explorer | Accepted | [Undergrowth](0025-first-party-undergrowth-debugger.md) |
 
 "Accepted in principle" means the manifesto establishes the architectural requirement, while the
 observable programming contract remains to be specified.
@@ -151,6 +152,10 @@ observable programming contract remains to be specified.
     Deferred on 2026-07-10; default-deny policies and stable abilities remain core.
 23. [Map models and authentication to existing tables](0023-existing-table-model-auth-mapping.md) —
     Accepted on 2026-07-10; implementation follows the MVP.
+24. [Use role-scoped injection and plain constructor-injected services](0024-role-injection-with-plain-services.md)
+    — Accepted for the MVP on 2026-07-11.
+25. [Build Undergrowth as Canopy's first-party development debugger](0025-first-party-undergrowth-debugger.md)
+    — Accepted on 2026-07-11.
 
 ## Adding a decision
 

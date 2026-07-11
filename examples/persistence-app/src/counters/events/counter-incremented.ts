@@ -1,13 +1,5 @@
 import { Event } from '@canopy/core'
 
-export class CounterIncremented extends Event {
+export class CounterIncremented extends Event<{ counterId: string; amount: number; value: number }> {
   static override readonly id = 'counter-incremented'
-
-  constructor(
-    readonly counterId: string,
-    readonly amount: number,
-    readonly value: number,
-  ) {
-    super()
-  }
 }

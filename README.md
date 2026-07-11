@@ -36,6 +36,7 @@ Application + Feature declarations
   → first-party signals and Eloquent-style model observers
   → transactional mail and SMS with SendGrid and Twilio adapters
   → framework cache, telemetry, diagnostics, and testing fakes
+  → typed correlated runtime observations and the Undergrowth debugger
   → Arbor generation, migrations, runtime roles, inspection, and recovery
   → Cultivate-readable application knowledge
   → idempotent shutdown
@@ -59,6 +60,7 @@ implemented is documented in the
 - `@canopy/testing` — real-manifest harness and auth, persistence, queue, schedule, cache,
   communications, and telemetry fakes.
 - `@canopy/arbor` — the canonical generator, command, runtime, inspection, and recovery suite.
+- `@canopy/undergrowth` — optional PostgreSQL-backed causal execution debugger and loopback UI.
 - `examples/reference-app` — executable conformance fixture.
 - `examples/persistence-app` — domain-organized auth, HTTP, event, model, queue, worker, schedule, and PostgreSQL
   fixture.
@@ -77,7 +79,50 @@ pnpm audit:mvp
 pnpm dev
 ```
 
+`pnpm dev` watches application and framework source. Valid edits compile a new immutable graph and
+hot reload a fresh runtime process; invalid edits leave the last good server running.
+
+Browse the configured PostgreSQL database with the framework-pinned Drizzle Studio:
+
+```bash
+pnpm arbor db:studio
+```
+
+Arbor loads `DATABASE_CONNECTION_STRING` from the root `.env`. The local proxy defaults to
+`127.0.0.1:4983`; use `--host=`, `--port=`, or `--verbose` when needed.
+
+Install and open the first-party execution debugger in an application with:
+
+```bash
+pnpm arbor add undergrowth
+pnpm arbor migrate
+pnpm arbor undergrowth
+```
+
+Undergrowth opens on `127.0.0.1:4400`, correlates requests, operations, transactions, models,
+events, jobs, logs, and failures, and stores only recursively redacted, retention-bounded evidence.
+
 Generated `dist/` and `.canopy/` artifacts are intentionally ignored.
+
+## Dependency injection
+
+Framework-facing classes extend their Canopy role. They inherit a class-bound logger and resolve
+declared dependencies from the current execution scope without a constructor:
+
+```ts
+export class ListOrdersRoute extends Route {
+  private readonly orders = this.inject(OrderService)
+
+  handle() {
+    this.logger.info('Listing orders')
+    return this.orders.all()
+  }
+}
+```
+
+Optional role dependencies use `this.inject.optional(Port)`. Both required and optional edges are
+compiled into the application manifest. Ordinary services remain plain classes and use constructor
+injection, keeping focused service tests independent from the Canopy runtime.
 
 ## Existing PostgreSQL schemas
 

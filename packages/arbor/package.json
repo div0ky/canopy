@@ -3,20 +3,30 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": { "arbor": "./dist/bin.js" },
+  "bin": {
+    "arbor": "./dist/bin.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./hot-reload": {
+      "types": "./dist/hot-reload.d.ts",
+      "default": "./dist/hot-reload.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "dependencies": {
     "@canopy/compiler": "workspace:*",
     "@canopy/core": "workspace:*",
     "@canopy/http-hono": "workspace:*",
     "@canopy/queue-pg-boss": "workspace:*",
     "@canopy/runtime": "workspace:*",
+    "@canopy/undergrowth": "workspace:*",
+    "drizzle-kit": "0.31.10",
     "pg": "8.22.0"
   },
   "devDependencies": {

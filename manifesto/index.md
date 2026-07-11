@@ -27,6 +27,8 @@ those convictions into decision rules and, eventually, executable specifications
   abuse cases, controls, and the release review gate.
 - [First-class logging](specifications/logging.md) defines structured records, automatic execution
   context, safe redaction, and the colorful local console experience.
+- [Undergrowth](specifications/undergrowth.md) defines the typed, correlation-driven local
+  execution debugger and its safety and retention boundaries.
 - [Implementation proofs](implementation/index.md) record which accepted
   contracts have executable evidence without overstating the completeness of their specifications.
 - [Cultivate AI-assisted engineering](future/ai-assisted-engineering.md) describes the accepted,
@@ -383,17 +385,19 @@ export class OrdersFeature extends Feature {
 ```
 
 An event should be a named application fact that can be dispatched wherever the application needs
-it:
+it, without requiring a payload constructor:
 
 ```ts
-export class OrderShipped extends Event {
-  constructor(public readonly order: Order) {
-    super()
-  }
-}
+export class OrderShipped extends Event<{ orderId: string }> {}
 
-await OrderShipped.dispatch(order)
+await OrderShipped.dispatch({ orderId: order.id })
 ```
+
+Framework-facing classes extend their Canopy role and receive scoped dependencies through
+`this.inject()`. They also receive an automatically class-bound `this.logger`. Ordinary services
+remain plain classes and use constructor injection. Normal application code never writes
+`super()`; it appears only when a developer intentionally implements an exceptional custom role
+constructor.
 
 An HTTP endpoint should express application intent rather than HTTP plumbing:
 
@@ -418,6 +422,11 @@ type inference, tooling, and portability. Both styles may compile to the same ap
 The specification must select a primary style based on clarity and capability, not familiarity
 alone.
 
+Routes return application payloads, not transport envelopes. Canopy owns the JSON boundary and
+automatically emits `{ ok: true, data }` for success or
+`{ ok: false, code, message, data: null, details? }` for failure. Status codes remain meaningful;
+explicit Web Standards responses are reserved for bodyless or raw protocol behavior.
+
 Testing should feel like testing the application, not reconstructing its internals:
 
 ```ts
@@ -441,7 +450,7 @@ Subject to the specifications, Canopy should be able to:
 - Start and stop infrastructure in deterministic order.
 - Establish request and job execution context.
 - Propagate actor, correlation, causation, locale, and trace metadata.
-- Validate request inputs and return stable error documents.
+- Validate request inputs and return canonical success and failure envelopes.
 - Invoke authentication and authorization policies.
 - Open transactions for mutating application operations.
 - Persist entity state with optimistic concurrency.

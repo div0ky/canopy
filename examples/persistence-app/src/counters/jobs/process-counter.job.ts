@@ -22,12 +22,8 @@ export class ProcessCounterJob extends Job<ProcessCounterInput> {
   static override readonly backoff = false
   static override readonly timeout = 10
 
-  constructor(
-    private readonly job: CurrentJob,
-    private readonly execution: CurrentExecution,
-  ) {
-    super()
-  }
+  private readonly job = this.inject(CurrentJob)
+  private readonly execution = this.inject(CurrentExecution)
 
   async handle(input: ProcessCounterInput): Promise<void> {
     recordedJobAttempts.push(Object.freeze({

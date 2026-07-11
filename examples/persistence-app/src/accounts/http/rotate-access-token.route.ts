@@ -1,4 +1,4 @@
-import { Auth, CurrentExecution, Http, type HttpRequest, Route } from '@canopy/core'
+import { Auth, CurrentExecution, type HttpRequest, Route } from '@canopy/core'
 
 import { publicAccessToken, requirePasswordSession } from './token-management.js'
 
@@ -8,13 +8,14 @@ export class RotateAccessTokenRoute extends Route {
   readonly method = 'POST'
   readonly path = '/auth/tokens/:id/rotate'
 
-  constructor(private readonly auth: Auth, private readonly execution: CurrentExecution) { super() }
+  private readonly auth = this.inject(Auth)
+  private readonly execution = this.inject(CurrentExecution)
 
-  async handle(request: HttpRequest): Promise<Response> {
+  async handle(request: HttpRequest) {
     const grant = await this.auth.rotateAccessToken(
       requirePasswordSession(this.execution),
       request.param('id'),
     )
-    return Http.json({ accessToken: publicAccessToken(grant.accessToken), token: grant.token.reveal() })
+    return { accessToken: publicAccessToken(grant.accessToken), token: grant.token.reveal() }
   }
 }

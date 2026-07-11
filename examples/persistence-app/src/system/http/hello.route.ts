@@ -1,4 +1,4 @@
-import { Http, type HttpRequest, Route } from '@canopy/core'
+import { type HttpRequest, Route } from '@canopy/core'
 
 export class HelloRoute extends Route {
   static override readonly id = 'hello'
@@ -6,9 +6,9 @@ export class HelloRoute extends Route {
   readonly method = 'GET'
   readonly path = '/hello/:name'
 
-  handle(request: HttpRequest): Response {
-    return Http.json({
+  handle(request: HttpRequest): { message: string } {
+    return {
       message: `${request.query('greeting') ?? 'Hello'}, ${request.param('name')}!`,
-    })
+    }
   }
 }

@@ -3,13 +3,6 @@ import {
   type ShouldDispatchAfterCommit,
 } from '@canopy/core'
 
-export class CounterSaved extends Event implements ShouldDispatchAfterCommit {
+export class CounterSaved extends Event<{ counterId: string; value: number }> implements ShouldDispatchAfterCommit {
   static override readonly id = 'counter-saved'
-
-  constructor(
-    readonly counterId: string,
-    readonly value: number,
-  ) {
-    super()
-  }
 }

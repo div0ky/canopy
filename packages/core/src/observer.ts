@@ -1,4 +1,5 @@
 import type { Model } from './model.js'
+import { CanopyRole } from './role.js'
 
 export type ModelObserverPhase =
   | 'retrieved'
@@ -15,7 +16,7 @@ export interface ModelObserverDispatcher {
 }
 
 /** Synchronous model lifecycle coordination. Remote effects belong in queued listeners. */
-export abstract class Observer<Instance extends Model = Model> {
+export abstract class Observer<Instance extends Model = Model> extends CanopyRole {
   retrieved(_model: Instance): void | Promise<void> {}
   saving(_model: Instance): void | Promise<void> {}
   creating(_model: Instance): void | Promise<void> {}

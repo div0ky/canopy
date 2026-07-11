@@ -18,7 +18,7 @@ requirement to its implementation and acceptance evidence.
    execution-scoped hydration and identity, dirty tracking, `save()` lifecycle, concurrency, and
    atomic model-driven durability without ordinary Unit of Work ceremony.
 5. [Class events vertical slice](class-events-vertical-slice.md) — inherited static dispatch,
-   typed listener inference, constructor injection, execution context, local failure, and
+   typed listener inference, scoped role injection, execution context, local failure, and
    transaction-aware after-commit delivery.
 6. [Hono HTTP vertical slice](hono-http-vertical-slice.md) — compiled framework-owned routes,
    Web Standards requests and responses, Standard Schema validation, actor-aware admission,
@@ -68,3 +68,9 @@ requirement to its implementation and acceptance evidence.
 22. [Next.js Field Guide frontend slice](next-field-guide-vertical-slice.md) — external-consumer
     Next.js, Tailwind, and shadcn/ui proof across public HTTP, sessions, bearer tokens, protected
     models, and queued work.
+23. [Development hot reload vertical slice](development-hot-reload-vertical-slice.md) — debounced
+    source watching, fail-safe compilation, fresh-process runtime replacement, and recovery without
+    manual server restarts.
+24. [Undergrowth development debugger vertical slice](undergrowth-vertical-slice.md) — typed and
+    redacted runtime observations, PostgreSQL causal ordering and retention, one-command Arbor
+    installation, Cultivate knowledge, a read-only loopback explorer, and testing fakes.

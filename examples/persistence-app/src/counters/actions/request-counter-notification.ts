@@ -7,6 +7,6 @@ export class RequestCounterNotification extends Action<string, void> {
   static override readonly access = 'public'
 
   async handle(counterId: string): Promise<void> {
-    await CounterNotificationRequested.dispatch(counterId)
+    await CounterNotificationRequested.dispatch({ counterId })
   }
 }

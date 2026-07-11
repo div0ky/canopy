@@ -35,9 +35,7 @@ export class IncrementCounterRoute extends Route {
   method = 'POST'
   path = '/counters/:id/increment'
 
-  constructor(private readonly actions: ActionBus) {
-    super()
-  }
+  private readonly actions = this.inject(ActionBus)
 
   async handle(request: HttpRequest) {
     const body = await request.validate(Input, await request.json())
@@ -51,8 +49,10 @@ export class IncrementCounterRoute extends Route {
 ```
 
 The Feature declares `routes = [IncrementCounterRoute]`. Folder names remain irrelevant. Routes
-receive ordinary constructor injection and may return a `Response`, any JSON-compatible value, or
-`undefined` for a 204 response.
+receive scoped dependencies through `this.inject()` and normally return only their payload. Canopy wraps every
+JSON-compatible value in the canonical `{ ok: true, data }` envelope. `undefined` produces a 204;
+an explicit `Response` is the visible escape hatch for streams, files, redirects, webhooks, or
+unusual protocol behavior.
 
 `HttpRequest` provides the raw Web Standards `Request` plus path parameters, URL queries, headers,
 JSON/text body parsing, and Standard Schema validation. Zod is the pinned documented default, but
@@ -90,7 +90,7 @@ the runtime to resolve a first-party session before admission. The
 request signal participates in execution cancellation. A valid `X-Correlation-ID` is preserved;
 otherwise the runtime creates one and returns it as a response header.
 
-The adapter returns stable JSON error documents for:
+The adapter returns the stable `{ ok: false, code, message, data: null, details? }` envelope for:
 
 - Unknown routes: 404 `route_not_found`.
 - Missing models: 404 `model_not_found`.

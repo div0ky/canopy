@@ -7,16 +7,12 @@ export class RecordCounterTouched extends SignalHandler<CounterTouched> {
   static id = 'record-counter-touched'
   static override readonly access = 'public'
 
-  constructor(
-    private readonly recorder: CounterEventRecorder,
-    private readonly execution: CurrentExecution,
-  ) {
-    super()
-  }
+  private readonly recorder = this.inject(CounterEventRecorder)
+  private readonly execution = this.inject(CurrentExecution)
 
   handle(signal: CounterTouched): void {
     this.recorder.record({
-      event: `counter-touched:${signal.counterId}`,
+      event: `counter-touched:${signal.payload.counterId}`,
       phase: 'signal',
       correlationId: this.execution.context.correlationId,
       actor: this.execution.context.actor.kind,

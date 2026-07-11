@@ -25,15 +25,13 @@ boundary to Drizzle, the Unit of Work, entity-state writes, journal, and outbox.
 
 ## Developer-facing proof
 
-An action is one constructor-injected class with one typed handler:
+An action is one role-scoped class with one typed handler:
 
 ```ts
 export class IncrementCounter extends Action<IncrementCounterInput, number> {
   static id = 'increment-counter'
 
-  constructor(private readonly counter: ExecutionCounter) {
-    super()
-  }
+  private readonly counter = this.inject(ExecutionCounter)
 
   handle(input: IncrementCounterInput): number {
     this.counter.value += input.amount
@@ -48,9 +46,7 @@ A query has the same shape but receives read-only execution semantics:
 export class ReadCounter extends Query<void, number> {
   static id = 'read-counter'
 
-  constructor(private readonly counter: ExecutionCounter) {
-    super()
-  }
+  private readonly counter = this.inject(ExecutionCounter)
 
   handle(): number {
     return this.counter.value

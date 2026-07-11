@@ -7,7 +7,7 @@ export interface SendAuthEmailInput { readonly kind: 'verification' | 'password-
 export class SendAuthEmail extends Action<SendAuthEmailInput, void> {
   static id = 'send-auth-email'
   static override readonly access = 'public'
-  constructor(private readonly mailer: Mailer) { super() }
+  private readonly mailer = this.inject(Mailer)
   async handle(input: SendAuthEmailInput): Promise<void> {
     await this.mailer.send({
       id: randomUUID(), from: 'accounts@canopy.test', to: [input.to],

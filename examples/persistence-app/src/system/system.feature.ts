@@ -10,13 +10,18 @@ import { SystemEventRecorder } from './support/system-event-recorder.js'
 import { DailyHealthCheckSchedule } from './schedules/daily-health-check.schedule.js'
 import { DescribeCanopy } from './commands/describe-canopy.js'
 import { PongRoute } from './http/pong.route.js'
+import { BoobsRoute } from './http/boobs.route.js'
+import { BoobJob } from './http/boob.job.js'
+import { BoobPinged } from './http/boob.event.js'
+import { BoobPingDoThingListener } from './http/log-boob-pinged.js'
 
 export class SystemFeature extends Feature {
   id = 'system'
   providers = [SystemEventRecorder]
-  routes = [HomeRoute, HealthRoute, HelloRoute, PingRoute, PongRoute]
-  events = [HttpPinged]
-  listeners = [RecordHttpPinged]
+  routes = [HomeRoute, HealthRoute, HelloRoute, PingRoute, PongRoute, BoobsRoute]
+  events = [HttpPinged, BoobPinged]
+  listeners = [RecordHttpPinged, BoobPingDoThingListener]
   schedules = [DailyHealthCheckSchedule]
   commands = [DescribeCanopy]
+  jobs = [BoobJob]
 }

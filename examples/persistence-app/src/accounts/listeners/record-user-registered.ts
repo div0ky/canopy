@@ -7,12 +7,8 @@ export class RecordUserRegistered extends Listener<UserRegistered> {
   static readonly id = 'record-user-registered'
   static override readonly access = 'public'
 
-  constructor(
-    private readonly recorder: AccountEventRecorder,
-    private readonly execution: CurrentExecution,
-  ) {
-    super()
-  }
+  private readonly recorder = this.inject(AccountEventRecorder)
+  private readonly execution = this.inject(CurrentExecution)
 
   handle(_event: UserRegistered): void {
     this.recorder.record({

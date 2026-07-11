@@ -76,14 +76,17 @@ a requirement for ordinary safety. A synchronous operation executes in the curre
 receives the documented semantics of that execution phase. Broadcasting remains deferred from the
 MVP, but these names reserve its eventual programming model.
 
-## Constructor injection
+## Dependency injection
 
-Constructor injection is the primary dependency mechanism. Canopy will not support property
-injection or encourage application code to resolve dependencies through a service locator.
+Ordinary application services use constructor injection. Framework-facing role classes use the
+inherited, execution-scoped `this.inject()` API and do not declare constructors during normal
+authoring. This distinction is defined by
+[decision 0024](0024-role-injection-with-plain-services.md).
 
-The build-time compiler will inspect TypeScript source and generate dependency metadata for
-concrete classes. Abstract ports, values, aliases, and factories require explicit bindings because
-TypeScript interfaces do not exist at runtime and application intent should remain visible.
+The build-time compiler inspects both constructor parameters and statically declared role
+injections to generate dependency metadata. Abstract ports, values, aliases, and factories require
+explicit bindings because TypeScript interfaces do not exist at runtime and application intent
+should remain visible.
 
 The generated graph must be inspectable before boot and must identify missing bindings, ambiguous
 bindings, invalid scopes, and dependency cycles using application vocabulary.
@@ -225,8 +228,8 @@ constructor effects are therefore contract violations even if they appear locall
 
 ## Consequences
 
-- Canopy provides Laravel-like constructor-injection ergonomics without PHP-style runtime
-  reflection.
+- Canopy provides Laravel-like scoped role injection and conventional service constructor
+  injection without PHP-style runtime reflection.
 - Build-time manifest generation becomes part of the required framework toolchain.
 - Application boot validates a known graph rather than discovering dependencies opportunistically.
 - Interfaces used as ports need runtime-representable tokens or abstract classes and explicit

@@ -1,6 +1,5 @@
 import {
   ActionBus,
-  Http,
   type HttpRequest,
   Route,
 } from '@canopy/core'
@@ -18,16 +17,14 @@ export class IncrementCounterRoute extends Route {
   readonly method = 'POST'
   readonly path = '/counters/:id/increment'
 
-  constructor(private readonly actions: ActionBus) {
-    super()
-  }
+  private readonly actions = this.inject(ActionBus)
 
-  async handle(request: HttpRequest): Promise<Response> {
+  async handle(request: HttpRequest) {
     const body = await request.validate(IncrementCounterBody, await request.json())
     const result = await this.actions.execute(SaveCounter, {
       id: request.param('id'),
       amount: body.amount,
     })
-    return Http.json(result)
+    return result
   }
 }

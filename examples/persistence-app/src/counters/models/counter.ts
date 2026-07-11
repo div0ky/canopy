@@ -44,8 +44,8 @@ export class Counter extends Model<CounterAttributes> {
   }
 
   async dispatchIncremented(amount: number): Promise<void> {
-    await CounterIncremented.dispatch(this.id, amount, this.value)
-    await CounterSaved.dispatch(this.id, this.value)
+    await CounterIncremented.dispatch({ counterId: this.id, amount, value: this.value })
+    await CounterSaved.dispatch({ counterId: this.id, value: this.value })
   }
 
   markForDeletion(): void {

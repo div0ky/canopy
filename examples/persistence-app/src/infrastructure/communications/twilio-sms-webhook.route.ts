@@ -9,7 +9,8 @@ export class TwilioSmsWebhookRoute extends Route {
   static override readonly access = 'public'
   readonly method = 'POST'
   readonly path = '/webhooks/twilio/sms'
-  constructor(private readonly actions: ActionBus, private readonly config: CommunicationsConfig) { super() }
+  private readonly actions = this.inject(ActionBus)
+  private readonly config = this.inject(CommunicationsConfig)
   async handle(request: HttpRequest): Promise<Response> {
     const form = new URLSearchParams(await request.text())
     const signedParameters = Object.fromEntries(form.entries())

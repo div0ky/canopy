@@ -1,4 +1,4 @@
-import { Http, type HttpRequest, Logger, Route } from '@canopy/core'
+import { type HttpRequest, Route } from '@canopy/core'
 
 export class HomeRoute extends Route {
   static override readonly id = 'home'
@@ -6,13 +6,9 @@ export class HomeRoute extends Route {
   readonly method = 'GET'
   readonly path = '/'
 
-  constructor(private readonly logger: Logger) {
-    super()
-  }
-
-  handle(_request: HttpRequest): Response {
-    this.logger.channel('app').info('Canopy home visited')
-    return Http.json({
+  handle(_request: HttpRequest): object {
+    this.logger.info('Canopy home visited')
+    return {
       name: 'Canopy',
       status: 'growing',
       routes: [
@@ -31,6 +27,6 @@ export class HomeRoute extends Route {
         'POST /counters/:id/increment',
         'DELETE /counters/:id',
       ],
-    })
+    }
   }
 }
