@@ -44,6 +44,37 @@
     "dist",
     "NOTICE"
   ],
+  "doxaCompatibility": {
+    "schemaVersion": 1,
+    "channel": "alpha",
+    "frameworkPackages": [
+      "@doxajs/auth-postgres",
+      "@doxajs/compiler",
+      "@doxajs/core",
+      "@doxajs/http-hono",
+      "@doxajs/keryx",
+      "@doxajs/manifest",
+      "@doxajs/postgres-drizzle",
+      "@doxajs/praxis",
+      "@doxajs/queue-pg-boss",
+      "@doxajs/realtime",
+      "@doxajs/runtime",
+      "@doxajs/sendgrid",
+      "@doxajs/testing",
+      "@doxajs/theoria",
+      "@doxajs/twilio-sms"
+    ],
+    "toolchain": {
+      "node": ">=24 <25",
+      "packageManager": "pnpm@11.10.0",
+      "devDependencies": {
+        "@types/node": "^24.0.0",
+        "typescript": "^6.0.0",
+        "vitest": "^4.0.0"
+      }
+    },
+    "upgradeRecipes": []
+  },
   "scripts": {
     "prepack": "node ../../scripts/prepare-package.mjs",
     "postpack": "node ../../scripts/prepare-package.mjs --clean"

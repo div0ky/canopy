@@ -454,6 +454,176 @@ describe('Praxis command suite', () => {
     ])
   })
 
+  it('plans a framework-aligned upgrade without changing a dirty application during a dry run', async () => {
+    const root = await temporaryDirectory()
+    const original = `${JSON.stringify(upgradeFixturePackage(), null, 2)}\n`
+    await writeFile(path.join(root, 'package.json'), original)
+    const output: string[] = []
+    const runs: string[] = []
+
+    expect(
+      await runPraxis(['upgrade', '--to=alpha', '--dry-run'], root, {
+        out: (message) => output.push(message),
+        error: (message) => {
+          throw new Error(message)
+        },
+        run: (command, args) => {
+          runs.push([command, ...args].join(' '))
+          return Promise.resolve(0)
+        },
+        capture: (_command, args) =>
+          Promise.resolve(
+            args[0] === 'view'
+              ? registryUpgradeTarget('0.1.0-alpha.5')
+              : { code: 0, stdout: ' M package.json\n', stderr: '' },
+          ),
+      }),
+    ).toBe(0)
+
+    expect(await readFile(path.join(root, 'package.json'), 'utf8')).toBe(original)
+    expect(runs).toEqual([])
+    expect(output).toContain('Doxa upgrade plan: 0.1.0-alpha.4 -> 0.1.0-alpha.5')
+    expect(output).toContain('Dry run only; no files were changed.')
+  })
+
+  it('refuses a mutating upgrade in a dirty Git worktree', async () => {
+    const root = await temporaryDirectory()
+    await writeFile(
+      path.join(root, 'package.json'),
+      `${JSON.stringify(upgradeFixturePackage(), null, 2)}\n`,
+    )
+    const errors: string[] = []
+    expect(
+      await runPraxis(['upgrade', '--to=alpha'], root, {
+        out: () => undefined,
+        error: (message) => errors.push(message),
+        run: () => Promise.resolve(0),
+        capture: (_command, args) =>
+          Promise.resolve(
+            args[0] === 'view'
+              ? registryUpgradeTarget('0.1.0-alpha.5')
+              : { code: 0, stdout: ' M package.json\n', stderr: '' },
+          ),
+      }),
+    ).toBe(1)
+    expect(errors).toEqual([
+      'Refusing to upgrade a dirty Git worktree. Commit or stash changes, or rerun with --force.',
+    ])
+  })
+
+  it('aligns existing Doxa packages, installs them, and hands off to the upgraded Praxis', async () => {
+    const root = await temporaryDirectory()
+    await writeFile(
+      path.join(root, 'package.json'),
+      `${JSON.stringify(upgradeFixturePackage(), null, 2)}\n`,
+    )
+    const invocations: Array<{ command: string; args: readonly string[] }> = []
+    expect(
+      await runPraxis(['upgrade', '--to=0.1.0-alpha.5', '--verify'], root, {
+        out: () => undefined,
+        error: (message) => {
+          throw new Error(message)
+        },
+        run: (command, args) => {
+          invocations.push({ command, args })
+          return Promise.resolve(0)
+        },
+        capture: (_command, args) =>
+          Promise.resolve(
+            args[0] === 'view'
+              ? registryUpgradeTarget('0.1.0-alpha.5')
+              : { code: 0, stdout: '', stderr: '' },
+          ),
+      }),
+    ).toBe(0)
+    const upgraded = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')) as {
+      dependencies: Record<string, string>
+      devDependencies: Record<string, string>
+      packageManager: string
+    }
+    expect(upgraded.dependencies).toEqual({
+      '@doxajs/core': '^0.1.0-alpha.5',
+      '@doxajs/praxis': '^0.1.0-alpha.5',
+      hono: '^4.0.0',
+    })
+    expect(upgraded.devDependencies).toEqual({
+      '@doxajs/testing': '^0.1.0-alpha.5',
+      typescript: '^6.0.0',
+    })
+    expect(upgraded.packageManager).toBe('pnpm@11.10.0')
+    expect(invocations.map(({ args }) => args)).toEqual([
+      ['install'],
+      [
+        'exec',
+        'doxa',
+        'upgrade',
+        '--continue',
+        '--from=0.1.0-alpha.4',
+        '--to=0.1.0-alpha.5',
+        '--verify',
+      ],
+    ])
+  })
+
+  it('restores package.json when dependency installation fails', async () => {
+    const root = await temporaryDirectory()
+    const original = `${JSON.stringify(upgradeFixturePackage(), null, 2)}\n`
+    await writeFile(path.join(root, 'package.json'), original)
+    expect(
+      await runPraxis(['upgrade', '--to=alpha'], root, {
+        out: () => undefined,
+        error: () => undefined,
+        run: () => Promise.resolve(17),
+        capture: (_command, args) =>
+          Promise.resolve(
+            args[0] === 'view'
+              ? registryUpgradeTarget('0.1.0-alpha.5')
+              : { code: 0, stdout: '', stderr: '' },
+          ),
+      }),
+    ).toBe(1)
+    expect(await readFile(path.join(root, 'package.json'), 'utf8')).toBe(original)
+  })
+
+  it('validates an installed upgrade with build, migration status, and optional tests', async () => {
+    const root = await temporaryDirectory()
+    const currentPraxis = JSON.parse(
+      await readFile(path.join(workspace, 'packages/praxis/package.json'), 'utf8'),
+    ) as { version: string }
+    await writeFile(
+      path.join(root, 'package.json'),
+      `${JSON.stringify(upgradeFixturePackage(currentPraxis.version), null, 2)}\n`,
+    )
+    const invocations: string[][] = []
+    expect(
+      await runPraxis(
+        [
+          'upgrade',
+          '--continue',
+          '--from=0.1.0-alpha.0',
+          `--to=${currentPraxis.version}`,
+          '--verify',
+        ],
+        root,
+        {
+          out: () => undefined,
+          error: (message) => {
+            throw new Error(message)
+          },
+          run: (_command, args) => {
+            invocations.push([...args])
+            return Promise.resolve(0)
+          },
+        },
+      ),
+    ).toBe(0)
+    expect(invocations).toEqual([
+      ['exec', 'doxa', 'build'],
+      ['exec', 'doxa', 'migrate:status'],
+      ['test'],
+    ])
+  })
+
   it('boots background roles from prebuilt artifacts with scheduling enabled by default', async () => {
     const root = await temporaryDirectory()
     await mkdir(path.join(root, 'src'), { recursive: true })
@@ -527,6 +697,49 @@ async function temporaryDirectory(): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), 'doxa-praxis-'))
   directories.push(directory)
   return directory
+}
+
+function upgradeFixturePackage(version = '0.1.0-alpha.4'): Record<string, unknown> {
+  return {
+    name: 'upgrade-fixture',
+    private: true,
+    packageManager: 'pnpm@10.0.0',
+    engines: { node: '>=22' },
+    dependencies: {
+      '@doxajs/core': `^${version}`,
+      '@doxajs/praxis': `^${version}`,
+      hono: '^4.0.0',
+    },
+    devDependencies: {
+      '@doxajs/testing': `^${version}`,
+      typescript: '^5.0.0',
+    },
+  }
+}
+
+function registryUpgradeTarget(version: string): { code: number; stdout: string; stderr: string } {
+  return {
+    code: 0,
+    stdout: JSON.stringify({
+      version,
+      doxaCompatibility: {
+        schemaVersion: 1,
+        channel: 'alpha',
+        frameworkPackages: ['@doxajs/core', '@doxajs/praxis', '@doxajs/testing'],
+        toolchain: {
+          node: '>=24 <25',
+          packageManager: 'pnpm@11.10.0',
+          devDependencies: {
+            '@types/node': '^24.0.0',
+            typescript: '^6.0.0',
+            vitest: '^4.0.0',
+          },
+        },
+        upgradeRecipes: [],
+      },
+    }),
+    stderr: '',
+  }
 }
 
 async function runPrebuiltRole(cwd: string, arguments_: readonly string[]): Promise<string> {

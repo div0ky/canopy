@@ -38,6 +38,12 @@ export interface PraxisIo {
     cwd: string,
     environment: NodeJS.ProcessEnv,
   ) => Promise<number>
+  readonly capture?: (
+    command: string,
+    arguments_: readonly string[],
+    cwd: string,
+    environment: NodeJS.ProcessEnv,
+  ) => Promise<{ code: number; stdout: string; stderr: string }>
 }
 
 const help = `Doxa Praxis
@@ -113,6 +119,9 @@ Runtime:
   db:studio             Browse PostgreSQL with Drizzle Studio [--host=127.0.0.1] [--port=4983] [--verbose]
   theoria               Explore correlated runtime evidence [--host=127.0.0.1] [--port=4400]
   theoria:prune         Enforce Theoria retention [--days=7] [--maximum=50000]
+
+Framework:
+  upgrade [--to=alpha|version] [--dry-run] [--force] [--verify] [--skip-migration-status]
 `
 
 export async function runPraxis(
@@ -130,6 +139,14 @@ export async function runPraxis(
       const result = await buildApplication(cwd)
       io.out(`Built ${result.manifest.applicationId} (${result.manifest.buildHash.slice(0, 12)})`)
       return 0
+    }
+    if (command === 'upgrade') {
+      const { runUpgrade } = await import('./upgrade.js')
+      return await runUpgrade(cwd, args, {
+        out: io.out,
+        run: io.run ?? runProcess,
+        capture: io.capture ?? runProcessCapture,
+      })
     }
     if (command === 'gnosis') {
       const result = await buildApplication(cwd)
@@ -1748,6 +1765,31 @@ function runProcess(
     const child = spawn(command, [...args], { cwd, stdio: 'inherit', env: environment })
     child.once('error', reject)
     child.once('exit', (code, signal) => resolve(code ?? (signal ? 1 : 0)))
+  })
+}
+
+function runProcessCapture(
+  command: string,
+  args: readonly string[],
+  cwd: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, [...args], {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: environment,
+    })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (chunk: string) => (stdout += chunk))
+    child.stderr.on('data', (chunk: string) => (stderr += chunk))
+    child.once('error', reject)
+    child.once('exit', (code, signal) =>
+      resolve({ code: code ?? (signal ? 1 : 0), stdout, stderr }),
+    )
   })
 }
 
