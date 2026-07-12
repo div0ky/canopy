@@ -5,7 +5,12 @@ import { fork, spawn, type ChildProcess } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { HonoHttpHost } from '@doxajs/http-hono'
-import { cancelQueueJob, listQueueJobs, retryQueueJob } from '@doxajs/queue-pg-boss'
+import {
+  cancelQueueJob,
+  installQueueSchema,
+  listQueueJobs,
+  retryQueueJob,
+} from '@doxajs/queue-pg-boss'
 import type { LogFormat, LogLevel, QueueEnvelope } from '@doxajs/core'
 import { Doxa } from '@doxajs/runtime'
 import { Pool } from 'pg'
@@ -242,6 +247,7 @@ export async function runPraxis(
       return 0
     }
     if (command === 'migrate' || command === 'migrate:status') {
+      if (command === 'migrate') await installDeclaredQueueSchema(cwd, args)
       await withDatabase(cwd, args, async (pool) => {
         const migrations = await discoverMigrations(cwd)
         if (command === 'migrate') {
@@ -909,6 +915,11 @@ async function packageDeclares(cwd: string, dependency: string): Promise<boolean
   }
 }
 
+async function installDeclaredQueueSchema(cwd: string, args: readonly string[]): Promise<void> {
+  if (!(await packageDeclares(cwd, '@doxajs/queue-pg-boss'))) return
+  await installQueueSchema(await databaseConnection(cwd, args))
+}
+
 async function applyMigrations(
   pool: Pool,
   migrations: readonly MigrationFile[],
@@ -1552,6 +1563,7 @@ async function runHotDevelopment(
   args: readonly string[],
   io: PraxisIo,
 ): Promise<void> {
+  await installDeclaredQueueSchema(cwd, args)
   await withDatabase(cwd, args, async (pool) => {
     await applyMigrations(pool, await discoverMigrations(cwd))
   })

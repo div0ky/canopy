@@ -599,9 +599,15 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
   })
 
   it('applies ordered framework and application migrations with status and drift protection', async () => {
+    await pool.query('DROP SCHEMA IF EXISTS pgboss CASCADE')
+    await pool.query('DROP TABLE IF EXISTS doxa_schedule_controls')
     await pool.query('DROP TABLE IF EXISTS doxa_migrations')
     const root = await temporaryDirectory()
     await mkdir(path.join(root, 'migrations'))
+    await writeFile(
+      path.join(root, 'package.json'),
+      `${JSON.stringify({ dependencies: { '@doxajs/queue-pg-boss': 'workspace:*' } })}\n`,
+    )
     const migration = path.join(root, 'migrations/20260710_create_praxis_proof.sql')
     await writeFile(migration, 'CREATE TABLE praxis_migration_proof (id text PRIMARY KEY);\n')
     const output: string[] = []
@@ -611,6 +617,9 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       error: (message: string) => errors.push(message),
     }
     expect(await runPraxis(['migrate', `--database=${connectionString}`], root, io)).toBe(0)
+    expect(
+      (await pool.query(`SELECT to_regclass('pgboss.job') AS relation`)).rows[0]?.relation,
+    ).toBe('pgboss.job')
     expect(
       output.some((line) => line.includes('application/20260710_create_praxis_proof.sql')),
     ).toBe(true)
