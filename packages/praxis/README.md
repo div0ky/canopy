@@ -5,7 +5,7 @@ development hot reload, migrations, runtime roles, inspection, recovery, Drizzle
 knowledge, and Theoria operations.
 
 ```sh
-pnpm dlx --allow-build=esbuild @doxajs/praxis new MyApplication
+pnpm dlx @doxajs/praxis new MyApplication
 cd my-application
 pnpm install
 pnpm dev

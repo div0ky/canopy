@@ -1,5 +1,7 @@
 # Getting Started
 
+Create a production-shaped Doxa application in a few minutes.
+
 ## Requirements
 
 - Node.js 24
@@ -9,7 +11,7 @@
 ## Create and run
 
 ```sh
-pnpm dlx --allow-build=esbuild @doxajs/praxis@next new MyApplication
+pnpm dlx @doxajs/praxis new MyApplication
 cd my-application
 pnpm install
 cp .env.example .env

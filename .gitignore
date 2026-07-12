@@ -10,6 +10,8 @@ dist/
 .doxa/
 coverage/
 .next/
+.astro/
+.qa/
 *.tsbuildinfo
 *.tgz
 packages/*/LICENSE

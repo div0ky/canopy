@@ -1,0 +1,87 @@
+---
+import Arrow from './Arrow.astro'
+import Logo from './Logo.astro'
+
+const github = 'https://github.com/div0ky/doxajs'
+---
+
+<header class="sticky top-0 z-50 border-b border-rule/90 bg-paper/95 backdrop-blur-md">
+  <div class="shell flex h-[4.75rem] items-center justify-between">
+    <Logo />
+
+    <nav aria-label="Primary navigation" class="hidden items-center gap-10 lg:flex">
+      <a class="text-sm font-semibold no-underline hover:text-oxblood" href="#philosophy"
+        >Philosophy</a
+      >
+      <a class="text-sm font-semibold no-underline hover:text-oxblood" href="#framework"
+        >Framework</a
+      >
+      <a class="text-sm font-semibold no-underline hover:text-oxblood" href="#tooling">Tooling</a>
+      <a class="text-sm font-semibold no-underline hover:text-oxblood" href="/docs">Docs</a>
+    </nav>
+
+    <div class="hidden items-center gap-7 lg:flex">
+      <a
+        class="inline-flex items-center gap-1.5 text-sm font-semibold hover:text-oxblood"
+        href={github}>GitHub <Arrow size={16} /></a
+      >
+      <a
+        href="#start"
+        class="inline-flex h-11 items-center gap-3 rounded-[0.2rem] bg-oxblood px-5 text-sm font-bold text-white no-underline transition-colors hover:bg-oxblood-dark"
+      >
+        Get started <Arrow size={16} />
+      </a>
+    </div>
+
+    <button
+      id="menu-toggle"
+      type="button"
+      class="flex size-11 items-center justify-center border border-rule bg-transparent lg:hidden"
+      aria-expanded="false"
+      aria-controls="mobile-menu"
+      aria-label="Open navigation"
+    >
+      <span class="relative h-3.5 w-5">
+        <span class="absolute top-0 left-0 h-px w-5 bg-ink transition-transform"></span>
+        <span class="absolute top-1.5 left-0 h-px w-5 bg-ink transition-opacity"></span>
+        <span class="absolute top-3 left-0 h-px w-5 bg-ink transition-transform"></span>
+      </span>
+    </button>
+  </div>
+
+  <nav
+    id="mobile-menu"
+    aria-label="Mobile navigation"
+    class="shell hidden border-t border-rule py-6 lg:hidden"
+  >
+    <div class="grid gap-1">
+      <a class="border-b border-rule py-3 text-lg no-underline" href="#philosophy">Philosophy</a>
+      <a class="border-b border-rule py-3 text-lg no-underline" href="#framework">Framework</a>
+      <a class="border-b border-rule py-3 text-lg no-underline" href="#tooling">Tooling</a>
+      <a class="border-b border-rule py-3 text-lg no-underline" href="/docs">Documentation</a>
+      <a class="flex items-center justify-between py-3 text-lg no-underline" href={github}
+        >GitHub <Arrow /></a
+      >
+    </div>
+  </nav>
+</header>
+
+<script>
+  const toggle = document.querySelector<HTMLButtonElement>('#menu-toggle')
+  const menu = document.querySelector<HTMLElement>('#mobile-menu')
+
+  function closeMenu() {
+    toggle?.setAttribute('aria-expanded', 'false')
+    toggle?.setAttribute('aria-label', 'Open navigation')
+    menu?.classList.add('hidden')
+  }
+
+  toggle?.addEventListener('click', () => {
+    const isOpen = toggle.getAttribute('aria-expanded') === 'true'
+    toggle.setAttribute('aria-expanded', String(!isOpen))
+    toggle.setAttribute('aria-label', isOpen ? 'Open navigation' : 'Close navigation')
+    menu?.classList.toggle('hidden', isOpen)
+  })
+
+  menu?.querySelectorAll('a').forEach((link) => link.addEventListener('click', closeMenu))
+</script>

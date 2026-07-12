@@ -1,0 +1,26 @@
+{
+  "name": "@doxajs/website",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "@astrojs/markdown-remark": "7.2.1",
+    "@astrojs/sitemap": "3.7.3",
+    "@fontsource-variable/jetbrains-mono": "5.2.8",
+    "@fontsource-variable/manrope": "5.2.8",
+    "@fontsource-variable/newsreader": "5.2.8",
+    "@tailwindcss/vite": "4.3.2",
+    "astro": "7.0.7",
+    "tailwindcss": "4.3.2"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.6",
+    "typescript": "5.9.3"
+  }
+}

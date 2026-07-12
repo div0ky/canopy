@@ -1,0 +1,315 @@
+---
+import Arrow from '../components/Arrow.astro'
+import CodeExplorer from '../components/CodeExplorer.astro'
+import CopyCommand from '../components/CopyCommand.astro'
+import Geometry from '../components/Geometry.astro'
+import Header from '../components/Header.astro'
+import Logo from '../components/Logo.astro'
+import Layout from '../layouts/Layout.astro'
+
+const github = 'https://github.com/div0ky/doxajs'
+const docs = '/docs'
+const manifesto = '/manifesto'
+const installCommand = 'pnpm dlx @doxajs/praxis new MyApplication'
+
+const beliefs = [
+  {
+    title: 'Own the application model',
+    copy: 'Your domain speaks Doxa. Infrastructure remains replaceable at the boundary.',
+  },
+  {
+    title: 'Make the safe path shorter',
+    copy: 'Validation, authorization, context, durability, and observability compose through ordinary code.',
+  },
+  {
+    title: 'Keep the magic explainable',
+    copy: 'Automation is welcome when its ordering, inputs, outputs, and failure behavior can be inspected.',
+  },
+]
+
+const lifecycle = ['Request', 'Action', 'Model', 'Event', 'Job']
+
+const guarantees = [
+  {
+    title: 'One execution context',
+    copy: 'Actor, tenant, correlation, causation, trace, and intent follow the work.',
+  },
+  {
+    title: 'Atomic durability',
+    copy: 'State, journal entries, and outbox messages agree about what happened.',
+  },
+  {
+    title: 'Automatic observability',
+    copy: 'Every step is structured, correlated, and available to inspect.',
+  },
+]
+
+const tools = [
+  {
+    name: 'Praxis',
+    copy: 'Create, generate, build, inspect, and operate.',
+  },
+  {
+    name: 'Theoria',
+    copy: 'Follow an execution from request to durable side effects.',
+  },
+  {
+    name: 'Gnosis',
+    copy: 'Give AI tools the exact application graph instead of asking them to guess.',
+  },
+]
+---
+
+<Layout
+  title="Doxa.js — The opinionated TypeScript application framework"
+  description="Doxa.js is an opinionated, class-first TypeScript application framework with one coherent vocabulary, lifecycle, and obvious path for ordinary work."
+>
+  <div id="top"></div>
+  <Header />
+
+  <main id="main">
+    <section class="relative overflow-hidden border-b border-rule" aria-labelledby="hero-title">
+      <Geometry />
+      <div
+        class="shell grid min-h-[44rem] items-center gap-14 py-16 lg:grid-cols-[0.9fr_1.1fr] lg:py-18 xl:gap-20"
+      >
+        <div class="relative z-10 min-w-0 max-w-[42rem]">
+          <h1 id="hero-title" class="display text-[clamp(4rem,6.15vw,6.25rem)] text-balance">
+            The correct path should be the obvious path<span class="text-oxblood">.</span>
+          </h1>
+          <p class="mt-8 max-w-[36rem] text-lg leading-8 text-ink-soft sm:text-xl">
+            Doxa is an opinionated TypeScript framework for building coherent, production-ready
+            applications without assembling the application model yourself.
+          </p>
+          <div class="mt-9 flex flex-wrap items-center gap-7">
+            <a
+              href="#start"
+              class="inline-flex h-13 items-center gap-4 rounded-[0.2rem] bg-oxblood px-6 text-sm font-bold text-white no-underline transition-colors hover:bg-oxblood-dark"
+            >
+              Get started <Arrow />
+            </a>
+            <a href={manifesto} class="text-link text-ink">Read the manifesto <Arrow /></a>
+          </div>
+        </div>
+
+        <div class="relative z-10 min-w-0">
+          <CodeExplorer />
+        </div>
+      </div>
+
+      <div class="border-t border-rule py-12 sm:py-16">
+        <p class="display shell text-center text-[clamp(2.5rem,5.2vw,5.6rem)] text-balance">
+          One framework. One vocabulary. <span class="text-oxblood">One lifecycle.</span>
+        </p>
+      </div>
+    </section>
+
+    <section
+      id="philosophy"
+      class="relative scroll-mt-20 border-b border-rule py-24 sm:py-32"
+      aria-labelledby="philosophy-title"
+    >
+      <Geometry />
+      <div class="shell grid gap-16 lg:grid-cols-[0.9fr_1.1fr] lg:gap-24">
+        <div class="min-w-0">
+          <p class="section-index">01 — Philosophy</p>
+          <h2
+            id="philosophy-title"
+            class="display mt-7 max-w-[42rem] text-[clamp(3.7rem,6.5vw,7rem)] text-balance"
+          >
+            Opinionated where it matters. Invisible where it doesn’t<span class="text-oxblood"
+              >.</span
+            >
+          </h2>
+          <p class="mt-8 max-w-lg text-lg leading-8 text-ink-soft">
+            Doxa spends framework complexity so your application doesn’t have to.
+          </p>
+        </div>
+
+        <ol class="border-t border-rule">
+          {
+            beliefs.map((belief, index) => (
+              <li class="grid gap-4 border-b border-rule py-9 sm:grid-cols-[3rem_1fr] sm:py-11">
+                <span class="font-mono text-xs text-oxblood">0{index + 1}</span>
+                <div>
+                  <h3 class="font-display text-[clamp(2.15rem,3.5vw,3.8rem)] leading-[1.02] tracking-[-0.04em]">
+                    {belief.title}
+                  </h3>
+                  <p class="mt-4 max-w-xl text-base leading-7 text-ink-soft sm:text-lg">
+                    {belief.copy}
+                  </p>
+                </div>
+              </li>
+            ))
+          }
+        </ol>
+      </div>
+
+      <div class="shell mt-24 border-t border-rule pt-14 sm:mt-32 sm:pt-20">
+        <p class="display text-center text-[clamp(3.5rem,7vw,8rem)] text-balance">
+          <span class="text-oxblood">Coherence</span> outranks surface area.
+        </p>
+      </div>
+    </section>
+
+    <section
+      id="framework"
+      class="relative scroll-mt-20 overflow-hidden bg-ink py-24 text-paper sm:py-32"
+      aria-labelledby="framework-title"
+    >
+      <Geometry inverse />
+      <div class="shell grid gap-16 xl:grid-cols-[0.8fr_1.2fr] xl:items-start xl:gap-24">
+        <div class="min-w-0">
+          <p class="section-index text-[#ff766d]">02 — Framework</p>
+          <h2
+            id="framework-title"
+            class="display mt-7 max-w-[38rem] text-[clamp(3.8rem,6vw,6.8rem)] text-balance"
+          >
+            Your domain, in one coherent language<span class="text-[#ff5a52]">.</span>
+          </h2>
+          <p class="mt-8 max-w-xl text-lg leading-8 text-paper/75">
+            Features declare capabilities. Actions, queries, models, events, listeners, jobs, and
+            routes move through the same execution model.
+          </p>
+
+          <div class="mt-14" aria-label="Doxa execution lifecycle">
+            <ol class="relative grid grid-cols-5 gap-2">
+              <span class="absolute right-[10%] bottom-1 left-[10%] h-px bg-paper/35"></span>
+              {
+                lifecycle.map((step) => (
+                  <li class="relative flex flex-col items-center gap-4 text-center">
+                    <span class="text-[0.68rem] font-semibold sm:text-sm">{step}</span>
+                    <span class="relative z-10 size-2 bg-[#e43c3c]" />
+                  </li>
+                ))
+              }
+            </ol>
+            <p class="mt-5 text-center font-mono text-[0.65rem] text-sage sm:text-xs">
+              Context flows through every stage.
+            </p>
+          </div>
+
+          <a href={`${docs}/concepts/application-model`} class="text-link mt-10 text-paper">
+            Explore the application model <Arrow />
+          </a>
+        </div>
+
+        <div class="min-w-0 border-t border-paper/20 xl:mt-20">
+          <p
+            class="py-8 font-display text-[clamp(2.2rem,3.5vw,4rem)] leading-[1.04] tracking-[-0.04em] text-balance"
+          >
+            The compiler makes the magic explicit before the application boots.
+          </p>
+          <dl class="border-y border-paper/20">
+            {
+              guarantees.map((guarantee, index) => (
+                <div class="grid gap-3 border-b border-paper/20 py-7 last:border-b-0 sm:grid-cols-[2.5rem_1fr]">
+                  <span class="font-mono text-xs text-[#ff766d]">0{index + 1}</span>
+                  <div>
+                    <dt class="font-display text-3xl leading-none">{guarantee.title}</dt>
+                    <dd class="mt-3 max-w-lg text-sm leading-6 text-paper/55">{guarantee.copy}</dd>
+                  </div>
+                </div>
+              ))
+            }
+          </dl>
+        </div>
+      </div>
+    </section>
+
+    <section
+      id="tooling"
+      class="relative scroll-mt-20 py-24 sm:py-32"
+      aria-labelledby="tooling-title"
+    >
+      <Geometry />
+      <div class="shell">
+        <p class="section-index">03 — Tooling</p>
+        <div class="mt-7 grid gap-8 lg:grid-cols-[1.25fr_0.75fr] lg:items-end">
+          <h2
+            id="tooling-title"
+            class="display max-w-[58rem] text-[clamp(3.8rem,6.5vw,7.5rem)] text-balance"
+          >
+            The framework includes the way you understand it<span class="text-oxblood">.</span>
+          </h2>
+          <p class="max-w-md pb-2 text-lg leading-8 text-ink-soft">
+            Generators, diagnostics, testing, and AI context are part of the programming model—not
+            polish added later.
+          </p>
+        </div>
+
+        <div class="mt-18 grid border-y border-rule lg:grid-cols-3">
+          {
+            tools.map((tool) => (
+              <article class="border-b border-rule py-10 last:border-b-0 lg:border-r lg:border-b-0 lg:px-10 lg:first:pl-0 lg:last:border-r-0 lg:last:pr-0">
+                <h3 class="font-display text-5xl leading-none tracking-[-0.04em] text-oxblood sm:text-6xl">
+                  {tool.name}
+                </h3>
+                <p class="mt-5 max-w-sm text-base leading-7 text-ink-soft">{tool.copy}</p>
+              </article>
+            ))
+          }
+        </div>
+
+        <div
+          class="mt-12 hidden items-center justify-center gap-5 font-mono text-xs text-ink-soft sm:flex"
+        >
+          <span>declare</span><span class="h-px w-16 bg-oxblood"></span><Arrow size={15} />
+          <span>compile</span><span class="h-px w-16 bg-oxblood"></span><Arrow size={15} />
+          <span>inspect</span><span class="h-px w-16 bg-oxblood"></span><Arrow size={15} />
+          <span>understand</span>
+        </div>
+      </div>
+    </section>
+
+    <section
+      id="start"
+      class="relative scroll-mt-20 overflow-hidden bg-oxblood py-18 text-paper sm:py-22"
+      aria-labelledby="start-title"
+    >
+      <Geometry inverse />
+      <Geometry inverse position="right" />
+      <div class="shell relative z-10 text-center">
+        <h2
+          id="start-title"
+          class="display mx-auto max-w-[76rem] text-[clamp(3.3rem,6vw,7rem)] text-balance"
+        >
+          Build the domain. Doxa handles the assembly.
+        </h2>
+
+        <CopyCommand command={installCommand} />
+
+        <div class="mt-9 flex flex-wrap items-center justify-center gap-8">
+          <a
+            href={docs}
+            class="inline-flex h-13 items-center gap-4 rounded-[0.2rem] bg-paper px-6 text-sm font-bold text-oxblood no-underline transition-colors hover:bg-white"
+          >
+            Read the docs <Arrow />
+          </a>
+          <a href={github} class="text-link text-paper">View on GitHub <Arrow /></a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="border-t border-rule py-10">
+    <div class="shell flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-8">
+        <Logo />
+        <p class="text-sm text-ink-soft">An opinionated application framework for TypeScript.</p>
+      </div>
+      <nav
+        aria-label="Footer navigation"
+        class="flex flex-wrap gap-x-7 gap-y-3 text-sm font-semibold"
+      >
+        <a href={manifesto} class="hover:text-oxblood">Manifesto</a>
+        <a href={docs} class="hover:text-oxblood">Documentation</a>
+        <a href={github} class="hover:text-oxblood">GitHub</a>
+        <a
+          href="https://www.npmjs.com/org/doxajs"
+          class="inline-flex items-center gap-1 hover:text-oxblood">npm <Arrow size={14} /></a
+        >
+      </nav>
+    </div>
+  </footer>
+</Layout>

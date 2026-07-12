@@ -1,0 +1,28 @@
+---
+import Arrow from './Arrow.astro'
+import Logo from './Logo.astro'
+
+const github = 'https://github.com/div0ky/doxajs'
+---
+
+<header class="sticky top-0 z-50 border-b border-rule/90 bg-paper/95 backdrop-blur-md">
+  <div class="shell flex h-[4.75rem] items-center justify-between">
+    <Logo />
+    <nav aria-label="Documentation navigation" class="flex items-center gap-5 sm:gap-10">
+      <a class="text-sm font-semibold hover:text-oxblood" href="/docs">Docs</a>
+      <a class="text-sm font-semibold hover:text-oxblood" href="/manifesto">Manifesto</a>
+    </nav>
+    <div class="hidden items-center gap-7 md:flex">
+      <a
+        class="inline-flex items-center gap-1.5 text-sm font-semibold hover:text-oxblood"
+        href={github}>GitHub <Arrow size={16} /></a
+      >
+      <a
+        href="/docs/getting-started"
+        class="inline-flex h-11 items-center gap-3 rounded-[0.2rem] bg-oxblood px-5 text-sm font-bold text-white no-underline transition-colors hover:bg-oxblood-dark"
+      >
+        Get started <Arrow size={16} />
+      </a>
+    </div>
+  </div>
+</header>

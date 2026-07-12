@@ -1,0 +1,122 @@
+---
+import type { CollectionEntry } from 'astro:content'
+
+import {
+  docsNavigationLabel,
+  entryRoute,
+  entryTitle,
+  manifestoGroup,
+  manifestoNavigationLabel,
+  sortDocs,
+  sortFoundations,
+} from '../lib/content'
+import Arrow from './Arrow.astro'
+
+interface Props {
+  collection: 'docs' | 'manifesto'
+  currentId: string
+  docs: CollectionEntry<'docs'>[]
+  manifesto: CollectionEntry<'manifesto'>[]
+}
+
+const { collection, currentId, docs, manifesto } = Astro.props
+const groups = [
+  { id: 'decisions', label: 'Architecture decisions' },
+  { id: 'specifications', label: 'Specifications' },
+  { id: 'implementation', label: 'Implementation proofs' },
+  { id: 'future', label: 'Future directions' },
+]
+
+const activeClass =
+  'relative text-oxblood before:absolute before:top-1 before:bottom-1 before:-left-5 before:w-0.5 before:bg-oxblood'
+---
+
+<nav aria-label={collection === 'docs' ? 'Documentation pages' : 'Manifesto pages'}>
+  <p class="section-index mb-6">{collection === 'docs' ? 'Documentation' : 'Manifesto'}</p>
+
+  {
+    collection === 'docs' ? (
+      <>
+        <ul class="space-y-1">
+          {sortDocs(docs).map((entry) => (
+            <li>
+              <a
+                href={entryRoute(entry)}
+                aria-current={entry.id === currentId ? 'page' : undefined}
+                class:list={[
+                  'block py-2.5 text-sm font-semibold text-ink-soft hover:text-oxblood',
+                  entry.id === currentId && activeClass,
+                ]}
+              >
+                {docsNavigationLabel(entry)}
+              </a>
+            </li>
+          ))}
+        </ul>
+        <div class="mt-7 border-t border-rule pt-6">
+          <a class="text-link text-ink" href="/manifesto">
+            Read the manifesto <Arrow size={15} />
+          </a>
+        </div>
+      </>
+    ) : (
+      <>
+        <ul class="space-y-1">
+          {sortFoundations(manifesto).map((entry) => (
+            <li>
+              <a
+                href={entryRoute(entry)}
+                aria-current={entry.id === currentId ? 'page' : undefined}
+                class:list={[
+                  'block py-2.5 text-sm font-semibold text-ink-soft hover:text-oxblood',
+                  entry.id === currentId && activeClass,
+                ]}
+              >
+                {manifestoNavigationLabel(entry)}
+              </a>
+            </li>
+          ))}
+        </ul>
+
+        <div class="mt-6 space-y-2 border-t border-rule pt-5">
+          {groups.map((group) => {
+            const entries = manifestoGroup(manifesto, group.id)
+            const isCurrent = currentId === group.id || currentId.startsWith(`${group.id}/`)
+            return (
+              <details open={isCurrent} class="group border-b border-rule/70 pb-2">
+                <summary class="flex cursor-pointer list-none items-center justify-between py-2 text-sm font-bold marker:content-none">
+                  {group.label}
+                  <span class="text-oxblood transition-transform group-open:rotate-90">
+                    <Arrow size={14} />
+                  </span>
+                </summary>
+                <ul class="max-h-72 space-y-1 overflow-y-auto pb-2 pl-3">
+                  {entries.map((entry) => (
+                    <li>
+                      <a
+                        href={entryRoute(entry)}
+                        aria-current={entry.id === currentId ? 'page' : undefined}
+                        class:list={[
+                          'block py-1.5 text-xs leading-5 text-ink-soft hover:text-oxblood',
+                          entry.id === currentId && 'font-bold text-oxblood',
+                        ]}
+                      >
+                        {entryTitle(entry)}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )
+          })}
+        </div>
+
+        <div class="mt-6">
+          <a class="text-link text-ink" href="/docs">
+            Framework docs <Arrow size={15} />
+          </a>
+        </div>
+      </>
+    )
+  }
+</nav>

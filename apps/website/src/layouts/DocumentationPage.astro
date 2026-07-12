@@ -1,0 +1,98 @@
+---
+import { render, type CollectionEntry } from 'astro:content'
+
+import DocsHeader from '../components/DocsHeader.astro'
+import DocsSidebar from '../components/DocsSidebar.astro'
+import Geometry from '../components/Geometry.astro'
+import { entrySummary, entryTitle, type DocumentationEntry } from '../lib/content'
+import Layout from './Layout.astro'
+
+interface Props {
+  entry: DocumentationEntry
+  docs: CollectionEntry<'docs'>[]
+  manifesto: CollectionEntry<'manifesto'>[]
+}
+
+const { entry, docs, manifesto } = Astro.props
+const { Content, headings } = await render(entry)
+const title = entryTitle(entry)
+const summary = entrySummary(entry)
+const collectionLabel = entry.collection === 'docs' ? 'Docs' : 'Manifesto'
+const tableOfContents = headings.filter((heading) => heading.depth === 2 || heading.depth === 3)
+---
+
+<Layout
+  title={`${title} — Doxa.js ${collectionLabel}`}
+  description={summary || `${title}, from the Doxa.js ${collectionLabel.toLowerCase()}.`}
+>
+  <DocsHeader />
+  <main id="main" class="relative min-h-[calc(100svh-4.75rem)]">
+    <Geometry />
+
+    <details class="border-b border-rule bg-paper lg:hidden">
+      <summary class="shell cursor-pointer py-4 text-sm font-bold text-oxblood">
+        Browse {collectionLabel.toLowerCase()}
+      </summary>
+      <div class="shell border-t border-rule py-6">
+        <DocsSidebar
+          collection={entry.collection}
+          currentId={entry.id}
+          docs={docs}
+          manifesto={manifesto}
+        />
+      </div>
+    </details>
+
+    <div
+      class="shell grid min-h-[calc(100svh-4.75rem)] lg:grid-cols-[15rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)_13rem]"
+    >
+      <aside class="hidden border-r border-rule py-12 pr-8 lg:block">
+        <div class="sticky top-[7.75rem] max-h-[calc(100svh-9.5rem)] overflow-y-auto pr-2">
+          <DocsSidebar
+            collection={entry.collection}
+            currentId={entry.id}
+            docs={docs}
+            manifesto={manifesto}
+          />
+        </div>
+      </aside>
+
+      <article class="min-w-0 px-0 py-12 sm:py-16 lg:px-12 xl:px-16">
+        <nav aria-label="Breadcrumb" class="mb-10 flex items-center gap-3 text-sm text-ink-soft">
+          <a class="font-semibold text-oxblood hover:underline" href={`/${entry.collection}`}>
+            {collectionLabel}
+          </a>
+          <span aria-hidden="true" class="text-rule">/</span>
+          <span>{title}</span>
+        </nav>
+        <div class="doc-content">
+          <Content />
+        </div>
+      </article>
+
+      <aside class="hidden border-l border-rule py-12 pl-8 xl:block">
+        <div class="sticky top-[7.75rem] max-h-[calc(100svh-9.5rem)] overflow-y-auto pr-2 pb-6">
+          <p class="font-display text-2xl leading-none text-oxblood">On this page</p>
+          {
+            tableOfContents.length > 0 ? (
+              <ol class="mt-6 space-y-3">
+                {tableOfContents.map((heading) => (
+                  <li class:list={[heading.depth === 3 && 'pl-3']}>
+                    <a
+                      class="text-xs leading-5 text-ink-soft hover:text-oxblood"
+                      href={`#${heading.slug}`}
+                    >
+                      {heading.text}
+                    </a>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p class="mt-5 text-xs leading-5 text-ink-soft">A single governing document.</p>
+            )
+          }
+        </div>
+      </aside>
+    </div>
+  </main>
+</Layout>

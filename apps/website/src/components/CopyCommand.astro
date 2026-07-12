@@ -1,0 +1,64 @@
+---
+interface Props {
+  command: string
+}
+
+const { command } = Astro.props
+---
+
+<copy-command
+  class="mx-auto mt-10 flex max-w-5xl items-center gap-4 rounded-md bg-ink px-4 py-4 text-left sm:px-6"
+>
+  <code
+    class="min-w-0 flex-1 overflow-x-auto font-mono text-[0.7rem] whitespace-nowrap text-paper sm:text-sm"
+  >
+    <span class="text-paper/55">$</span> pnpm dlx <span class="text-sage">@doxajs/praxis</span>{' '}
+    new MyApplication
+  </code>
+  <button
+    type="button"
+    data-command={command}
+    class="shrink-0 border border-paper/25 px-3 py-2 font-mono text-[0.65rem] uppercase transition-colors hover:border-paper hover:bg-paper hover:text-ink"
+    aria-live="polite"
+  >
+    Copy
+  </button>
+</copy-command>
+
+<script>
+  class CopyCommand extends HTMLElement {
+    connectedCallback() {
+      const button = this.querySelector<HTMLButtonElement>('button[data-command]')
+      if (!button || button.dataset.ready === 'true') return
+
+      button.dataset.ready = 'true'
+      button.addEventListener('click', async () => {
+        const command = button.dataset.command
+        if (!command) return
+
+        button.textContent = 'Copied'
+
+        try {
+          if (!navigator.clipboard) throw new Error('Clipboard API is unavailable')
+
+          await Promise.race([
+            navigator.clipboard.writeText(command),
+            new Promise((_, reject) =>
+              window.setTimeout(() => reject(new Error('Clipboard request timed out')), 500),
+            ),
+          ])
+        } catch {
+          button.textContent = 'Select command'
+        }
+
+        window.setTimeout(() => {
+          button.textContent = 'Copy'
+        }, 3200)
+      })
+    }
+  }
+
+  if (!customElements.get('copy-command')) {
+    customElements.define('copy-command', CopyCommand)
+  }
+</script>

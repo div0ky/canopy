@@ -1,0 +1,25 @@
+---
+import { getCollection, type CollectionEntry } from 'astro:content'
+
+import DocumentationPage from '../../layouts/DocumentationPage.astro'
+
+export async function getStaticPaths() {
+  const docs = await getCollection('docs')
+  const manifesto = await getCollection('manifesto')
+
+  return docs.map((entry) => ({
+    params: { slug: entry.id === 'index' ? undefined : entry.id.replace(/\/index$/u, '') },
+    props: { entry, docs, manifesto },
+  }))
+}
+
+interface Props {
+  entry: CollectionEntry<'docs'>
+  docs: CollectionEntry<'docs'>[]
+  manifesto: CollectionEntry<'manifesto'>[]
+}
+
+const { entry, docs, manifesto } = Astro.props
+---
+
+<DocumentationPage entry={entry} docs={docs} manifesto={manifesto} />

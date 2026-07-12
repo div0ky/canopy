@@ -11,7 +11,8 @@ misuse.
 
 > **Pre-1.0 status:** Doxa.js is an open-source alpha. Its connected application model is
 > implemented and extensively tested, but APIs may still change and the independent security review
-> required for a production-stability claim is not complete. Use the `next` npm tag.
+> required for a production-stability claim is not complete. Tagless installs currently resolve to
+> the alpha release.
 
 ## The Doxa experience
 
@@ -44,7 +45,7 @@ context, records structured evidence, and returns `{ ok: true, data: { status: '
 After the alpha packages are published:
 
 ```sh
-pnpm dlx --allow-build=esbuild @doxajs/praxis@next new MyApplication
+pnpm dlx @doxajs/praxis new MyApplication
 cd my-application
 pnpm install
 cp .env.example .env

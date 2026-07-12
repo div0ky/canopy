@@ -1,0 +1,175 @@
+---
+import { Code } from 'astro:components'
+
+const samples = [
+  {
+    id: 'action',
+    label: 'Action',
+    code: `import { Action, CurrentExecution } from '@doxajs/core'
+
+export class CompleteTask extends Action<
+  { id: string },
+  { completed: boolean }
+> {
+  private readonly execution = this.inject(CurrentExecution)
+
+  async handle(input: { id: string }) {
+    const task = await Task.findOrFail(input.id)
+    task.complete(this.execution.context.actor)
+    await task.save()
+
+    return { completed: task.completed }
+  }
+}`,
+  },
+  {
+    id: 'route',
+    label: 'Route',
+    code: `import { ActionBus, type HttpRequest, Route } from '@doxajs/core'
+import { CompleteTask } from './complete-task.js'
+
+export class CompleteTaskRoute extends Route {
+  static override readonly id = 'complete-task'
+  static override readonly access = 'tasks.update'
+  readonly method = 'POST'
+  readonly path = '/tasks/:id/complete'
+
+  private readonly actions = this.inject(ActionBus)
+
+  async handle(request: HttpRequest) {
+    return await this.actions.execute(CompleteTask, {
+      id: request.param('id'),
+    })
+  }
+}`,
+  },
+  {
+    id: 'job',
+    label: 'Job',
+    code: `import { Job } from '@doxajs/core'
+
+export class ProcessTask extends Job<{ taskId: string }> {
+  static override readonly id = 'process-task'
+  static override readonly access = 'public'
+
+  async handle(input: { taskId: string }): Promise<void> {
+    const task = await Task.findOrFail(input.taskId)
+    await task.process()
+
+    this.logger.info('Task processed', {
+      taskId: task.id,
+    })
+  }
+}`,
+  },
+  {
+    id: 'event',
+    label: 'Event',
+    code: `import { Event } from '@doxajs/core'
+
+export class TaskCompleted extends Event<{
+  taskId: string
+  ownerId: string
+}> {
+  static override readonly id = 'task-completed'
+}
+
+// Dispatch from any Doxa-managed execution.
+await TaskCompleted.dispatch({
+  taskId: task.id,
+  ownerId: task.ownerId,
+})`,
+  },
+]
+---
+
+<code-explorer
+  class="block w-full min-w-0 overflow-hidden rounded-lg border border-white/20 bg-[#151a18]"
+>
+  <div
+    role="tablist"
+    aria-label="Doxa framework examples"
+    class="grid grid-cols-4 border-b border-white/15"
+  >
+    {
+      samples.map((sample, index) => (
+        <button
+          id={`code-tab-${sample.id}`}
+          type="button"
+          role="tab"
+          aria-selected={index === 0 ? 'true' : 'false'}
+          aria-controls={`code-panel-${sample.id}`}
+          tabindex={index === 0 ? 0 : -1}
+          data-example={sample.id}
+          class="relative h-15 border-r border-white/10 bg-transparent px-2 font-sans text-xs font-semibold text-white/65 transition-colors last:border-r-0 hover:text-white aria-selected:text-[#ff766d] sm:text-sm"
+        >
+          {sample.label}
+          <span
+            aria-hidden="true"
+            class="code-example-indicator absolute right-0 bottom-0 left-0 h-0.5 origin-left scale-x-0 bg-[#ff5a52] transition-transform duration-300"
+          />
+        </button>
+      ))
+    }
+  </div>
+
+  {
+    samples.map((sample, index) => (
+      <section
+        id={`code-panel-${sample.id}`}
+        role="tabpanel"
+        aria-labelledby={`code-tab-${sample.id}`}
+        tabindex="0"
+        hidden={index !== 0}
+        class="code-example-panel min-h-[31rem] overflow-auto focus:outline-none"
+      >
+        <Code code={sample.code} lang="ts" theme="github-dark-default" />
+      </section>
+    ))
+  }
+</code-explorer>
+
+<script>
+  class CodeExplorer extends HTMLElement {
+    connectedCallback() {
+      const tabs = [...this.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+      const panels = [...this.querySelectorAll<HTMLElement>('[role="tabpanel"]')]
+
+      const select = (next: HTMLButtonElement, focus: boolean) => {
+        for (const tab of tabs) {
+          const selected = tab === next
+          tab.setAttribute('aria-selected', String(selected))
+          tab.tabIndex = selected ? 0 : -1
+          const indicator = tab.querySelector<HTMLElement>('[aria-hidden="true"]')
+          indicator?.setAttribute('aria-selected', String(selected))
+        }
+
+        for (const panel of panels) {
+          panel.hidden = panel.id !== next.getAttribute('aria-controls')
+        }
+
+        if (focus) next.focus()
+      }
+
+      tabs.forEach((tab, index) => {
+        tab.addEventListener('click', () => select(tab, false))
+        tab.addEventListener('keydown', (event) => {
+          let nextIndex: number | undefined
+          if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length
+          if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length
+          if (event.key === 'Home') nextIndex = 0
+          if (event.key === 'End') nextIndex = tabs.length - 1
+          if (nextIndex === undefined) return
+
+          event.preventDefault()
+          const next = tabs[nextIndex]
+          if (next) select(next, true)
+        })
+      })
+    }
+  }
+
+  if (!customElements.get('code-explorer')) {
+    customElements.define('code-explorer', CodeExplorer)
+  }
+</script>

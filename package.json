@@ -29,11 +29,13 @@
     "package:check": "pnpm build && node scripts/check-packages.mjs",
     "release": "pnpm verify && changeset publish",
     "build:field-guide": "pnpm --filter @doxajs/field-guide build",
+    "build:website": "pnpm --filter @doxajs/website build",
     "check:field-guide": "pnpm --filter @doxajs/field-guide lint && pnpm --filter @doxajs/field-guide build",
+    "check:website": "pnpm --filter @doxajs/website check && pnpm --filter @doxajs/website build",
     "test": "pnpm build && tsc -p tsconfig.tests.json --noEmit --pretty false && vitest run",
     "test:coverage": "pnpm build && vitest run --coverage",
     "test:watch": "vitest",
-    "verify": "pnpm format:check && pnpm lint && pnpm check && pnpm check:field-guide && pnpm test:coverage && pnpm audit:boundaries && pnpm audit:docs && pnpm changeset:status && pnpm package:check && pnpm audit:security"
+    "verify": "pnpm format:check && pnpm lint && pnpm check && pnpm check:field-guide && pnpm check:website && pnpm test:coverage && pnpm audit:boundaries && pnpm audit:docs && pnpm changeset:status && pnpm package:check && pnpm audit:security"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
@@ -61,6 +63,7 @@
     "globals": "17.7.0",
     "pg": "8.22.0",
     "prettier": "3.9.5",
+    "prettier-plugin-astro": "0.14.1",
     "publint": "0.3.21",
     "typescript": "6.0.2",
     "typescript-eslint": "8.63.0",
