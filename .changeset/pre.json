@@ -17,7 +17,20 @@
     "@doxajs/sendgrid": "0.1.0-alpha.0",
     "@doxajs/testing": "0.1.0-alpha.0",
     "@doxajs/twilio-sms": "0.1.0-alpha.0",
-    "@doxajs/theoria": "0.1.0-alpha.0"
+    "@doxajs/theoria": "0.1.0-alpha.0",
+    "@doxajs/keryx": "0.1.0-alpha.0",
+    "@doxajs/realtime": "0.1.0-alpha.0"
   },
-  "changesets": []
+  "changesets": [
+    "add-doxa-upgrade",
+    "alpha-four-release",
+    "alpha-three-release",
+    "alpha-two-release",
+    "doxajs-identity-theoria",
+    "fix-praxis-pnpm-scaffold",
+    "install-pg-boss-schema",
+    "open-source-foundation",
+    "remove-praxis-install-scripts",
+    "version-aligned-praxis-test"
+  ]
 }

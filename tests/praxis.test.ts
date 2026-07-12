@@ -421,7 +421,9 @@ describe('Praxis command suite', () => {
       dependencies: Record<string, string>
       scripts: Record<string, string>
     }
-    expect(packageJson.dependencies['@doxajs/theoria']).toBe('^0.1.0-alpha.0')
+    expect(packageJson.dependencies['@doxajs/theoria']).toBe(
+      packageJson.dependencies['@doxajs/core'],
+    )
     expect(packageJson.scripts).toEqual(
       expect.objectContaining({
         theoria: 'doxa theoria',
