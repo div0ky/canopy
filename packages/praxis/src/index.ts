@@ -441,19 +441,10 @@ async function runDatabaseStudio(
     'utf8',
   )
 
-  let drizzleKit: string
-  try {
-    drizzleKit = path.join(
-      path.dirname(fileURLToPath(import.meta.resolve('drizzle-kit'))),
-      'bin.cjs',
-    )
-  } catch {
-    throw new PraxisCommandError(
-      'Drizzle Studio tooling is not installed. Reinstall development dependencies before running doxa db:studio.',
-    )
-  }
   const drizzleArguments = [
-    drizzleKit,
+    'dlx',
+    '--allow-build=esbuild',
+    'drizzle-kit@0.31.10',
     'studio',
     `--config=${configPath}`,
     `--host=${host}`,
@@ -466,7 +457,12 @@ async function runDatabaseStudio(
     DATABASE_CONNECTION_STRING: connectionString,
   }
   io.out(`Starting Drizzle Studio for Doxa (proxy ${host}:${port}).`)
-  return await (io.run ?? runProcess)(process.execPath, drizzleArguments, cwd, environment)
+  return await (io.run ?? runProcess)(
+    process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+    drizzleArguments,
+    cwd,
+    environment,
+  )
 }
 
 async function runTheoria(cwd: string, args: readonly string[], io: PraxisIo): Promise<void> {
@@ -1088,6 +1084,12 @@ async function makeApplication(directory: string, rawName: string): Promise<void
       null,
       2,
     )}\n`,
+    'pnpm-workspace.yaml': `packages:
+  - .
+
+allowBuilds:
+  esbuild: true
+`,
     'tsconfig.json': `${JSON.stringify(
       {
         compilerOptions: {

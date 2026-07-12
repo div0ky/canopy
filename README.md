@@ -44,7 +44,7 @@ context, records structured evidence, and returns `{ ok: true, data: { status: '
 After the alpha packages are published:
 
 ```sh
-pnpm dlx @doxajs/praxis@next new MyApplication
+pnpm dlx --allow-build=esbuild @doxajs/praxis@next new MyApplication
 cd my-application
 pnpm install
 cp .env.example .env

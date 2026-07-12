@@ -103,21 +103,21 @@ describe('Praxis command suite', () => {
 
     expect(invocation).toEqual(
       expect.objectContaining({
-        command: process.execPath,
+        command: process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
         cwd: root,
         environment: expect.objectContaining({ DATABASE_CONNECTION_STRING: connectionString }),
       }),
     )
-    expect(invocation?.arguments_[0]).toMatch(/drizzle-kit[/\\]bin\.cjs$/)
-    expect(invocation?.arguments_).toEqual(
-      expect.arrayContaining([
-        'studio',
-        `--config=${path.join(root, '.doxa/drizzle-studio.config.mjs')}`,
-        '--host=127.0.0.1',
-        '--port=5099',
-        '--verbose',
-      ]),
-    )
+    expect(invocation?.arguments_).toEqual([
+      'dlx',
+      '--allow-build=esbuild',
+      'drizzle-kit@0.31.10',
+      'studio',
+      `--config=${path.join(root, '.doxa/drizzle-studio.config.mjs')}`,
+      '--host=127.0.0.1',
+      '--port=5099',
+      '--verbose',
+    ])
     expect(invocation?.arguments_.join(' ')).not.toContain('private-password')
     expect(await readFile(path.join(root, '.doxa/drizzle-studio.config.mjs'), 'utf8')).toContain(
       'process.env.DATABASE_CONNECTION_STRING',
@@ -256,6 +256,9 @@ describe('Praxis command suite', () => {
         }),
         engines: { node: '>=24 <25' },
       }),
+    )
+    expect(await readFile(path.join(destination, 'pnpm-workspace.yaml'), 'utf8')).toBe(
+      `packages:\n  - .\n\nallowBuilds:\n  esbuild: true\n`,
     )
     const dockerfile = await readFile(path.join(destination, 'Dockerfile'), 'utf8')
     expect(dockerfile).toContain('FROM node:${NODE_VERSION}-bookworm-slim AS runtime')

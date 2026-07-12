@@ -57,8 +57,7 @@
   },
   "optionalDependencies": {
     "@doxajs/compiler": "workspace:*",
-    "@doxajs/theoria": "workspace:*",
-    "drizzle-kit": "0.31.10"
+    "@doxajs/theoria": "workspace:*"
   },
   "devDependencies": {
     "@types/pg": "8.20.0"

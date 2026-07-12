@@ -9,7 +9,7 @@
 ## Create and run
 
 ```sh
-pnpm dlx @doxajs/praxis@next new MyApplication
+pnpm dlx --allow-build=esbuild @doxajs/praxis@next new MyApplication
 cd my-application
 pnpm install
 cp .env.example .env
