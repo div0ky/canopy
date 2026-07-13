@@ -46,7 +46,8 @@ try {
       if (!files.includes(required)) throw new Error(`${source.name} is missing ${required}.`)
     }
     const forbidden = files.find(
-      (file) => file.includes('.tsbuildinfo') || file.startsWith('package/src/'),
+      (file) =>
+        file.includes('.tsbuildinfo') || file.startsWith('package/src/') || / 2(?:\.|$)/.test(file),
     )
     if (forbidden)
       throw new Error(`${source.name} publishes forbidden build residue: ${forbidden}.`)
