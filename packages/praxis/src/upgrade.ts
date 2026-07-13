@@ -179,7 +179,7 @@ async function continueUpgrade(
 
   const metadata = await installedCompatibility()
   for (const recipe of metadata.upgradeRecipes)
-    await applyBuiltInRecipe(recipe, options.from, cwd, io)
+    await applyBuiltInRecipe(recipe, options.from, cwd, packageJson, io)
 
   io.out('Validating the upgraded application with doxa build...')
   let code = await io.run(pnpm, ['exec', 'doxa', 'build'], cwd, process.env)
@@ -431,10 +431,167 @@ function parsePackageJson(content: string, location: string): PackageJson {
 async function applyBuiltInRecipe(
   recipe: string,
   _from: string,
-  _cwd: string,
-  _io: UpgradeIo,
+  cwd: string,
+  packageJson: PackageJson,
+  io: UpgradeIo,
 ): Promise<void> {
+  if (recipe === 'framework-owned-application-core') {
+    await migrateFrameworkOwnedApplicationCore(cwd, packageJson, io)
+    return
+  }
   throw new PraxisCommandError(
     `Doxa release declares unknown upgrade recipe ${recipe}; no registry code was executed.`,
   )
+}
+
+const frameworkPluginPackages = [
+  '@doxajs/sendgrid',
+  '@doxajs/theoria',
+  '@doxajs/twilio-sms',
+] as const
+
+async function migrateFrameworkOwnedApplicationCore(
+  cwd: string,
+  packageJson: PackageJson,
+  io: UpgradeIo,
+): Promise<void> {
+  const applicationPath = path.join(cwd, 'app.config.ts')
+  const legacyApplicationPath = path.join(cwd, 'src/application.ts')
+  const legacyApplication = await readOptionalFile(legacyApplicationPath)
+  const existingApplication = await readOptionalFile(applicationPath)
+  if (!legacyApplication && !existingApplication) return
+
+  const application =
+    existingApplication ??
+    migrateLegacyApplicationSource(
+      legacyApplication!,
+      frameworkPluginPackages.filter((packageName) =>
+        packageHasDependency(packageJson, packageName),
+      ),
+    )
+  const tsconfigPath = path.join(cwd, 'tsconfig.json')
+  const tsconfigSource = await readOptionalFile(tsconfigPath)
+  if (!tsconfigSource) {
+    throw new PraxisCommandError(
+      'The framework-owned application core upgrade requires an application tsconfig.json.',
+    )
+  }
+  const tsconfig = migrateLegacyTypeScriptConfig(tsconfigSource, tsconfigPath)
+
+  const appFeaturePath = path.join(cwd, 'src/app/app.feature.ts')
+  const appFeature = await readOptionalFile(appFeaturePath)
+  const migratedAppFeature = appFeature ? retireGeneratedHealthRoute(appFeature) : undefined
+
+  if (!existingApplication) await writeFile(applicationPath, application, 'utf8')
+  if (tsconfig !== tsconfigSource) await writeFile(tsconfigPath, tsconfig, 'utf8')
+  if (migratedAppFeature !== undefined && migratedAppFeature !== appFeature)
+    await writeFile(appFeaturePath, migratedAppFeature, 'utf8')
+
+  if (!existingApplication || tsconfig !== tsconfigSource || migratedAppFeature !== appFeature) {
+    io.out(
+      'Applied framework-owned application core recipe: app.config.ts and TypeScript compilation now use the canonical application root; legacy src/application.ts remains for review.',
+    )
+  }
+}
+
+function migrateLegacyApplicationSource(source: string, plugins: readonly string[]): string {
+  if (!/export class Application extends DoxaApplication/.test(source)) {
+    throw new PraxisCommandError(
+      'Cannot migrate src/application.ts automatically because it does not export class Application extends DoxaApplication.',
+    )
+  }
+  let migrated = source.replace(/(from\s+['"])\.\//g, '$1./src/')
+  for (const name of ['AccountsFeature', 'InfrastructureFeature']) {
+    migrated = migrated.replace(
+      new RegExp(`^import \\{ ${name} \\} from ['"][^'"]+['"]\\n`, 'm'),
+      '',
+    )
+  }
+  migrated = removeArrayMembers(migrated, 'features', ['AccountsFeature', 'InfrastructureFeature'])
+  if (!/\n\s*plugins\s*=/.test(migrated)) {
+    const rendered = plugins.map((packageName) => `'${packageName}'`).join(', ')
+    migrated = migrated.replace(
+      /(\n\s*features\s*=\s*\[[^\]]*\])/,
+      `$1\n  plugins = [${rendered}] as const`,
+    )
+  }
+  return migrated
+}
+
+function migrateLegacyTypeScriptConfig(source: string, location: string): string {
+  let config: {
+    compilerOptions?: Record<string, unknown>
+    include?: unknown
+    [key: string]: unknown
+  }
+  try {
+    config = JSON.parse(source) as typeof config
+  } catch (error) {
+    throw new PraxisCommandError(`Cannot migrate invalid JSON in ${location}.`, { cause: error })
+  }
+  const compilerOptions = (config.compilerOptions ??= {})
+  if (compilerOptions.rootDir === 'src') compilerOptions.rootDir = '.'
+  if (compilerOptions.rootDir !== undefined && compilerOptions.rootDir !== '.') {
+    throw new PraxisCommandError(
+      `Cannot add app.config.ts to ${location} because compilerOptions.rootDir is not "." or "src".`,
+    )
+  }
+  const include = config.include
+  if (include !== undefined && (!Array.isArray(include) || !include.every(isString))) {
+    throw new PraxisCommandError(`Cannot migrate non-string include entries in ${location}.`)
+  }
+  config.include = [
+    'app.config.ts',
+    ...((include as string[] | undefined) ?? []).filter(
+      (entry) => entry !== 'app.config.ts' && entry !== '.doxa/framework.ts',
+    ),
+    '.doxa/framework.ts',
+  ]
+  return `${JSON.stringify(config, null, 2)}\n`
+}
+
+function retireGeneratedHealthRoute(source: string): string {
+  if (!/\bHealthRoute\b/.test(source)) return source
+  return removeArrayMembers(
+    source.replace(/^import \{ HealthRoute \} from ['"][^'"]+['"]\n/m, ''),
+    'routes',
+    ['HealthRoute'],
+  )
+}
+
+function packageHasDependency(packageJson: PackageJson, packageName: string): boolean {
+  return Boolean(
+    packageJson.dependencies?.[packageName] ??
+    packageJson.devDependencies?.[packageName] ??
+    packageJson.optionalDependencies?.[packageName],
+  )
+}
+
+function removeArrayMembers(source: string, property: string, removed: readonly string[]): string {
+  const pattern = new RegExp(`(${property}\\s*=\\s*\\[)([^\\]]*)(\\])`)
+  if (!pattern.test(source)) {
+    throw new PraxisCommandError(
+      `Cannot migrate ${property}; expected a literal ${property} = [...] declaration.`,
+    )
+  }
+  return source.replace(pattern, (_match, open: string, members: string, close: string) => {
+    const retained = members
+      .split(',')
+      .map((member) => member.trim())
+      .filter((member) => member && !removed.includes(member))
+    return `${open}${retained.join(', ')}${close}`
+  })
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string'
+}
+
+async function readOptionalFile(file: string): Promise<string | undefined> {
+  try {
+    return await readFile(file, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw error
+  }
 }

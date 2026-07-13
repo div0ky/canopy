@@ -698,6 +698,148 @@ describe('Praxis command suite', () => {
     ])
   })
 
+  it('migrates a pre-alpha.7 scaffold to the framework-owned application core before validation', async () => {
+    const root = await temporaryDirectory()
+    const currentPraxis = JSON.parse(
+      await readFile(path.join(workspace, 'packages/praxis/package.json'), 'utf8'),
+    ) as { version: string }
+    const packageJson = upgradeFixturePackage(currentPraxis.version) as {
+      type?: string
+      dependencies: Record<string, string>
+    }
+    packageJson.type = 'module'
+    packageJson.dependencies['@doxajs/theoria'] = `^${currentPraxis.version}`
+    await writeFile(path.join(root, 'package.json'), `${JSON.stringify(packageJson, null, 2)}\n`)
+    await mkdir(path.join(root, 'src/app/http'), { recursive: true })
+    await mkdir(path.join(root, 'src/accounts'), { recursive: true })
+    await mkdir(path.join(root, 'src/infrastructure'), { recursive: true })
+    await mkdir(path.join(root, 'src/tasks'), { recursive: true })
+    await writeFile(
+      path.join(root, 'src/application.ts'),
+      `import { DoxaApplication } from '@doxajs/core'
+
+import { AccountsFeature } from './accounts/accounts.feature.js'
+import { AppFeature } from './app/app.feature.js'
+import { InfrastructureFeature } from './infrastructure/infrastructure.feature.js'
+import { TasksFeature } from './tasks/tasks.feature.js'
+
+export class Application extends DoxaApplication {
+  id = 'legacy-garden'
+  features = [InfrastructureFeature, AccountsFeature, TasksFeature, AppFeature]
+}
+`,
+    )
+    for (const [directory, name] of [
+      ['accounts', 'Accounts'],
+      ['infrastructure', 'Infrastructure'],
+      ['tasks', 'Tasks'],
+    ] as const) {
+      await writeFile(
+        path.join(root, `src/${directory}/${directory}.feature.ts`),
+        `import { Feature } from '@doxajs/core'\n\nexport class ${name}Feature extends Feature {\n  id = '${directory}'\n}\n`,
+      )
+    }
+    await writeFile(
+      path.join(root, 'src/app/app.feature.ts'),
+      `import { Feature } from '@doxajs/core'
+import { HealthRoute } from './http/health.route.js'
+import { HomeRoute } from './http/home.route.js'
+
+export class AppFeature extends Feature {
+  id = 'app'
+  routes = [HomeRoute, HealthRoute]
+}
+`,
+    )
+    await writeFile(
+      path.join(root, 'src/app/http/home.route.ts'),
+      `import { type HttpRequest, Route } from '@doxajs/core'\n\nexport class HomeRoute extends Route {\n  static override readonly id = 'home'\n  static override readonly access = 'public'\n  readonly method = 'GET'\n  readonly path = '/'\n  handle(_request: HttpRequest) { return { application: 'legacy-garden' } }\n}\n`,
+    )
+    await writeFile(
+      path.join(root, 'src/app/http/health.route.ts'),
+      `import { type HttpRequest, Route } from '@doxajs/core'\n\nexport class HealthRoute extends Route {\n  static override readonly id = 'health'\n  static override readonly access = 'public'\n  readonly method = 'GET'\n  readonly path = '/health'\n  handle(_request: HttpRequest) { return { status: 'ok' } }\n}\n`,
+    )
+    await writeFile(
+      path.join(root, 'tsconfig.json'),
+      `${JSON.stringify(
+        {
+          compilerOptions: {
+            target: 'ES2024',
+            lib: ['ES2024'],
+            module: 'NodeNext',
+            moduleResolution: 'NodeNext',
+            types: ['node'],
+            strict: true,
+            rootDir: 'src',
+            outDir: 'dist',
+            skipLibCheck: true,
+          },
+          include: ['src/**/*.ts'],
+        },
+        null,
+        2,
+      )}\n`,
+    )
+
+    const output: string[] = []
+    expect(
+      await runPraxis(
+        [
+          'upgrade',
+          '--continue',
+          '--from=0.1.0-alpha.5',
+          `--to=${currentPraxis.version}`,
+          '--skip-migration-status',
+        ],
+        root,
+        {
+          out: (message) => output.push(message),
+          error: (message) => {
+            throw new Error(message)
+          },
+          run: () => Promise.resolve(0),
+        },
+      ),
+    ).toBe(0)
+
+    const application = await readFile(path.join(root, 'app.config.ts'), 'utf8')
+    expect(application).toContain("from './src/app/app.feature.js'")
+    expect(application).toContain("from './src/tasks/tasks.feature.js'")
+    expect(application).toContain('features = [TasksFeature, AppFeature]')
+    expect(application).toContain("plugins = ['@doxajs/theoria'] as const")
+    expect(application).not.toContain('AccountsFeature')
+    expect(application).not.toContain('InfrastructureFeature')
+    expect(await readFile(path.join(root, 'src/application.ts'), 'utf8')).toContain(
+      'InfrastructureFeature',
+    )
+    expect(await readFile(path.join(root, 'src/app/app.feature.ts'), 'utf8')).toContain(
+      'routes = [HomeRoute]',
+    )
+    const tsconfig = JSON.parse(await readFile(path.join(root, 'tsconfig.json'), 'utf8')) as {
+      compilerOptions: { rootDir: string }
+      include: string[]
+    }
+    expect(tsconfig.compilerOptions.rootDir).toBe('.')
+    expect(tsconfig.include).toEqual(['app.config.ts', 'src/**/*.ts', '.doxa/framework.ts'])
+    expect(output).toContainEqual(expect.stringContaining('Applied framework-owned application'))
+
+    await symlink(path.join(workspace, 'node_modules'), path.join(root, 'node_modules'))
+    const buildErrors: string[] = []
+    expect(
+      await runPraxis(['build'], root, {
+        out: () => undefined,
+        error: (message) => buildErrors.push(message),
+      }),
+    ).toBe(0)
+    const manifest = JSON.parse(await readFile(path.join(root, '.doxa/manifest.json'), 'utf8')) as {
+      features: Array<{ id: string }>
+      plugins: Array<{ package: string }>
+    }
+    expect(manifest.features.map(({ id }) => id)).toEqual(['app', 'doxa', 'tasks'])
+    expect(manifest.plugins).toEqual([expect.objectContaining({ package: '@doxajs/theoria' })])
+    expect(buildErrors).toEqual([])
+  })
+
   it('installs optional plugins through package metadata and app.config.ts only', async () => {
     const root = await temporaryDirectory()
     const destination = path.join(root, 'garden')

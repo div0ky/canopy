@@ -73,7 +73,9 @@
         "vitest": "^4.0.0"
       }
     },
-    "upgradeRecipes": []
+    "upgradeRecipes": [
+      "framework-owned-application-core"
+    ]
   },
   "scripts": {
     "prepack": "node ../../scripts/prepare-package.mjs",
