@@ -22,6 +22,7 @@ import { ChangePasswordRoute } from './http/change-password.route.js'
 import { ListSessionsRoute } from './http/list-sessions.route.js'
 import { RevokeSessionRoute } from './http/revoke-session.route.js'
 import { ResendVerificationRoute } from './http/resend-verification.route.js'
+import { ReauthenticateRoute } from './http/reauthenticate.route.js'
 
 export class AccountsFeature extends Feature {
   id = 'accounts'
@@ -29,6 +30,7 @@ export class AccountsFeature extends Feature {
   routes = [
     RegisterRoute,
     LoginRoute,
+    ReauthenticateRoute,
     LogoutRoute,
     MeRoute,
     IssueAccessTokenRoute,

@@ -552,6 +552,63 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
       )
   }
 
+  async reauthenticate(
+    identityId: string,
+    sessionId: string,
+    password: string,
+    metadata: AuthRequestMetadata = {},
+  ): Promise<Date> {
+    await this.#rateLimit(
+      'reauthenticate',
+      `${identityId}\0${metadata.ipAddress ?? ''}`,
+      5,
+      15 * 60,
+      15 * 60,
+    )
+    const record = this.options.tables
+      ? await findMappedPassword(this.#requirePool(), this.options.tables.passwords, identityId)
+      : (
+          await this.#requireDatabase()
+            .select()
+            .from(authPasswords)
+            .where(eq(authPasswords.identityId, identityId))
+            .limit(1)
+        )[0]
+    if (!record || !(await verifyPassword(password, record))) {
+      await this.#audit('session.reauthentication_failed', identityId, sessionId, {})
+      throw new AuthenticationError('invalid_credentials', 'The current password is invalid.')
+    }
+    const now = new Date()
+    await this.#requireDatabase().transaction(async (transaction) => {
+      const [session] = await transaction
+        .update(authSessions)
+        .set({ authenticatedAt: now, lastSeenAt: now })
+        .where(
+          and(
+            eq(authSessions.id, sessionId),
+            eq(authSessions.identityId, identityId),
+            isNull(authSessions.revokedAt),
+            gt(authSessions.expiresAt, now),
+            gt(authSessions.idleExpiresAt, now),
+          ),
+        )
+        .returning({ id: authSessions.id })
+      if (!session) {
+        throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
+      }
+      await transaction.insert(authAuditEvents).values({
+        id: randomUUID(),
+        eventType: 'session.reauthenticated',
+        identityId,
+        sessionId,
+        metadata: {},
+        occurredAt: now,
+      })
+    })
+    await this.#clearRateLimit('reauthenticate', `${identityId}\0${metadata.ipAddress ?? ''}`)
+    return now
+  }
+
   async revokeSession(sessionId: string): Promise<void> {
     const now = new Date()
     await this.#requireDatabase().transaction(async (transaction) => {
@@ -742,6 +799,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     if (authorization) return await this.#resolveBearer(authorization)
     const token = cookieToken
     if (!token) return anonymousAuthentication()
+    const webSocketUpgrade = request.headers.get('upgrade')?.toLowerCase() === 'websocket'
     const now = new Date()
     const [session] = await this.#requireDatabase()
       .select()
@@ -764,7 +822,9 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     if (!session) return anonymousAuthentication()
     const identity = await this.findIdentity(session.identityId)
     if (!identity) return anonymousAuthentication()
-    assertTrustedOrigin(request, this.#trustedOrigins)
+    // A WebSocket handshake is a GET, but it establishes long-lived cookie authority and must
+    // receive the same trusted-origin protection as an unsafe HTTP request.
+    assertTrustedOrigin(request, this.#trustedOrigins, webSocketUpgrade)
     const currentDigest = digest(token)
     const matchedCurrent = session.tokenDigest === currentDigest
     const idleExpiresAt = new Date(
@@ -772,6 +832,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     )
     let responseHeaders: Readonly<Record<string, string>> | undefined
     const renewalDue =
+      !webSocketUpgrade &&
       matchedCurrent &&
       now.getTime() - session.lastSeenAt.getTime() >= this.#sessionRenewalSeconds * 1_000
     if (renewalDue) {

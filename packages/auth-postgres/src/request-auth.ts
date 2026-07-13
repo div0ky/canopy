@@ -10,8 +10,12 @@ export function normalizeOrigin(value: string): string {
   return new URL(value).origin
 }
 
-export function assertTrustedOrigin(request: Request, trustedOrigins: ReadonlySet<string>): void {
-  if (['GET', 'HEAD', 'OPTIONS'].includes(request.method.toUpperCase())) return
+export function assertTrustedOrigin(
+  request: Request,
+  trustedOrigins: ReadonlySet<string>,
+  force = false,
+): void {
+  if (!force && ['GET', 'HEAD', 'OPTIONS'].includes(request.method.toUpperCase())) return
   if (request.headers.get('sec-fetch-site') === 'cross-site') {
     throw new HttpError(
       403,

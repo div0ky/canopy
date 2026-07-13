@@ -79,6 +79,25 @@ export interface ResolvedHttpAuthentication {
   readonly responseHeaders?: Readonly<Record<string, string>>
 }
 
+export function isRecentPasswordAuthentication(
+  authentication: AuthenticationContext,
+  maxAgeSeconds = 15 * 60,
+  now = new Date(),
+): boolean {
+  const authenticatedAt = authentication.authenticatedAt
+  const ageMilliseconds =
+    authenticatedAt instanceof Date ? now.getTime() - authenticatedAt.getTime() : Number.NaN
+  return (
+    Number.isFinite(maxAgeSeconds) &&
+    maxAgeSeconds >= 0 &&
+    authentication.state === 'authenticated' &&
+    authentication.method === 'password' &&
+    Boolean(authentication.sessionId && authentication.identityId) &&
+    ageMilliseconds >= 0 &&
+    ageMilliseconds <= maxAgeSeconds * 1_000
+  )
+}
+
 export interface AuthStorageDescription {
   readonly kind: 'doxa-owned' | 'mapped' | 'custom'
   readonly identities?: { readonly table: string; readonly ownership: 'doxa' | 'external' }
@@ -134,6 +153,12 @@ export abstract class Auth {
     currentPassword: string,
     newPassword: string,
   ): Promise<void>
+  abstract reauthenticate(
+    identityId: string,
+    sessionId: string,
+    password: string,
+    metadata?: AuthRequestMetadata,
+  ): Promise<Date>
   abstract revokeSession(sessionId: string): Promise<void>
   abstract listSessions(identityId: string): Promise<readonly AuthSession[]>
   abstract revokeAllSessions(identityId: string): Promise<number>

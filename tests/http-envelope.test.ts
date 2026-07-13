@@ -41,6 +41,7 @@ describe('Doxa HTTP response envelopes', () => {
         routes: [
           { id: 'route:test/payload', method: 'GET', path: '/payload' },
           { id: 'route:test/failure', method: 'GET', path: '/failure' },
+          { id: 'route:test/unsafe-details', method: 'GET', path: '/unsafe-details' },
         ],
       },
       logger: new Logger(),
@@ -55,6 +56,9 @@ describe('Doxa HTTP response envelopes', () => {
           trace: { traceId: '1'.repeat(32), spanId: '2'.repeat(16), traceFlags: 1 },
         }),
       dispatchRoute: (id: string) => {
+        if (id === 'route:test/unsafe-details') {
+          throw new HttpError(400, 'invalid_details', 'The request failed.', { unsafe: 1n })
+        }
         if (id === 'route:test/failure') {
           throw new HttpError(409, 'conflict', 'The resource changed.', { version: 2 })
         }
@@ -75,6 +79,15 @@ describe('Doxa HTTP response envelopes', () => {
       message: 'The resource changed.',
       data: null,
       details: { version: 2 },
+    })
+
+    const unsafeDetails = await http.fetch(new Request('http://doxa.test/unsafe-details'))
+    expect(unsafeDetails.status).toBe(400)
+    expect(await unsafeDetails.json()).toEqual({
+      ok: false,
+      code: 'invalid_details',
+      message: 'The request failed.',
+      data: null,
     })
 
     const missing = await http.fetch(new Request('http://doxa.test/missing'))

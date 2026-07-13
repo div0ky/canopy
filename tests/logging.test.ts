@@ -1,4 +1,10 @@
-import { ConsoleLogSink, Logger, MemoryLogSink, SecretString } from '@doxajs/core'
+import {
+  ConsoleLogSink,
+  Logger,
+  MemoryLogSink,
+  sanitizeObservationError,
+  SecretString,
+} from '@doxajs/core'
 import { runWithLogContext } from '@doxajs/core/runtime'
 import { describe, expect, it } from 'vitest'
 
@@ -102,5 +108,28 @@ describe('Doxa logging', () => {
     expect(sink.records[0]?.error?.message).toBe(
       'postgresql://doxa:[REDACTED]@localhost/db token=[REDACTED]',
     )
+  })
+
+  it('normalizes hostile and cyclic observation errors without changing application behavior', () => {
+    const first = new Error('token=first-secret')
+    const second = new Error('password=second-secret')
+    first.cause = second
+    second.cause = first
+
+    expect(() => sanitizeObservationError(first)).not.toThrow()
+    expect(sanitizeObservationError(first)).toMatchObject({
+      message: 'token=[REDACTED]',
+      cause: {
+        message: 'password=[REDACTED]',
+        cause: { message: '[CIRCULAR CAUSE]' },
+      },
+    })
+
+    const hostile = Object.defineProperty(new Error('hidden'), 'message', {
+      get: () => {
+        throw new Error('getter failed')
+      },
+    })
+    expect(sanitizeObservationError(hostile).message).toBe('[UNAVAILABLE ERROR MESSAGE]')
   })
 })

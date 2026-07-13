@@ -321,8 +321,20 @@ function errorDocument(
   details?: unknown,
   headers?: Headers | Record<string, string> | Array<[string, string]>,
 ): Response {
-  return Response.json(httpFailure(code, message, details), {
+  return Response.json(httpFailure(code, message, jsonSafeDetails(details)), {
     status,
     ...(headers ? { headers } : {}),
   })
+}
+
+function jsonSafeDetails(details: unknown): unknown {
+  if (details === undefined) return undefined
+  try {
+    const serialized = JSON.stringify(details)
+    return serialized === undefined ? undefined : JSON.parse(serialized)
+  } catch {
+    // Error mapping is the final HTTP safety boundary. Invalid optional diagnostics must not
+    // escape the canonical envelope or expose the private HTTP engine's failure behavior.
+    return undefined
+  }
 }

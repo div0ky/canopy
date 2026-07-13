@@ -15,6 +15,14 @@
 - `@doxajs/sendgrid`
 - `@doxajs/twilio-sms`
 - `@doxajs/theoria`
+- `@doxajs/keryx` — first-party WebSocket broadcasting server adapter.
+
+## Realtime clients
+
+- `@doxajs/realtime` — subscriber-facing WebSocket client with reconnect and resubscription.
+
+Application events continue to use broadcasting contracts from `@doxajs/core`; Keryx and the
+realtime client do not become the domain event vocabulary.
 
 Application and infrastructure composition may import these packages. Domain Features should rely on
 Doxa-owned ports and types from `@doxajs/core`.

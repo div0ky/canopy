@@ -6,6 +6,8 @@ Doxa documentation is organized by what a developer is trying to accomplish:
 - [Application model](concepts/application-model.md) explains Features, roles, scopes, and services.
 - [Events, jobs, and schedules](guides/events-jobs-schedules.md) covers reactive and asynchronous
   work.
+- [Authentication](guides/authentication.md) covers sessions, bearer tokens, trusted origins, and
+  sensitive-operation reauthentication.
 - [Deployment](operations/deployment.md) describes production roles and release ordering.
 - [Packages](reference/packages.md) identifies supported public and framework-internal surfaces.
 - [Upgrading](upgrading/index.md) defines pre-1.0 compatibility and migration expectations.

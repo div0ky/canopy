@@ -47,6 +47,10 @@ has a stable machine-readable `code`, a safe human-readable `message`, and `data
 `details` carries standardized structured diagnostics such as validation issues; it never contains
 successful domain data or private exception material.
 
+`details` must be JSON-serializable. If application-provided diagnostics cannot be serialized, the
+HTTP boundary omits `details` and still returns the canonical failure envelope; error handling never
+falls through to an engine-native response while attempting to describe another error.
+
 HTTP status codes retain their normal meaning. The envelope does not turn failures into `200`
 responses. Creation may use `201`, accepted work may use `202`, validation uses `422`, and so on.
 `Http.created(payload)`, `Http.accepted(payload)`, and `Http.json(payload, status, headers)` exist

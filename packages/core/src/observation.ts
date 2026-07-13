@@ -95,15 +95,62 @@ export function sanitizeObservationAttributes(
 }
 
 export function sanitizeObservationError(error: unknown): ObservationError {
-  if (!(error instanceof Error)) {
-    return Object.freeze({ name: 'Error', message: redactText(String(error)) })
+  try {
+    return sanitizeError(error, new Set())
+  } catch {
+    return Object.freeze({ name: 'Error', message: '[UNAVAILABLE ERROR]' })
   }
+}
+
+function sanitizeError(error: unknown, seen: Set<unknown>): ObservationError {
+  if (!(error instanceof Error)) {
+    return Object.freeze({ name: 'Error', message: redactText(safeString(error)) })
+  }
+  if (seen.has(error)) {
+    return Object.freeze({ name: safeErrorName(error), message: '[CIRCULAR CAUSE]' })
+  }
+  seen.add(error)
+  const message = safeErrorProperty(error, 'message')
+  const stack = safeErrorProperty(error, 'stack')
+  const cause = safeErrorCause(error)
   return Object.freeze({
-    name: error.name || 'Error',
-    message: redactText(error.message),
-    ...(error.stack ? { stack: redactText(error.stack) } : {}),
-    ...(error.cause === undefined ? {} : { cause: sanitizeObservationError(error.cause) }),
+    name: safeErrorName(error),
+    message: redactText(message ?? '[UNAVAILABLE ERROR MESSAGE]'),
+    ...(stack ? { stack: redactText(stack) } : {}),
+    ...(cause === undefined ? {} : { cause: sanitizeError(cause, seen) }),
   })
+}
+
+function safeErrorName(error: Error): string {
+  return safeErrorProperty(error, 'name') || 'Error'
+}
+
+function safeErrorProperty(
+  error: Error,
+  property: 'message' | 'name' | 'stack',
+): string | undefined {
+  try {
+    const value = error[property]
+    return typeof value === 'string' ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function safeErrorCause(error: Error): unknown {
+  try {
+    return error.cause
+  } catch {
+    return new Error('[UNAVAILABLE CAUSE]')
+  }
+}
+
+function safeString(value: unknown): string {
+  try {
+    return String(value)
+  } catch {
+    return '[UNAVAILABLE ERROR]'
+  }
 }
 
 function sanitizeValue(value: unknown, seen: WeakSet<object>, depth: number): JsonValue {

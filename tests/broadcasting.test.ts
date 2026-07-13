@@ -147,6 +147,8 @@ export class Application extends DoxaApplication { id = 'broadcast-fixture'; fea
         expect.objectContaining({
           kind: 'broadcast',
           targetId: 'event:counters/counter-broadcasted',
+          eventVersion: 1,
+          payload: { counterId: 'counter-1', value: 7 },
         }),
       ])
       await queue.runNext()

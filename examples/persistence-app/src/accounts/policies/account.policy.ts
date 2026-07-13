@@ -1,9 +1,17 @@
-import { allow, deny, Policy, type PolicyDecision, type PolicyRequest } from '@doxajs/core'
+import {
+  allow,
+  deny,
+  isRecentPasswordAuthentication,
+  Policy,
+  type PolicyDecision,
+  type PolicyRequest,
+} from '@doxajs/core'
 
 export class AccountPolicy extends Policy {
   static override readonly id = 'account'
   static override readonly abilities = [
     'accounts.logout',
+    'accounts.reauthenticate',
     'accounts.password.change',
     'accounts.email.verify',
     'accounts.sessions.manage',
@@ -19,8 +27,7 @@ export class AccountPolicy extends Policy {
       ['accounts.tokens.manage', 'accounts.sessions.manage', 'accounts.password.change'].includes(
         request.ability,
       ) &&
-      (!request.context.authentication.sessionId ||
-        request.context.authentication.method !== 'password')
+      !isRecentPasswordAuthentication(request.context.authentication)
     ) {
       return deny('account', 'fresh_session_required')
     }

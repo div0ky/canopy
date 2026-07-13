@@ -26,21 +26,22 @@ is executable and must match its manifest build hash and supported format versio
 
 ## Threats and controls
 
-| Threat                                     | First-party control                                                                                    | Executable evidence                                                             |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| Credential database disclosure             | Argon2id password records; SHA-256 digest-only opaque session, bearer, verification, and reset tokens  | Storage assertions reject raw material and require versioned parameters/digests |
-| Account enumeration                        | Equivalent login failure and recovery responses; dummy Argon2id verification                           | Known/unknown negative HTTP tests                                               |
-| Brute force and recovery abuse             | Durable hashed attempt buckets, bounded windows, temporary blocks, `429` and `Retry-After`             | PostgreSQL abuse-control tests                                                  |
-| Session fixation or replay                 | Cryptographic tokens, rotation, bounded previous-token grace, revocation on password change/reset      | Rotation, concurrent grace, old-token, logout, and revocation tests             |
-| CSRF against cookie authority              | Trusted-origin checks for unsafe cookie-authenticated requests                                         | Hostile-origin rejection tests                                                  |
-| Confused credential authority              | Cookie plus bearer is rejected; bearer constraints only narrow authority                               | Ambiguity and constraint-denial tests                                           |
-| Missing or bypassed authorization          | Every entry role declares `public` or an ability; policies compile; missing policies deny              | Compiler diagnostics and default-deny tests                                     |
-| Cross-resource access                      | Explicit resource authorization with the current actor, tenant, and credential constraints             | Owner/non-owner policy tests and durable decisions                              |
-| Ghost jobs or notifications                | Queue, journal, entity, and delivery handoffs share the action transaction                             | Rollback and visibility tests                                                   |
-| Forged provider delivery updates           | Exact-body SendGrid ECDSA verification and timestamp window; canonical Twilio HMAC verification        | Valid, malformed, stale, and duplicate webhook fixtures                         |
-| Artifact substitution                      | Application identity, manifest version, build hash, and constructor registry compatibility fail closed | Compiler/runtime compatibility tests                                            |
-| Secret leakage through framework telemetry | Structured allowlisted attributes, `SecretString`, provider-independent errors, safe operator views    | Redaction assertions and boundary audit                                         |
-| Denial during shutdown                     | Admission closes before drain; bounded lifecycle deadlines; cancellation and full cleanup aggregation  | Lifecycle and active-worker drain tests                                         |
+| Threat                                      | First-party control                                                                                    | Executable evidence                                                             |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| Credential database disclosure              | Argon2id password records; SHA-256 digest-only opaque session, bearer, verification, and reset tokens  | Storage assertions reject raw material and require versioned parameters/digests |
+| Account enumeration                         | Equivalent login failure and recovery responses; dummy Argon2id verification                           | Known/unknown negative HTTP tests                                               |
+| Brute force and recovery abuse              | Durable hashed attempt buckets, bounded windows, temporary blocks, `429` and `Retry-After`             | PostgreSQL abuse-control tests                                                  |
+| Session fixation or replay                  | Cryptographic tokens, rotation, bounded previous-token grace, revocation on password change/reset      | Rotation, concurrent grace, old-token, logout, and revocation tests             |
+| Stale authority for sensitive operations    | Password reauthentication refreshes one live session; policies enforce a bounded freshness window      | Stale denial, password verification, refresh, and security-audit tests          |
+| CSRF or cross-site WebSocket use of cookies | Trusted-origin checks for unsafe HTTP requests and cookie-authenticated WebSocket upgrades             | Hostile-origin HTTP and WebSocket rejection tests                               |
+| Confused credential authority               | Cookie plus bearer is rejected; bearer constraints only narrow authority                               | Ambiguity and constraint-denial tests                                           |
+| Missing or bypassed authorization           | Every entry role declares `public` or an ability; policies compile; missing policies deny              | Compiler diagnostics and default-deny tests                                     |
+| Cross-resource access                       | Explicit resource authorization with the current actor, tenant, and credential constraints             | Owner/non-owner policy tests and durable decisions                              |
+| Ghost jobs or notifications                 | Queue, journal, entity, and delivery handoffs share the action transaction                             | Rollback and visibility tests                                                   |
+| Forged provider delivery updates            | Exact-body SendGrid ECDSA verification and timestamp window; canonical Twilio HMAC verification        | Valid, malformed, stale, and duplicate webhook fixtures                         |
+| Artifact substitution                       | Application identity, manifest version, build hash, and constructor registry compatibility fail closed | Compiler/runtime compatibility tests                                            |
+| Secret leakage through framework telemetry  | Structured allowlisted attributes, `SecretString`, provider-independent errors, safe operator views    | Redaction assertions and boundary audit                                         |
+| Denial during shutdown                      | Admission closes before drain; bounded lifecycle deadlines; cancellation and full cleanup aggregation  | Lifecycle and active-worker drain tests                                         |
 
 ## Security invariants
 

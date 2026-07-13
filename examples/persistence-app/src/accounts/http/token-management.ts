@@ -1,12 +1,13 @@
-import { CurrentExecution, HttpError } from '@doxajs/core'
+import { CurrentExecution, HttpError, isRecentPasswordAuthentication } from '@doxajs/core'
 
-export function requirePasswordSession(execution: CurrentExecution): string {
+export function requirePasswordSession(execution: CurrentExecution, requireRecent = true): string {
   const authentication = execution.context.authentication
   if (
     authentication.state !== 'authenticated' ||
     authentication.method !== 'password' ||
     !authentication.sessionId ||
-    !authentication.identityId
+    !authentication.identityId ||
+    (requireRecent && !isRecentPasswordAuthentication(authentication))
   ) {
     throw new HttpError(
       403,

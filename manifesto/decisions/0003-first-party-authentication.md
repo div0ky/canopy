@@ -284,9 +284,11 @@ session rotation, explicit-origin CSRF enforcement, revocation, and security aud
 adds digest-backed API credentials, constraint propagation, ambiguity rejection, rotation,
 revocation, and the same identity-to-actor resolution.
 
-Email verification, password reset, abuse controls, automatic renewal, testing helpers, complete
-operational diagnostics, concurrency and crash conformance, and an external security review remain
-required before this accepted decision is production-ready.
+Later authentication-completion, testing, and operational-control slices prove email verification,
+password reset, breached-password hooks, durable abuse controls, automatic renewal, bounded
+concurrent grace, sensitive-operation reauthentication, testing helpers, pruning, and operator
+diagnostics. Crash-process conformance and the mandatory independent pre-1.0 security review remain
+release gates rather than application-facing API gaps.
 
 ## References
 

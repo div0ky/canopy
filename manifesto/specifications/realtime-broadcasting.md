@@ -38,6 +38,12 @@ subscribe and unsubscribe command is then admitted as a fresh Doxa execution usi
 authentication, tenant, and connection correlation context. Connection identity is never treated as
 an execution scope.
 
+Cookie-authenticated upgrade requests require the same trusted `Origin` validation as unsafe HTTP
+requests even though the WebSocket handshake uses `GET`. Upgrade admission must not rotate a browser
+session unless the replacement cookie can be returned as part of the handshake; the first-party
+adapter authenticates upgrades without rotation and refreshes ordinary session activity instead.
+Bearer-authenticated upgrades do not acquire cookie authority from the browser.
+
 Presence membership exposes only the admitted `ActorRef`. Applications that need public profile data
 broadcast a separate, explicitly shaped event; Keryx does not serialize identities, sessions,
 credentials, policy decisions, or execution context to clients.
