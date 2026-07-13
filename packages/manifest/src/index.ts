@@ -1,4 +1,4 @@
-export const MANIFEST_FORMAT_VERSION = 12 as const
+export const MANIFEST_FORMAT_VERSION = 1 as const
 
 export type Scope = 'singleton' | 'execution' | 'transient'
 

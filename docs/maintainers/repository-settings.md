@@ -21,4 +21,6 @@ unused repository features instead of leaving unmaintained support surfaces visi
 3. Configure `release.yml` as the trusted publisher for every package and restrict token-based
    publication afterward.
 4. Protect the `npm` GitHub environment and require maintainer approval.
-5. Publish prereleases under the `next` dist-tag until Doxa intentionally promotes a stable release.
+5. Publish prereleases under the tag configured by Changesets prerelease mode. The current release
+   train uses `alpha`; do not introduce a parallel `next` channel unless a release decision changes
+   `.changeset/pre.json`, upgrade guidance, and installation documentation together.

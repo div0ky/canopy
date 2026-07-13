@@ -682,6 +682,13 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       error: (message: string) => errors.push(message),
     }
     expect(await runPraxis(['migrate', `--database=${connectionString}`], root, io)).toBe(0)
+    expect(output.filter((line) => line.startsWith('Migrated framework/'))).toEqual([
+      'Migrated framework/postgres-drizzle/0001_doxa_cache.sql',
+      'Migrated framework/postgres-drizzle/0001_doxa_communications.sql',
+      'Migrated framework/postgres-drizzle/0001_doxa_durability.sql',
+      'Migrated framework/auth-postgres/0001_doxa_auth.sql',
+      'Migrated framework/queue-pg-boss/0001_doxa_schedule_controls.sql',
+    ])
     expect(
       (await pool.query(`SELECT to_regclass('pgboss.job') AS relation`)).rows[0]?.relation,
     ).toBe('pgboss.job')

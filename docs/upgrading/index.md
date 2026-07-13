@@ -53,3 +53,7 @@ Doxa uses forward-only migrations. Downgrading code across a completed schema mi
 assumed safe, and Praxis refuses version downgrades. Read the release notes before applying a
 breaking prerelease upgrade; those notes must include explicit application, manifest, operational,
 and migration guidance.
+
+Before the first stable release, a release may explicitly re-baseline Doxa-owned framework schemas
+instead of preserving alpha migration history. Such a release requires recreating prerelease
+databases; it must never present rewritten migration checksums as a compatible forward migration.

@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS doxa_theoria_observations (
   id uuid PRIMARY KEY,
+  sequence bigint GENERATED ALWAYS AS IDENTITY,
   occurred_at timestamptz NOT NULL,
   kind text NOT NULL,
   name text NOT NULL,
@@ -32,3 +33,7 @@ CREATE INDEX IF NOT EXISTS doxa_theoria_kind_idx
 CREATE INDEX IF NOT EXISTS doxa_theoria_failed_idx
   ON doxa_theoria_observations (occurred_at DESC)
   WHERE phase = 'failed';
+CREATE INDEX IF NOT EXISTS doxa_theoria_execution_sequence_idx
+  ON doxa_theoria_observations (execution_id, sequence);
+CREATE INDEX IF NOT EXISTS doxa_theoria_correlation_sequence_idx
+  ON doxa_theoria_observations (correlation_id, sequence);

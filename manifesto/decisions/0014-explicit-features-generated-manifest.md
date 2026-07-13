@@ -301,7 +301,7 @@ identify at least:
 
 ```json
 {
-  "formatVersion": 3,
+  "formatVersion": 1,
   "applicationId": "acme",
   "frameworkVersion": "0.1.0",
   "compilerVersion": "0.1.0",
@@ -321,6 +321,11 @@ Breaking manifest changes increment `formatVersion`. Additive optional fields ma
 format version only when existing consumers can safely ignore them without changing the meaning of
 known fields. Compatibility migrations must be deliberate, testable framework tooling rather than ad
 hoc runtime coercion.
+
+Before Doxa's first stable release, the manifest contract is re-baselined at format `1`. Alpha
+development history is not encoded as a chain of public formats: prerelease applications rebuild
+their generated artifacts when upgrading. After the first stable release, breaking manifest changes
+increment the published format and follow the compatibility rules above.
 
 ## Consequences
 

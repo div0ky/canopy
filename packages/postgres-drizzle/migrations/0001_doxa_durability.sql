@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS doxa_journal_entries (
   entity_type text NOT NULL,
   entity_id text NOT NULL,
   payload jsonb NOT NULL,
+  payload_version integer NOT NULL DEFAULT 1 CHECK (payload_version > 0),
   context jsonb NOT NULL,
   occurred_at timestamptz NOT NULL
 );
