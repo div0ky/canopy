@@ -1640,13 +1640,28 @@ function readClassArray(
 function readStringArray(declaration: ts.ClassDeclaration, name: string): readonly string[] {
   const property = findInstanceProperty(declaration, name)
   if (!property) return []
-  if (!property.initializer || !ts.isArrayLiteralExpression(property.initializer)) {
+  const initializer = property.initializer
+    ? unwrapLiteralExpression(property.initializer)
+    : undefined
+  if (!initializer || !ts.isArrayLiteralExpression(initializer)) {
     fail(property, `${name} must be a literal string array.`)
   }
-  return property.initializer.elements.map((element) => {
+  return initializer.elements.map((element) => {
     if (!ts.isStringLiteral(element)) fail(element, `${name} must contain string literals only.`)
     return element.text
   })
+}
+
+function unwrapLiteralExpression(expression: ts.Expression): ts.Expression {
+  let current = expression
+  while (
+    ts.isAsExpression(current) ||
+    ts.isSatisfiesExpression(current) ||
+    ts.isParenthesizedExpression(current)
+  ) {
+    current = current.expression
+  }
+  return current
 }
 
 function failSource(message: string): never {

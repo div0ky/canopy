@@ -562,13 +562,13 @@ async function addPlugin(cwd: string, name: string): Promise<void> {
     })
   })
   if (source.includes(`'${packageName}'`) || source.includes(`"${packageName}"`)) return
-  const plugins = /(\n  plugins\s*=\s*\[)([^\]]*)(\])/
+  const plugins = /(\n  plugins\s*=\s*\[)([^\]]*)(\])(?:\s+as const)?/
   if (!plugins.test(source)) {
     throw new PraxisCommandError('Application must declare a literal plugins array.')
   }
   source = source.replace(plugins, (_match, open: string, contents: string, close: string) => {
     const trimmed = contents.trim()
-    return `${open}${trimmed ? `${trimmed}, ` : ''}'${packageName}'${close}`
+    return `${open}${trimmed ? `${trimmed}, ` : ''}'${packageName}'${close} as const`
   })
   await writeFile(configPath, source, 'utf8')
 }
@@ -1240,7 +1240,7 @@ services:
     'tests/app.test.ts': `import { describe, expect, it } from 'vitest'\n\ndescribe('${name}', () => {\n  it('is ready to build', () => expect(true).toBe(true))\n})\n`,
   }
   files['app.config.ts'] =
-    `import { DoxaApplication } from '@doxajs/core'\n\nimport { AppFeature } from './src/app/app.feature.js'\n\nexport class Application extends DoxaApplication {\n  id = '${packageName}'\n  features = [AppFeature]\n  plugins = []\n  framework = {\n    auth: {\n      secureCookies: false,\n      trustedOrigins: ['http://127.0.0.1:3000'],\n    },\n  }\n}\n`
+    `import { DoxaApplication } from '@doxajs/core'\n\nimport { AppFeature } from './src/app/app.feature.js'\n\nexport class Application extends DoxaApplication {\n  id = '${packageName}'\n  features = [AppFeature]\n  plugins = [] as const\n  framework = {\n    auth: {\n      secureCookies: false,\n      trustedOrigins: ['http://127.0.0.1:3000'],\n    },\n  }\n}\n`
   files['src/app/app.feature.ts'] =
     `import { Feature } from '@doxajs/core'\n\nimport { HomeRoute } from './http/home.route.js'\n\nexport class AppFeature extends Feature {\n  id = 'app'\n  routes = [HomeRoute]\n}\n`
   files['tsconfig.json'] = `${JSON.stringify(

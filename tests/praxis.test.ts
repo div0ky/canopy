@@ -337,7 +337,7 @@ describe('Praxis command suite', () => {
     const feature = await readFile(path.join(destination, 'src/app/app.feature.ts'), 'utf8')
     expect(application).toContain("id = 'garden'")
     expect(application).toContain('features = [AppFeature]')
-    expect(application).toContain('plugins = []')
+    expect(application).toContain('plugins = [] as const')
     expect(feature).toContain('routes = [HomeRoute]')
     expect(feature).not.toContain('HealthRoute')
     expect(JSON.parse(await readFile(path.join(destination, 'package.json'), 'utf8'))).toEqual(
@@ -721,9 +721,20 @@ describe('Praxis command suite', () => {
       packageJson.dependencies['@doxajs/core'],
     )
     expect(await readFile(path.join(destination, 'app.config.ts'), 'utf8')).toContain(
-      "plugins = ['@doxajs/sendgrid']",
+      "plugins = ['@doxajs/sendgrid'] as const",
     )
     expect(await fileExists(path.join(destination, 'src/infrastructure'))).toBe(false)
+    await symlink(path.join(workspace, 'node_modules'), path.join(destination, 'node_modules'))
+    expect(
+      await runPraxis(['build'], destination, {
+        out: () => undefined,
+        error: (message) => errors.push(message),
+      }),
+    ).toBe(0)
+    const manifest = JSON.parse(
+      await readFile(path.join(destination, '.doxa/manifest.json'), 'utf8'),
+    ) as { plugins: Array<{ package: string }> }
+    expect(manifest.plugins).toEqual([expect.objectContaining({ package: '@doxajs/sendgrid' })])
     expect(errors).toEqual([])
   })
 })

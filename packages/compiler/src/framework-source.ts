@@ -616,15 +616,30 @@ function requiredStringProperty(declaration: ts.ClassDeclaration, name: string):
 function stringArrayProperty(declaration: ts.ClassDeclaration, name: string): readonly string[] {
   const property = classProperty(declaration, name)
   if (!property) return []
-  if (!property.initializer || !ts.isArrayLiteralExpression(property.initializer)) {
+  const initializer = property.initializer
+    ? unwrapLiteralExpression(property.initializer)
+    : undefined
+  if (!initializer || !ts.isArrayLiteralExpression(initializer)) {
     throw new DoxaCompilationError(`Application.${name} must be a literal string array.`)
   }
-  return property.initializer.elements.map((element) => {
+  return initializer.elements.map((element) => {
     if (!ts.isStringLiteral(element)) {
       throw new DoxaCompilationError(`Application.${name} must contain string literals only.`)
     }
     return element.text
   })
+}
+
+function unwrapLiteralExpression(expression: ts.Expression): ts.Expression {
+  let current = expression
+  while (
+    ts.isAsExpression(current) ||
+    ts.isSatisfiesExpression(current) ||
+    ts.isParenthesizedExpression(current)
+  ) {
+    current = current.expression
+  }
+  return current
 }
 
 function objectProperty(
