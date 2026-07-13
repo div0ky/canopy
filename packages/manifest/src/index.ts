@@ -153,9 +153,12 @@ export interface EventManifestEntry {
   readonly ownerId: string
   readonly name: string
   readonly exportName: string
+  readonly payloadVersion: number
   readonly dispatch: 'immediate' | 'after-commit'
   readonly broadcast: false | 'queued' | 'now'
+  readonly domain: false | { readonly entityType: string }
   readonly source: SourceProvenance
+  readonly dependencies: readonly DependencyManifestEntry[]
 }
 
 export interface ListenerManifestEntry {
@@ -199,7 +202,7 @@ export interface ScheduleManifestEntry {
     | { readonly kind: 'interval'; readonly seconds: number }
   readonly timeZone: string
   readonly overlap: 'allow' | 'serialize'
-  readonly misfire: 'skip'
+  readonly misfire: 'skip' | 'catch-up-once'
   readonly input: unknown
   readonly access: 'public' | string
   readonly source: SourceProvenance
@@ -223,6 +226,7 @@ export interface SignalManifestEntry {
   readonly name: string
   readonly exportName: string
   readonly source: SourceProvenance
+  readonly dependencies: readonly DependencyManifestEntry[]
 }
 
 export interface SignalHandlerManifestEntry {

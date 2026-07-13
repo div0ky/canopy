@@ -40,7 +40,7 @@ export abstract class Job<Input = unknown, Output = void> extends DoxaRole {
 }
 
 export type ScheduleOverlapPolicy = 'allow' | 'serialize'
-export type ScheduleMisfirePolicy = 'skip'
+export type ScheduleMisfirePolicy = 'skip' | 'catch-up-once'
 
 /**
  * Compile-time schedule declaration. Doxa never constructs this class.
@@ -112,6 +112,7 @@ export interface QueueEnvelope {
   readonly targetId: string
   readonly scheduleId?: string
   readonly eventId?: string
+  readonly eventVersion?: number
   readonly payload: JsonValue
   readonly context: QueueExecutionEnvelope
   readonly policy: QueuePolicy

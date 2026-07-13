@@ -20,6 +20,9 @@ import { QueueNotifications } from '../examples/persistence-app/dist/counters/ac
 import { SaveCounter } from '../examples/persistence-app/dist/counters/actions/save-counter.js'
 import { SaveLegacyCustomer } from '../examples/persistence-app/dist/counters/actions/save-legacy-customer.js'
 import { CounterIncremented } from '../examples/persistence-app/dist/counters/events/counter-incremented.js'
+import { CounterSaved } from '../examples/persistence-app/dist/counters/events/counter-saved.js'
+import { CounterCreated } from '../examples/persistence-app/dist/counters/events/counter-created.js'
+import { RecordCounterIncremented } from '../examples/persistence-app/dist/counters/listeners/record-counter-incremented.js'
 import { ProcessCounterJob } from '../examples/persistence-app/dist/counters/jobs/process-counter.job.js'
 import { CounterTouched } from '../examples/persistence-app/dist/counters/signals/counter-touched.js'
 import {
@@ -212,6 +215,28 @@ describe('@doxajs/testing', () => {
     })
     try {
       harness.actingAsSystem()
+      harness.events.fake([CounterIncremented])
+      await harness.event(CounterIncremented, {
+        counterId: 'faked-event',
+        amount: 1,
+        value: 1,
+      })
+      harness.events.assertDispatched(
+        CounterIncremented,
+        (event) => event.payload.counterId === 'faked-event',
+      )
+      harness.events.assertNotDispatched(CounterCreated)
+      harness.events.assertListening(CounterIncremented, RecordCounterIncremented)
+      expect(recordedEvents.some((event) => event.event === 'counter-incremented')).toBe(false)
+      harness.events.restore().clear()
+
+      resetRecordedEvents()
+      harness.events.fake([CounterSaved])
+      await harness.action(SaveCounter, { id: 'faked-after-commit', amount: 2 })
+      harness.events.assertDispatched(CounterSaved)
+      expect(recordedEvents.some((event) => event.event === 'counter-saved')).toBe(false)
+      harness.events.restore().clear()
+
       await harness.event(CounterIncremented, { counterId: 'direct-event', amount: 2, value: 2 })
       await harness.signal(CounterTouched, { counterId: 'direct-signal' })
       const jobId = await harness.job(ProcessCounterJob, { key: 'direct-job' })

@@ -10,6 +10,7 @@ export {
   RuntimeIntegrityError,
   RuntimeShutdownError,
   type BootOptions,
+  type EventTestHook,
   type RuntimeState,
 } from './runtime.js'
 

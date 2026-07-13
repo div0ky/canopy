@@ -113,25 +113,15 @@ The complete suite contains thirty-three passing tests. Event-specific conforman
 
 ## Deliberate boundary
 
-This is the synchronous and local-after-commit event slice, not the complete MVP reactive model.
-Still required:
+This was the synchronous and local-after-commit event slice. Subsequent queue, testing,
+broadcasting, and Domain Event work completed the MVP reactive model through the same manifest and
+runtime contract.
 
-- `DomainEvent` journal semantics distinct from general `Event`.
-- Immediate framework `Signal` semantics.
-- Versioned queued payload schemas and model-reference serialization beyond the initial JSON event
-  envelope.
-- Model-reference serialization and rehydration for queued payloads.
-- Event fakes and application-isolated assertions.
-- Event inspection tooling and finalized listener ordering policy.
-- Equivalent proof from jobs, schedules, console commands, and queued listeners.
-
-Queued listener delivery is now implemented by the
-[pg-boss queue and worker vertical slice](pg-boss-queue-worker-vertical-slice.md). Event fakes,
-versioned payload schemas, model-reference rehydration, and complete entry-point parity remain
-future work.
-
-Broadcasting is implemented by the
-[realtime broadcasting vertical slice](realtime-broadcasting-vertical-slice.md).
+Queued listener delivery, Signals, application-isolated fakes, inspection, versioned envelopes,
+entry-point parity, and broadcasting are implemented by their later vertical slices. `DomainEvent`
+now journals its typed payload atomically before following the ordinary listener pipeline. Automatic
+Model-reference serialization remains future work; immutable historical facts should continue to
+carry explicit JSON values.
 
 ## Next slice
 

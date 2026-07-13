@@ -39,10 +39,15 @@ export class OrderService {
 
 ## Framework roles
 
-Routes, actions, queries, jobs, schedules, events, listeners, observers, policies, commands,
-signals, and other framework entry points extend one Doxa role class. This inheritance is meaningful
-rather than ceremonial: it supplies the role contract, scoped injection, the class-bound logger,
-execution-context access, and role-specific framework behavior.
+Routes, actions, queries, jobs, events, listeners, observers, policies, commands, signals, signal
+handlers, and other executable or execution-created framework roles extend one Doxa role class. This
+inheritance is meaningful rather than ceremonial: it supplies the role contract, scoped injection,
+the class-bound logger, execution-context access, and role-specific framework behavior.
+
+Schedules are the deliberate exception. They are declaration-only timing metadata and are never
+constructed. A schedule dispatches its declared Job, and that Job receives the admitted execution
+scope. This preserves the settled rule that schedules do not introduce a second handler or execution
+model.
 
 `this.inject(Dependency)` is:
 
@@ -95,10 +100,10 @@ intentional and should be obvious in review.
 
 The MVP must prove:
 
-1. Every supported role can resolve concrete services, abstract ports, and typed tokens through
-   `this.inject()` without declaring a constructor.
-2. Injected dependencies use the current request, job, command, schedule, listener, or signal
-   execution scope with identical scope semantics.
+1. Every supported executable or execution-created role can resolve concrete services, abstract
+   ports, and typed tokens through `this.inject()` without declaring a dependency constructor.
+2. Injected dependencies use the current request, job, command, listener, event, or signal execution
+   scope with identical scope semantics; a schedule's target Job uses the schedule firing's scope.
 3. The generated JSON manifest exposes every injection edge without executing application code.
 4. Missing, cyclic, cross-feature, ambiguous, and scope-invalid dependencies fail static
    compilation.

@@ -167,11 +167,12 @@ The MVP must prove:
 8. Event inspection reports the exact listeners and phases used by runtime dispatch.
 
 The [class events vertical slice](../implementation/class-events-vertical-slice.md) implements the
-first executable proof of inherited static dispatch, typed listener inference, constructor
+first executable proof of inherited static dispatch, typed listener inference, scoped role
 injection, runtime isolation, local failure propagation, and transaction-aware after-commit
-delivery. Queued delivery, signals, inspection, and broadcasting now have executable proofs. Domain
-events, versioned serialization, event fakes, and complete entry-point parity remain required before
-the complete event contract is satisfied. Broadcasting is proven by the
+delivery. Later slices prove queued delivery, signals, inspection, broadcasting, application-scoped
+fakes, manifest-versioned payload envelopes, and Unit-of-Work-journaled `DomainEvent` facts. Model
+reference serialization and rehydration remain a future compatibility capability; immutable event
+payloads carry explicit values today. Broadcasting is proven by the
 [realtime broadcasting vertical slice](../implementation/realtime-broadcasting-vertical-slice.md).
 
 ## References

@@ -335,6 +335,9 @@ importers:
       '@doxajs/core':
         specifier: workspace:*
         version: link:../core
+      cron-parser:
+        specifier: 5.6.1
+        version: 5.6.1
       pg:
         specifier: 8.22.0
         version: 8.22.0

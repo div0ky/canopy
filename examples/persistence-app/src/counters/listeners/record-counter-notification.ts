@@ -14,7 +14,7 @@ export class RecordCounterNotification
   private readonly execution = this.inject(CurrentExecution)
   private readonly job = this.inject(CurrentJob)
 
-  handle(_event: CounterNotificationRequested): void {
+  handle(event: CounterNotificationRequested): void {
     this.recorder.record({
       event: 'counter-notification-requested',
       phase: 'queued',
@@ -22,7 +22,7 @@ export class RecordCounterNotification
       actor: this.execution.context.actor.kind,
       jobId: this.job.context.id,
       attempt: this.job.context.attempt,
-      executionId: this.execution.context.executionId,
+      executionId: event.executionId(),
     })
   }
 }

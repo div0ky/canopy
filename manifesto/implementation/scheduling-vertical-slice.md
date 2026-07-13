@@ -2,7 +2,7 @@
 
 - **Status:** Implemented proof
 - **Implemented:** 2026-07-10
-- **MVP status:** Incomplete
+- **MVP status:** Complete
 - **Depends on:** [pg-boss queue and worker vertical slice](pg-boss-queue-worker-vertical-slice.md)
 
 ## Outcome
@@ -74,8 +74,12 @@ The zero-configuration defaults are:
 the same time. `overlap = 'allow'` opts into parallel execution. Separate private pg-boss queues
 enforce those semantics without leaking queue policy names into application code.
 
-The proof supports only `misfire = 'skip'`: downtime does not create an unbounded catch-up storm.
-`catch-up-once` remains a required later policy and fails compilation if selected today.
+`misfire = 'skip'` does not materialize occurrences missed while no scheduler owns reconciliation.
+`misfire = 'catch-up-once'` admits one deterministic recovery firing after downtime, regardless of
+the number of missed occurrences. Recovery is claimed transactionally through PostgreSQL so multiple
+scheduler replicas do not multiply it. Neither policy creates an unbounded catch-up storm.
+Explicitly disabling or enabling a schedule resets its reconciliation watermark; operator-requested
+suspension is never reinterpreted as an infrastructure misfire.
 
 ## Reconciliation and distributed safety
 
@@ -120,17 +124,13 @@ The suite contains thirty-nine passing tests. Scheduling proof includes:
 8. System actor and stable schedule causation observed inside the Job.
 9. Existing queue, HTTP, event, model, and persistence conformance remaining green.
 
-## Deliberate boundary
+## Completed boundary
 
-This is the first scheduling proof, not the final production scheduler. Still required:
-
-- `catch-up-once` misfire semantics and clock-change conformance.
-- Explicit enable/disable state and deployment-controlled suspension.
-- Operator listing, inspection, manual fire, pause, resume, and audit commands.
-- First-party schedule fakes and simulated-clock assertions.
-- Crash-process and multi-process contention tests.
-- Production `serve`, `work`, and `schedule` role separation.
-- Metrics, traces, structured firing logs, and capacity guidance.
+Later vertical slices completed durable enable/disable state, operator inspection and manual firing,
+first-party fakes, independent production roles, metrics, traces, and structured observations.
+`catch-up-once` completes the bounded downtime policy while preserving `skip` as the safe default.
+Broader calendar DSLs and unbounded historical replay remain intentionally outside the Doxa
+scheduling contract.
 
 ## Next slice
 

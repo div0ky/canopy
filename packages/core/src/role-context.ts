@@ -6,9 +6,11 @@ export type RoleInjectionToken<Value = object> = abstract new (...arguments_: ne
 
 export interface RoleConstructionContext {
   readonly logger: Logger
+  loggerFor?(owner: RoleInjectionToken): Logger
   resolve<Value extends object>(
     token: RoleInjectionToken<Value>,
     optional: boolean,
+    owner?: RoleInjectionToken,
   ): Value | undefined
 }
 

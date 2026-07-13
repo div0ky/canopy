@@ -313,6 +313,7 @@ describe('foundational compile-to-boot slice', () => {
     const manifest = JSON.parse(await readFile(result.manifestPath, 'utf8')) as {
       formatVersion: number
     }
+    const expectedFormatVersion = manifest.formatVersion
     manifest.formatVersion = 2
     await writeFile(result.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
 
@@ -322,7 +323,7 @@ describe('foundational compile-to-boot slice', () => {
         dotenvPath: false,
         environment: {},
       }),
-    ).rejects.toThrow('Unsupported Doxa manifest format 2; expected 12')
+    ).rejects.toThrow(`Unsupported Doxa manifest format 2; expected ${expectedFormatVersion}`)
   })
 
   it('rejects an Application constructor that does not match the generated registry', async () => {

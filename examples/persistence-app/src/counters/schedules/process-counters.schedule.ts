@@ -7,5 +7,6 @@ export class ProcessCountersSchedule extends Schedule {
   static override readonly access = 'public'
   static override readonly job = ProcessCounterJob
   static override readonly everySeconds = 3_600
+  static override readonly misfire = 'catch-up-once'
   static override readonly input = { key: 'scheduled-counter-sweep' }
 }

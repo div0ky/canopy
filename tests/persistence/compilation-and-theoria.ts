@@ -191,6 +191,11 @@ export function registerCompilationAndTheoriaTests(
           path: '/auth/me',
         }),
         expect.objectContaining({
+          id: 'route:accounts/reauthenticate',
+          method: 'POST',
+          path: '/auth/reauthenticate',
+        }),
+        expect.objectContaining({
           id: 'route:accounts/register',
           method: 'POST',
           path: '/auth/register',
@@ -289,12 +294,19 @@ export function registerCompilationAndTheoriaTests(
           dispatch: 'immediate',
         }),
         expect.objectContaining({
+          id: 'event:counters/counter-created',
+          payloadVersion: 1,
+          domain: { entityType: 'model:counters/counter' },
+        }),
+        expect.objectContaining({
           id: 'event:counters/counter-incremented',
           dispatch: 'immediate',
+          dependencies: [expect.objectContaining({ targetId: 'doxa:current-execution' })],
         }),
         expect.objectContaining({
           id: 'event:counters/counter-notification-requested',
           dispatch: 'immediate',
+          dependencies: [expect.objectContaining({ targetId: 'doxa:current-execution' })],
         }),
         expect.objectContaining({
           id: 'event:counters/counter-saved',
@@ -348,7 +360,7 @@ export function registerCompilationAndTheoriaTests(
         cadence: { kind: 'interval', seconds: 3_600 },
         timeZone: 'UTC',
         overlap: 'serialize',
-        misfire: 'skip',
+        misfire: 'catch-up-once',
         input: { key: 'scheduled-counter-sweep' },
       }),
       expect.objectContaining({
@@ -365,6 +377,7 @@ export function registerCompilationAndTheoriaTests(
           'accounts.email.verify',
           'accounts.logout',
           'accounts.password.change',
+          'accounts.reauthenticate',
           'accounts.sessions.manage',
           'accounts.tokens.manage',
           'accounts.view-self',
@@ -378,6 +391,7 @@ export function registerCompilationAndTheoriaTests(
     expect(result.manifest.signals).toEqual([
       expect.objectContaining({
         id: 'signal:counters/counter-touched',
+        dependencies: [expect.objectContaining({ targetId: 'doxa:current-execution' })],
       }),
     ])
     expect(result.manifest.signalHandlers).toEqual([

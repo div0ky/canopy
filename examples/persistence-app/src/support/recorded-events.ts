@@ -1,6 +1,6 @@
 export interface RecordedEvent {
   readonly event: string
-  readonly phase: 'local' | 'after-commit' | 'http' | 'queued' | 'signal'
+  readonly phase: 'local' | 'after-commit' | 'http' | 'queued' | 'signal' | 'domain'
   readonly correlationId: string
   readonly actor: string
   readonly value?: number

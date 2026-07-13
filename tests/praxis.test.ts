@@ -136,7 +136,14 @@ describe('Praxis command suite', () => {
     await runPraxis(['make:feature', 'Commerce'], root, io)
     const commands = [
       ['make:model', 'Commerce/Order'],
-      ['make:event', 'Commerce/OrderPlaced', '--broadcast', '--channel=orders', '--private'],
+      [
+        'make:event',
+        'Commerce/OrderPlaced',
+        '--model=Order',
+        '--broadcast',
+        '--channel=orders',
+        '--private',
+      ],
       [
         'make:listener',
         'Commerce/NotifyWarehouse',
@@ -148,7 +155,14 @@ describe('Praxis command suite', () => {
       ['make:signal-handler', 'Commerce/RecordOrderTouched', '--signal=OrderTouched', '--public'],
       ['make:observer', 'Commerce/OrderObserver', '--model=Order'],
       ['make:job', 'Commerce/ShipOrder', '--ability=orders.ship'],
-      ['make:schedule', 'Commerce/ShipPendingOrders', '--job=ShipOrder', '--every=60', '--public'],
+      [
+        'make:schedule',
+        'Commerce/ShipPendingOrders',
+        '--job=ShipOrder',
+        '--every=60',
+        '--misfire=catch-up-once',
+        '--public',
+      ],
       ['make:policy', 'Commerce/OrderPolicy', '--abilities=orders.view,orders.ship'],
       [
         'make:route',
@@ -191,11 +205,17 @@ describe('Praxis command suite', () => {
       await readFile(path.join(root, 'src/commerce/events/order-placed.ts'), 'utf8'),
     ).toContain('implements ShouldBroadcast')
     expect(
+      await readFile(path.join(root, 'src/commerce/events/order-placed.ts'), 'utf8'),
+    ).toContain('static override readonly model = Order')
+    expect(
       await readFile(path.join(root, 'src/commerce/listeners/notify-warehouse.ts'), 'utf8'),
     ).toContain('implements ShouldQueueAfterCommit')
     expect(
       await readFile(path.join(root, 'src/commerce/schedules/ship-pending-orders.ts'), 'utf8'),
     ).toContain('everySeconds = 60')
+    expect(
+      await readFile(path.join(root, 'src/commerce/schedules/ship-pending-orders.ts'), 'utf8'),
+    ).toContain("misfire = 'catch-up-once'")
     expect(
       await readFile(path.join(root, 'src/commerce/policies/order-policy.ts'), 'utf8'),
     ).toContain('orders.ship')

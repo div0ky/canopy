@@ -94,13 +94,13 @@ Generate:
   make:action <Feature/Name> --public|--ability=<ability>
   make:query <Feature/Name> --public|--ability=<ability>
   make:route <Feature/Name> --method=GET --path=/path --public|--ability=<ability>
-  make:event <Feature/Name> [--broadcast|--broadcast-now] [--channel=name] [--private|--presence]
+  make:event <Feature/Name> [--model=Model] [--broadcast|--broadcast-now] [--channel=name] [--private|--presence]
   make:listener <Feature/Name> --event=Event [--queued|--after-commit|--queued-after-commit] --public|--ability=<ability>
   make:signal <Feature/Name>
   make:signal-handler <Feature/Name> --signal=Signal --public|--ability=<ability>
   make:observer <Feature/Name> --model=Model
   make:job <Feature/Name> --public|--ability=<ability>
-  make:schedule <Feature/Name> --job=Job (--cron="..."|--every=seconds) --public|--ability=<ability>
+  make:schedule <Feature/Name> --job=Job (--cron="..."|--every=seconds) [--misfire=skip|catch-up-once] --public|--ability=<ability>
   make:policy <Feature/Name> --abilities=one,two
   make:config <Feature/Name>
   make:provider <Feature/Name>
@@ -812,7 +812,9 @@ async function operateSchedule(
     if (command === 'schedule:enable' || command === 'schedule:disable') {
       const value = command === 'schedule:enable'
       await pool.query(
-        'UPDATE doxa_schedule_controls SET enabled = $2, updated_at = now() WHERE schedule_id = $1',
+        `UPDATE doxa_schedule_controls
+         SET enabled = $2, last_reconciled_at = now(), updated_at = now()
+         WHERE schedule_id = $1`,
         [schedule!.id, value],
       )
       io.out(
@@ -1247,15 +1249,16 @@ services:
     'src/infrastructure/infrastructure.feature.ts': `import { Feature } from '@doxajs/core'\nimport { ApplicationAuth } from './auth.js'\nimport { ApplicationCache } from './cache.js'\nimport { DatabaseConfig } from './database.config.js'\nimport { ApplicationMail } from './mail.js'\nimport { Queues } from './queues.js'\nimport { ApplicationSms } from './sms.js'\nimport { Transactions } from './transactions.js'\n\nexport class InfrastructureFeature extends Feature {\n  id = 'infrastructure'\n  configs = [DatabaseConfig]\n  providers = [Transactions, Queues, ApplicationAuth, ApplicationCache, ApplicationMail, ApplicationSms]\n}\n`,
     'src/accounts/credentials.ts': `import { HttpError, type HttpRequest } from '@doxajs/core'\n\nexport async function credentials(request: HttpRequest): Promise<{ email: string; password: string }> {\n  const body = await request.json<{ email?: unknown; password?: unknown }>()\n  if (typeof body.email !== 'string' || typeof body.password !== 'string') throw new HttpError(422, 'validation_failed', 'email and password are required')\n  return { email: body.email, password: body.password }\n}\n`,
     'src/accounts/send-auth-email.ts': `import { randomUUID } from 'node:crypto'\nimport { Action, Mailer } from '@doxajs/core'\n\nexport class SendAuthEmail extends Action<{ kind: 'verification' | 'password-reset'; to: string; token: string }, void> {\n  static id = 'send-auth-email'\n  static override readonly access = 'public'\n  private readonly mailer = this.inject(Mailer)\n  async handle(input: { kind: 'verification' | 'password-reset'; to: string; token: string }): Promise<void> {\n    await this.mailer.send({ id: randomUUID(), from: 'accounts@${packageName}.test', to: [input.to], subject: input.kind === 'verification' ? 'Verify your email' : 'Reset your password', text: input.token })\n  }\n}\n`,
-    'src/accounts/account.policy.ts': `import { allow, deny, Policy, type PolicyDecision, type PolicyRequest } from '@doxajs/core'\n\nexport class AccountPolicy extends Policy {\n  static override readonly id = 'account'\n  static override readonly abilities = ['accounts.view-self', 'accounts.tokens.manage']\n  decide(request: PolicyRequest): PolicyDecision {\n    if (request.actor.kind !== 'user' || request.context.authentication.state !== 'authenticated') return deny('account', 'authentication_required')\n    if (request.ability === 'accounts.tokens.manage' && request.context.authentication.method !== 'password') return deny('account', 'password_session_required')\n    return allow('account')\n  }\n}\n`,
+    'src/accounts/account.policy.ts': `import { allow, deny, isRecentPasswordAuthentication, Policy, type PolicyDecision, type PolicyRequest } from '@doxajs/core'\n\nexport class AccountPolicy extends Policy {\n  static override readonly id = 'account'\n  static override readonly abilities = ['accounts.view-self', 'accounts.reauthenticate', 'accounts.tokens.manage']\n  decide(request: PolicyRequest): PolicyDecision {\n    if (request.actor.kind !== 'user' || request.context.authentication.state !== 'authenticated') return deny('account', 'authentication_required')\n    if (request.ability === 'accounts.tokens.manage' && !isRecentPasswordAuthentication(request.context.authentication)) return deny('account', 'fresh_session_required')\n    return allow('account')\n  }\n}\n`,
     'src/accounts/register.route.ts': `import { ActionBus, Auth, Http, type HttpRequest, Route } from '@doxajs/core'\nimport { credentials } from './credentials.js'\nimport { SendAuthEmail } from './send-auth-email.js'\n\nexport class RegisterRoute extends Route {\n  static override readonly id = 'register'; static override readonly access = 'public'\n  readonly method = 'POST'; readonly path = '/auth/register'\n  private readonly auth = this.inject(Auth)\n  private readonly actions = this.inject(ActionBus)\n  async handle(request: HttpRequest): Promise<Response> {\n    const identity = await this.auth.register(await credentials(request))\n    const challenge = await this.auth.issueEmailVerification(identity.id)\n    await this.actions.execute(SendAuthEmail, { kind: 'verification', to: identity.email, token: challenge.token.reveal() })\n    return Http.created({ identity: { id: identity.id, email: identity.email, emailVerified: identity.emailVerified } })\n  }\n}\n`,
     'src/accounts/login.route.ts': `import { Auth, Http, type HttpRequest, Route } from '@doxajs/core'\nimport { credentials } from './credentials.js'\n\nexport class LoginRoute extends Route {\n  static override readonly id = 'login'; static override readonly access = 'public'\n  readonly method = 'POST'; readonly path = '/auth/login'\n  private readonly auth = this.inject(Auth)\n  async handle(request: HttpRequest): Promise<Response> {\n    const grant = await this.auth.login(await credentials(request), { userAgent: request.header('user-agent') ?? 'unknown' })\n    return Http.json({ identity: { id: grant.identity.id, email: grant.identity.email, emailVerified: grant.identity.emailVerified } }, 200, { 'set-cookie': this.auth.sessionCookie(grant) })\n  }\n}\n`,
+    'src/accounts/reauthenticate.route.ts': `import { Auth, CurrentExecution, HttpError, type HttpRequest, Route } from '@doxajs/core'\n\nexport class ReauthenticateRoute extends Route {\n  static override readonly id = 'reauthenticate'; static override readonly access = 'accounts.reauthenticate'\n  readonly method = 'POST'; readonly path = '/auth/reauthenticate'\n  private readonly auth = this.inject(Auth)\n  private readonly execution = this.inject(CurrentExecution)\n  async handle(request: HttpRequest) {\n    const authentication = this.execution.context.authentication\n    const body = await request.json<{ password?: unknown }>()\n    if (authentication.state !== 'authenticated' || authentication.method !== 'password' || !authentication.identityId || !authentication.sessionId) throw new HttpError(403, 'password_session_required', 'A password-authenticated browser session is required.')\n    if (typeof body.password !== 'string') throw new HttpError(422, 'validation_failed', 'password is required')\n    const authenticatedAt = await this.auth.reauthenticate(authentication.identityId, authentication.sessionId, body.password, { userAgent: request.header('user-agent') ?? 'unknown' })\n    return { authenticatedAt: authenticatedAt.toISOString() }\n  }\n}\n`,
     'src/accounts/me.route.ts': `import { CurrentExecution, type HttpRequest, Route } from '@doxajs/core'\n\nexport class MeRoute extends Route {\n  static override readonly id = 'me'; static override readonly access = 'accounts.view-self'\n  readonly method = 'GET'; readonly path = '/auth/me'\n  private readonly execution = this.inject(CurrentExecution)\n  handle(_request: HttpRequest) { return { actor: this.execution.context.actor, authentication: this.execution.context.authentication } }\n}\n`,
     'src/accounts/verify-email.route.ts': `import { Auth, HttpError, type HttpRequest, Route } from '@doxajs/core'\n\nexport class VerifyEmailRoute extends Route {\n  static override readonly id = 'verify-email'; static override readonly access = 'public'\n  readonly method = 'POST'; readonly path = '/auth/email/verify'\n  private readonly auth = this.inject(Auth)\n  async handle(request: HttpRequest) {\n    const body = await request.json<{ token?: unknown }>()\n    if (typeof body.token !== 'string') throw new HttpError(422, 'validation_failed', 'token is required')\n    const identity = await this.auth.verifyEmail(body.token)\n    return { identity: { id: identity.id, email: identity.email, emailVerified: identity.emailVerified } }\n  }\n}\n`,
     'src/accounts/token.route.ts': `import { Auth, CurrentExecution, Http, HttpError, type HttpRequest, Route } from '@doxajs/core'\n\nexport class TokenRoute extends Route {\n  static override readonly id = 'issue-token'; static override readonly access = 'accounts.tokens.manage'\n  readonly method = 'POST'; readonly path = '/auth/tokens'\n  private readonly auth = this.inject(Auth)\n  private readonly execution = this.inject(CurrentExecution)\n  async handle(request: HttpRequest): Promise<Response> {\n    const identityId = this.execution.context.authentication.identityId\n    if (!identityId) throw new HttpError(401, 'authentication_required', 'Authentication is required.')\n    const body = await request.json<{ name?: unknown; constraints?: unknown }>()\n    if (typeof body.name !== 'string' || (body.constraints !== undefined && (!Array.isArray(body.constraints) || !body.constraints.every((value) => typeof value === 'string')))) throw new HttpError(422, 'validation_failed', 'name and string constraints are required')\n    const grant = await this.auth.issueAccessToken(identityId, { name: body.name, ...(body.constraints ? { constraints: body.constraints as string[] } : {}) })\n    return Http.created({ accessToken: grant.accessToken, token: grant.token.reveal() })\n  }\n}\n`,
     'src/accounts/request-password-reset.route.ts': `import { ActionBus, Auth, type HttpRequest, Route } from '@doxajs/core'\nimport { SendAuthEmail } from './send-auth-email.js'\n\nexport class RequestPasswordResetRoute extends Route {\n  static override readonly id = 'request-password-reset'; static override readonly access = 'public'\n  readonly method = 'POST'; readonly path = '/auth/password/reset/request'\n  private readonly auth = this.inject(Auth)\n  private readonly actions = this.inject(ActionBus)\n  async handle(request: HttpRequest): Promise<Response> {\n    const body = await request.json<{ email?: unknown }>()\n    if (typeof body.email === 'string') { const challenge = await this.auth.issuePasswordReset(body.email); if (challenge) await this.actions.execute(SendAuthEmail, { kind: 'password-reset', to: body.email, token: challenge.token.reveal() }) }\n    return new Response(null, { status: 204 })\n  }\n}\n`,
     'src/accounts/reset-password.route.ts': `import { Auth, HttpError, type HttpRequest, Route } from '@doxajs/core'\n\nexport class ResetPasswordRoute extends Route {\n  static override readonly id = 'reset-password'; static override readonly access = 'public'\n  readonly method = 'POST'; readonly path = '/auth/password/reset'\n  private readonly auth = this.inject(Auth)\n  async handle(request: HttpRequest): Promise<Response> {\n    const body = await request.json<{ token?: unknown; password?: unknown }>()\n    if (typeof body.token !== 'string' || typeof body.password !== 'string') throw new HttpError(422, 'validation_failed', 'token and password are required')\n    await this.auth.resetPassword(body.token, body.password); return new Response(null, { status: 204 })\n  }\n}\n`,
-    'src/accounts/accounts.feature.ts': `import { Feature } from '@doxajs/core'\nimport { AccountPolicy } from './account.policy.js'\nimport { LoginRoute } from './login.route.js'\nimport { MeRoute } from './me.route.js'\nimport { RegisterRoute } from './register.route.js'\nimport { RequestPasswordResetRoute } from './request-password-reset.route.js'\nimport { ResetPasswordRoute } from './reset-password.route.js'\nimport { SendAuthEmail } from './send-auth-email.js'\nimport { TokenRoute } from './token.route.js'\nimport { VerifyEmailRoute } from './verify-email.route.js'\n\nexport class AccountsFeature extends Feature {\n  id = 'accounts'\n  actions = [SendAuthEmail]\n  routes = [RegisterRoute, LoginRoute, MeRoute, VerifyEmailRoute, TokenRoute, RequestPasswordResetRoute, ResetPasswordRoute]\n  policies = [AccountPolicy]\n}\n`,
+    'src/accounts/accounts.feature.ts': `import { Feature } from '@doxajs/core'\nimport { AccountPolicy } from './account.policy.js'\nimport { LoginRoute } from './login.route.js'\nimport { MeRoute } from './me.route.js'\nimport { ReauthenticateRoute } from './reauthenticate.route.js'\nimport { RegisterRoute } from './register.route.js'\nimport { RequestPasswordResetRoute } from './request-password-reset.route.js'\nimport { ResetPasswordRoute } from './reset-password.route.js'\nimport { SendAuthEmail } from './send-auth-email.js'\nimport { TokenRoute } from './token.route.js'\nimport { VerifyEmailRoute } from './verify-email.route.js'\n\nexport class AccountsFeature extends Feature {\n  id = 'accounts'\n  actions = [SendAuthEmail]\n  routes = [RegisterRoute, LoginRoute, ReauthenticateRoute, MeRoute, VerifyEmailRoute, TokenRoute, RequestPasswordResetRoute, ResetPasswordRoute]\n  policies = [AccountPolicy]\n}\n`,
     'src/tasks/task.ts': `import { Model, type ModelAttributes } from '@doxajs/core'\n\nexport interface TaskAttributes extends ModelAttributes { id: string; ownerId: string; title: string; completed: boolean }\n\nexport class Task extends Model<TaskAttributes> {\n  static override readonly id = 'task'\n  get ownerId(): string { return this.attributes.ownerId }\n  get completed(): boolean { return this.attributes.completed }\n  complete(): void {\n    if (this.attributes.completed) return\n    this.attributes.completed = true\n    this.journal('task.completed', { title: this.attributes.title })\n    this.outbox('task.completed', { taskId: this.id, ownerId: this.ownerId })\n  }\n}\n`,
     'src/tasks/task.policy.ts': `import { allow, deny, Policy, type PolicyDecision, type PolicyRequest } from '@doxajs/core'\n\nexport class TaskPolicy extends Policy<{ ownerId: string }> {\n  static override readonly id = 'task'\n  static override readonly abilities = ['tasks.update']\n  decide(request: PolicyRequest<{ ownerId: string }>): PolicyDecision {\n    if (request.actor.kind !== 'user' || !request.actor.id) return deny('task', 'authentication_required')\n    if (request.resource && request.resource.ownerId !== request.actor.id) return deny('task', 'owner_required')\n    return allow('task')\n  }\n}\n`,
     'src/tasks/task-completed.event.ts': `import { Event } from '@doxajs/core'\n\nexport class TaskCompleted extends Event<{ taskId: string; ownerId: string }> {\n  static override readonly id = 'task-completed'\n}\n`,
@@ -1989,9 +1992,23 @@ function roleDefinition(
   if (role === 'event') {
     const queued = args.includes('--broadcast')
     const now = args.includes('--broadcast-now')
+    const domainModel = option(args, 'model')
+    const base = domainModel ? 'DomainEvent' : 'Event'
+    const modelDeclaration = domainModel
+      ? `import { ${pascal(domainModel)} } from '../models/${kebab(domainModel)}.js'\n`
+      : ''
+    const modelProperty = domainModel
+      ? `  static override readonly model = ${pascal(domainModel)}\n`
+      : ''
     if (queued && now)
       throw new PraxisCommandError('Events cannot combine --broadcast and --broadcast-now.')
-    if (!queued && !now) return { field: 'events', folder: 'events', source: simple('Event') }
+    if (!queued && !now)
+      return {
+        field: 'events',
+        folder: 'events',
+        source: (name) =>
+          `import { ${base} } from '@doxajs/core'\n${modelDeclaration}\nexport class ${name} extends ${base} {\n  static override readonly id = '${kebab(name)}'\n${modelProperty}}\n`,
+      }
     const channel = required(
       option(args, 'channel'),
       'Broadcast events require --channel=<channel-name>.',
@@ -2010,7 +2027,7 @@ function roleDefinition(
       field: 'events',
       folder: 'events',
       source: (name) =>
-        `import { ${channelClass}, Event, type ${capability} } from '@doxajs/core'\n\nexport class ${name} extends Event implements ${capability} {\n  static override readonly id = '${kebab(name)}'\n\n  broadcastOn() {\n    return new ${channelClass}('${channel}')\n  }\n}\n`,
+        `import { ${channelClass}, ${base}, type ${capability} } from '@doxajs/core'\n${modelDeclaration}\nexport class ${name} extends ${base} implements ${capability} {\n  static override readonly id = '${kebab(name)}'\n${modelProperty}\n  broadcastOn() {\n    return new ${channelClass}('${channel}')\n  }\n}\n`,
     }
   }
   if (role === 'signal') return { field: 'signals', folder: 'signals', source: simple('Signal') }
@@ -2077,15 +2094,18 @@ function roleDefinition(
     const job = pascal(required(option(args, 'job'), 'Schedules require --job=JobName.'))
     const cron = option(args, 'cron')
     const every = option(args, 'every')
+    const misfire = option(args, 'misfire') ?? 'skip'
     if (Boolean(cron) === Boolean(every))
       throw new PraxisCommandError('Schedules require exactly one of --cron= or --every=seconds.')
     if (every && (!Number.isFinite(Number(every)) || Number(every) <= 0))
       throw new PraxisCommandError('--every must be a positive number of seconds.')
+    if (misfire !== 'skip' && misfire !== 'catch-up-once')
+      throw new PraxisCommandError('--misfire must be skip or catch-up-once.')
     return {
       field: 'schedules',
       folder: 'schedules',
       source: (name) =>
-        `import { Schedule } from '@doxajs/core'\nimport { ${job} } from '../jobs/${kebab(job)}.js'\n\nexport class ${name} extends Schedule<void> {\n  static override readonly id = '${kebab(name)}'\n  static override readonly access = '${access}'\n  static override readonly job = ${job}\n  static override readonly ${cron ? `cron = ${JSON.stringify(cron)}` : `everySeconds = ${Number(every)}`}\n  static override readonly input = undefined\n}\n`,
+        `import { Schedule } from '@doxajs/core'\nimport { ${job} } from '../jobs/${kebab(job)}.js'\n\nexport class ${name} extends Schedule<void> {\n  static override readonly id = '${kebab(name)}'\n  static override readonly access = '${access}'\n  static override readonly job = ${job}\n  static override readonly ${cron ? `cron = ${JSON.stringify(cron)}` : `everySeconds = ${Number(every)}`}\n  static override readonly misfire = '${misfire}'\n  static override readonly input = undefined\n}\n`,
     }
   }
   if (role === 'policy') {

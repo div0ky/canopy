@@ -1,5 +1,6 @@
 import { currentEventDispatcher } from './event-context.js'
 import { DoxaRole } from './role.js'
+import type { Model } from './model.js'
 
 export class EventDispatchError extends Error {
   override readonly name = 'EventDispatchError'
@@ -7,6 +8,7 @@ export class EventDispatchError extends Error {
 
 export abstract class Event<Payload = never> extends DoxaRole {
   static readonly id: string = ''
+  static readonly version: number = 1
   readonly payload: Payload
 
   constructor(...payload: [Payload] extends [never] ? [] : [payload: Payload]) {
@@ -23,6 +25,21 @@ export abstract class Event<Payload = never> extends DoxaRole {
       throw new EventDispatchError('Event dispatch requires an active Doxa-managed execution.')
     }
     return dispatcher.dispatch(new this(...arguments_))
+  }
+}
+
+/** A typed domain fact journaled atomically through the active Unit of Work. */
+export abstract class DomainEvent<Payload = never> extends Event<Payload> {
+  declare static readonly model: {
+    new (...arguments_: never[]): Model
+    readonly id: string
+  }
+  readonly entityId: string
+
+  constructor(entityId: string, ...payload: [Payload] extends [never] ? [] : [payload: Payload]) {
+    super(...payload)
+    if (entityId.trim().length === 0) throw new TypeError('DomainEvent entityId must not be empty.')
+    this.entityId = entityId
   }
 }
 

@@ -309,6 +309,7 @@ class PostgresUnitOfWork extends UnitOfWork {
     await this.session.insert(journalEntries).values({
       id,
       factType: fact.type,
+      payloadVersion: fact.version ?? 1,
       entityType: fact.entityType,
       entityId: fact.entityId,
       payload: fact.payload,

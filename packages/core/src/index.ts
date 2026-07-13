@@ -91,6 +91,7 @@ export {
   type AuthStorageDescription,
   AuthenticationError,
   AuthenticationRateLimitError,
+  isRecentPasswordAuthentication,
   type IssueAccessTokenInput,
   type LoginInput,
   type RegistrationInput,
@@ -167,6 +168,7 @@ export {
 } from './queue.js'
 
 export {
+  DomainEvent,
   Event,
   EventDispatchError,
   Listener,
@@ -400,6 +402,7 @@ export interface SaveEntity<State extends JsonValue = JsonValue> {
 
 export interface JournalFact<Payload extends JsonValue = JsonValue> {
   readonly type: string
+  readonly version?: number
   readonly entityType: string
   readonly entityId: string
   readonly payload: Payload

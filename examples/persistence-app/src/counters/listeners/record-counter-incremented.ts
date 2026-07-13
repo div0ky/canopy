@@ -16,7 +16,7 @@ export class RecordCounterIncremented extends Listener<CounterIncremented> {
     this.recorder.record({
       event: 'counter-incremented',
       phase: 'local',
-      correlationId: this.execution.context.correlationId,
+      correlationId: event.correlationId(),
       actor: this.execution.context.actor.kind,
       value: event.payload.value,
     })

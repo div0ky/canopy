@@ -17,6 +17,7 @@ import {
   ModelNotFoundError,
   OptimisticConcurrencyError,
   ObservationRecorder,
+  isRecentPasswordAuthentication,
   ReadOnlyExecutionError,
   StaleUnitOfWorkError,
   StaleModelError,
@@ -46,12 +47,14 @@ import {
 import { Counter } from '../examples/persistence-app/dist/counters/models/counter.js'
 import { HttpPinged } from '../examples/persistence-app/dist/system/events/http-pinged.js'
 import { CreateCounter } from '../examples/persistence-app/dist/counters/actions/create-counter.js'
+import { CreateDomainCounter } from '../examples/persistence-app/dist/counters/actions/create-domain-counter.js'
 import { DeleteCounter } from '../examples/persistence-app/dist/counters/actions/delete-counter.js'
 import { DispatchProcessCounter } from '../examples/persistence-app/dist/counters/actions/dispatch-process-counter.js'
 import { DispatchCounterSignal } from '../examples/persistence-app/dist/counters/actions/dispatch-counter-signal.js'
 import { ExerciseCache } from '../examples/persistence-app/dist/counters/actions/exercise-cache.js'
 import { QueueNotifications } from '../examples/persistence-app/dist/counters/actions/queue-notifications.js'
 import { CounterTouched } from '../examples/persistence-app/dist/counters/signals/counter-touched.js'
+import { CounterCreated } from '../examples/persistence-app/dist/counters/events/counter-created.js'
 import {
   recordedEvents,
   resetRecordedEvents,
@@ -320,6 +323,68 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         value: 2,
       },
     ])
+  })
+
+  it('journals DomainEvents atomically and refuses to lose them outside a Unit of Work', async () => {
+    const runtime = await bootPersistenceRuntime()
+    await runtime.admit(
+      {
+        actor: { kind: 'user', id: 'domain-user' },
+        correlationId: 'domain-correlation',
+        transport: { kind: 'test' },
+      },
+      () => runtime.actions.execute(CreateDomainCounter, { id: 'domain-counter', value: 4 }),
+    )
+
+    await waitFor(() =>
+      recordedEvents.some((event) => event.event === 'counter-created:domain-counter'),
+    )
+    expect(recordedEvents).toContainEqual({
+      event: 'counter-created:domain-counter',
+      phase: 'domain',
+      correlationId: 'domain-correlation',
+      actor: 'user',
+      value: 4,
+    })
+    const journal = await pool.query<{
+      fact_type: string
+      payload_version: number
+      entity_type: string
+      entity_id: string
+      payload: unknown
+    }>(
+      `SELECT fact_type, payload_version, entity_type, entity_id, payload
+       FROM doxa_journal_entries
+       WHERE entity_id = 'domain-counter'`,
+    )
+    expect(journal.rows).toEqual([
+      {
+        fact_type: 'event:counters/counter-created',
+        payload_version: 1,
+        entity_type: 'model:counters/counter',
+        entity_id: 'domain-counter',
+        payload: { value: 4 },
+      },
+    ])
+
+    await expect(
+      runtime.admit(
+        { actor: { kind: 'system', id: 'domain-outside' }, transport: { kind: 'test' } },
+        () => CounterCreated.dispatch('outside', { value: 1 }),
+      ),
+    ).rejects.toThrow('requires an active writable Unit of Work')
+
+    await expect(
+      runAction(runtime, CreateDomainCounter, { id: 'domain-rollback', value: 2, fail: true }),
+    ).rejects.toThrow('Domain event transaction failed')
+    expect(
+      (await pool.query(`SELECT 1 FROM doxa_journal_entries WHERE entity_id = 'domain-rollback'`))
+        .rowCount,
+    ).toBe(0)
+    expect(
+      (await pool.query(`SELECT 1 FROM doxa_entity_states WHERE entity_id = 'domain-rollback'`))
+        .rowCount,
+    ).toBe(0)
   })
 
   it('discards after-commit event work on rollback and propagates local listener failures', async () => {
@@ -1175,6 +1240,29 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(scheduledExecution.rows.some((entry) => entry.transport === 'schedule')).toBe(false)
   })
 
+  it('admits one bounded schedule catch-up across concurrent scheduler replicas', async () => {
+    await pool.query(
+      `INSERT INTO doxa_schedule_controls (schedule_id, enabled, last_reconciled_at)
+       VALUES ('schedule:counters/process-counters', true, now() - interval '3 hours')
+       ON CONFLICT (schedule_id) DO UPDATE
+       SET enabled = true, last_reconciled_at = EXCLUDED.last_reconciled_at`,
+    )
+
+    const [first, second] = await Promise.all([bootPersistenceRuntime(), bootPersistenceRuntime()])
+    expect(first.ready).toBe(true)
+    expect(second.ready).toBe(true)
+
+    await waitFor(
+      () =>
+        recordedJobAttempts.filter((attempt) => attempt.key === 'scheduled-counter-sweep').length >=
+        1,
+    )
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    expect(
+      recordedJobAttempts.filter((attempt) => attempt.key === 'scheduled-counter-sweep'),
+    ).toHaveLength(1)
+  })
+
   it('inspects journal/outbox/cache and controls schedules through Praxis', async () => {
     const runtime = await bootPersistenceRuntime()
     await runAction(runtime, SaveCounter, { id: 'operator-state', amount: 1 })
@@ -1226,6 +1314,11 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         )
       ).rows[0]?.enabled,
     ).toBe(false)
+    await pool.query(
+      `UPDATE doxa_schedule_controls
+       SET last_reconciled_at = now() - interval '1 day'
+       WHERE schedule_id = 'schedule:counters/process-counters'`,
+    )
     expect(
       await runPraxis(
         ['schedule:enable', 'process-counters', `--database=${connectionString}`],
@@ -1233,6 +1326,15 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         io,
       ),
     ).toBe(0)
+    expect(
+      (
+        await pool.query<{ fresh: boolean }>(
+          `SELECT last_reconciled_at > now() - interval '5 seconds' AS fresh
+           FROM doxa_schedule_controls
+           WHERE schedule_id = 'schedule:counters/process-counters'`,
+        )
+      ).rows[0]?.fresh,
+    ).toBe(true)
     resetRecordedJobAttempts()
     expect(
       await runPraxis(
@@ -2648,6 +2750,138 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     }
   })
 
+  it('protects cookie-authenticated WebSocket upgrades without rotating the browser session', async () => {
+    const auth = new PostgresAuth({
+      connectionString,
+      secureCookies: false,
+      trustedOrigins: ['http://doxa.test'],
+      sessionRenewalSeconds: 0,
+    })
+    await auth.start(lifecycleContext())
+    try {
+      const email = `websocket-${Date.now()}@example.com`
+      await auth.register({ email, password: 'websocket secure password' })
+      const grant = await auth.login({ email, password: 'websocket secure password' })
+      const cookie = `doxa_session=${grant.token.reveal()}`
+
+      await expect(
+        auth.resolveHttp(
+          new Request('http://doxa.test/app', {
+            headers: { cookie, origin: 'https://attacker.example', upgrade: 'websocket' },
+          }),
+        ),
+      ).rejects.toMatchObject({ code: 'untrusted_origin' })
+
+      const admitted = await auth.resolveHttp(
+        new Request('http://doxa.test/app', {
+          headers: { cookie, origin: 'http://doxa.test', upgrade: 'websocket' },
+        }),
+      )
+      expect(admitted.authentication.state).toBe('authenticated')
+      expect(admitted.responseHeaders).toBeUndefined()
+
+      const ordinaryRequest = await auth.resolveHttp(
+        new Request('http://doxa.test/auth/me', { headers: { cookie } }),
+      )
+      expect(ordinaryRequest.authentication.state).toBe('authenticated')
+      expect(ordinaryRequest.responseHeaders?.['set-cookie']).toContain('doxa_session=')
+    } finally {
+      await auth.dispose(lifecycleContext())
+    }
+  })
+
+  it('refreshes sensitive-operation authority only after first-party password reauthentication', async () => {
+    const auth = new PostgresAuth({
+      connectionString,
+      secureCookies: false,
+      trustedOrigins: ['http://doxa.test'],
+    })
+    await auth.start(lifecycleContext())
+    try {
+      const email = `reauth-${Date.now()}@example.com`
+      await auth.register({ email, password: 'reauthentication secure password' })
+      const grant = await auth.login({ email, password: 'reauthentication secure password' })
+      await pool.query(
+        `UPDATE doxa_auth_sessions SET authenticated_at = now() - interval '1 day' WHERE id = $1`,
+        [grant.session.id],
+      )
+      const cookie = `doxa_session=${grant.token.reveal()}`
+      const stale = await auth.resolveHttp(
+        new Request('http://doxa.test/auth/me', { headers: { cookie } }),
+      )
+      expect(isRecentPasswordAuthentication(stale.authentication)).toBe(false)
+      await expect(
+        auth.reauthenticate(grant.identity.id, grant.session.id, 'wrong password'),
+      ).rejects.toThrow('current password is invalid')
+
+      const authenticatedAt = await auth.reauthenticate(
+        grant.identity.id,
+        grant.session.id,
+        'reauthentication secure password',
+      )
+      expect(isRecentPasswordAuthentication({ ...stale.authentication, authenticatedAt })).toBe(
+        true,
+      )
+      expect(
+        (
+          await pool.query(
+            `SELECT 1 FROM doxa_auth_audit_events
+             WHERE session_id = $1 AND event_type = 'session.reauthenticated'`,
+            [grant.session.id],
+          )
+        ).rowCount,
+      ).toBe(1)
+    } finally {
+      await auth.dispose(lifecycleContext())
+    }
+  })
+
+  it('denies stale sensitive HTTP authority until the session is reauthenticated', async () => {
+    const runtime = await bootPersistenceRuntime()
+    const http = new HonoHttpEngine(runtime)
+    const email = `reauth-route-${Date.now()}@example.com`
+    const password = 'reauthentication route password'
+    const registration = await http.fetch(
+      jsonRequest('http://doxa.test/auth/register', { email, password }),
+    )
+    expect(registration.status).toBe(201)
+    const login = await http.fetch(jsonRequest('http://doxa.test/auth/login', { email, password }))
+    const cookie = login.headers.get('set-cookie')!.split(';', 1)[0]!
+    await pool.query(
+      `UPDATE doxa_auth_sessions SET authenticated_at = now() - interval '1 day'
+       WHERE identity_id = (SELECT id FROM doxa_auth_identities WHERE email = $1)`,
+      [email],
+    )
+
+    const tokenRequest = () =>
+      http.fetch(
+        jsonRequest(
+          'http://doxa.test/auth/tokens',
+          { name: 'sensitive-token' },
+          { cookie, origin: 'http://doxa.test' },
+        ),
+      )
+    const stale = await tokenRequest()
+    expect(stale.status).toBe(403)
+    expect(await stale.json()).toEqual(expect.objectContaining({ code: 'forbidden' }))
+
+    const refreshed = await http.fetch(
+      jsonRequest(
+        'http://doxa.test/auth/reauthenticate',
+        { password },
+        { cookie, origin: 'http://doxa.test' },
+      ),
+    )
+    expect(refreshed.status).toBe(200)
+    expect(await refreshed.json()).toEqual(
+      expect.objectContaining({
+        ok: true,
+        data: expect.objectContaining({ authenticatedAt: expect.any(String) }),
+      }),
+    )
+    expect((await tokenRequest()).status).toBe(201)
+  })
+
   it('maps first-party identities and passwords onto an existing user table', async () => {
     const auth = new PostgresAuth({
       connectionString,
@@ -2888,10 +3122,14 @@ function lifecycleContext() {
   }
 }
 
-function jsonRequest(url: string, body: unknown): Request {
+function jsonRequest(
+  url: string,
+  body: unknown,
+  headers: Readonly<Record<string, string>> = {},
+): Request {
   return new Request(url, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...headers },
     body: JSON.stringify(body),
   })
 }

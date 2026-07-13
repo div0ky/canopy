@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
+import { CronExpressionParser } from 'cron-parser'
 import type { PoolClient } from 'pg'
 import { Pool } from 'pg'
 import { PgBoss, type JobWithMetadata, type SendOptions } from 'pg-boss'
@@ -117,6 +118,7 @@ export class PgBossQueueManager extends QueueManager implements Starts, Drains, 
             workOptions,
             async (jobs) => {
               for (const job of jobs) {
+                await this.#recordScheduleAdmission(job.data.id)
                 await handler({
                   envelope: scheduleEnvelope(job.id, job.data),
                   attempt: job.retryCount + 1,
@@ -132,6 +134,7 @@ export class PgBossQueueManager extends QueueManager implements Starts, Drains, 
       this.#started = true
       if (this.#roles.scheduler) {
         await this.#loadScheduleControls()
+        await this.#reconcileMisfires()
         await this.#reconcileCronSchedules()
         await this.#startIntervalSchedules()
       }
@@ -270,6 +273,68 @@ export class PgBossQueueManager extends QueueManager implements Starts, Drains, 
       'SELECT schedule_id FROM doxa_schedule_controls WHERE enabled = true',
     )
     this.#enabledSchedules = new Set(result.rows.map((row) => row.schedule_id))
+  }
+
+  async #reconcileMisfires(): Promise<void> {
+    const pool = this.#pool!
+    const boss = this.#requireBoss()
+    for (const schedule of this.#schedules) {
+      if (!this.#enabledSchedules.has(schedule.id)) continue
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
+        const control = await client.query<{ last_reconciled_at: Date | null }>(
+          'SELECT last_reconciled_at FROM doxa_schedule_controls WHERE schedule_id = $1 FOR UPDATE',
+          [schedule.id],
+        )
+        const previous = control.rows[0]?.last_reconciled_at
+        const now = new Date()
+        const missed =
+          previous && schedule.misfire === 'catch-up-once'
+            ? latestOccurrence(schedule, previous, now)
+            : undefined
+        if (missed) {
+          const id = deterministicUuid(`${schedule.id}:catch-up:${missed.toISOString()}`)
+          const accepted = await boss.send(scheduleQueue(schedule), schedule, {
+            id,
+            retryLimit: schedule.policy.retries,
+            retryDelay: schedule.policy.retryDelay,
+            retryBackoff: schedule.policy.backoff,
+            expireInSeconds: schedule.policy.timeout,
+            ...(schedule.overlap === 'serialize' ? { singletonKey: schedule.id } : {}),
+            db: databaseFor(client),
+          })
+          if (!accepted) {
+            const existing = await client.query(
+              'SELECT 1 FROM pgboss.job WHERE name = $1 AND id = $2',
+              [scheduleQueue(schedule), id],
+            )
+            if (existing.rowCount !== 1)
+              throw new Error(`pg-boss rejected Doxa schedule catch-up ${id}.`)
+          }
+        }
+        await client.query(
+          'UPDATE doxa_schedule_controls SET last_reconciled_at = $2, updated_at = now() WHERE schedule_id = $1',
+          [schedule.id, now],
+        )
+        await client.query('COMMIT')
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => undefined)
+        throw error
+      } finally {
+        client.release()
+      }
+    }
+  }
+
+  async #recordScheduleAdmission(scheduleId: string): Promise<void> {
+    await this.#pool?.query(
+      `UPDATE doxa_schedule_controls
+       SET last_reconciled_at = GREATEST(COALESCE(last_reconciled_at, '-infinity'::timestamptz), now()),
+           updated_at = now()
+       WHERE schedule_id = $1`,
+      [scheduleId],
+    )
   }
 
   async #armInterval(schedule: ScheduleDefinition): Promise<void> {
@@ -559,6 +624,25 @@ function deterministicUuid(value: string): string {
   hex[16] = ((Number.parseInt(hex[16]!, 16) & 0x3) | 0x8).toString(16)
   const joined = hex.join('')
   return `${joined.slice(0, 8)}-${joined.slice(8, 12)}-${joined.slice(12, 16)}-${joined.slice(16, 20)}-${joined.slice(20)}`
+}
+
+function latestOccurrence(
+  schedule: ScheduleDefinition,
+  after: Date,
+  through: Date,
+): Date | undefined {
+  if (schedule.cadence.kind === 'interval') {
+    const milliseconds = schedule.cadence.seconds * 1_000
+    const occurrence = new Date(Math.floor(through.getTime() / milliseconds) * milliseconds)
+    return occurrence > after ? occurrence : undefined
+  }
+  const occurrence = CronExpressionParser.parse(schedule.cadence.expression, {
+    currentDate: through,
+    tz: schedule.timeZone,
+  })
+    .prev()
+    .toDate()
+  return occurrence > after ? occurrence : undefined
 }
 
 function databaseFor(client: PoolClient) {

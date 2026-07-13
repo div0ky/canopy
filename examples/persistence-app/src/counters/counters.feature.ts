@@ -3,6 +3,7 @@ import { Feature } from '@doxajs/core'
 import { CaptureCounter } from './actions/capture-counter.js'
 import { BroadcastCounter } from './actions/broadcast-counter.js'
 import { CreateCounter } from './actions/create-counter.js'
+import { CreateDomainCounter } from './actions/create-domain-counter.js'
 import { DeleteCounter } from './actions/delete-counter.js'
 import { DispatchProcessCounter } from './actions/dispatch-process-counter.js'
 import { DispatchCounterSignal } from './actions/dispatch-counter-signal.js'
@@ -19,6 +20,7 @@ import { DeleteLegacyCustomer } from './actions/delete-legacy-customer.js'
 import { SaveLegacyNote } from './actions/save-legacy-note.js'
 import { SaveDetachedCounter } from './actions/save-detached-counter.js'
 import { CounterIncremented } from './events/counter-incremented.js'
+import { CounterCreated } from './events/counter-created.js'
 import { CounterNotificationRequested } from './events/counter-notification-requested.js'
 import { CounterSaved } from './events/counter-saved.js'
 import { CounterBroadcasted } from './events/counter-broadcasted.js'
@@ -29,6 +31,7 @@ import { SecureIncrementCounterRoute } from './http/secure-increment-counter.rou
 import { ProcessCounterJob } from './jobs/process-counter.job.js'
 import { RecordCounterNotification } from './listeners/record-counter-notification.js'
 import { RecordCounterIncremented } from './listeners/record-counter-incremented.js'
+import { RecordCounterCreated } from './listeners/record-counter-created.js'
 import { RecordCounterIncrementedAfterCommit } from './listeners/record-counter-incremented-after-commit.js'
 import { RecordCounterSaved } from './listeners/record-counter-saved.js'
 import { Counter } from './models/counter.js'
@@ -51,6 +54,7 @@ export class CountersFeature extends Feature {
     BroadcastCounter,
     SaveCounter,
     CreateCounter,
+    CreateDomainCounter,
     InspectCounter,
     RefreshCounter,
     DeleteCounter,
@@ -71,6 +75,7 @@ export class CountersFeature extends Feature {
   routes = [IncrementCounterRoute, DeleteCounterRoute, SecureIncrementCounterRoute]
   events = [
     CounterIncremented,
+    CounterCreated,
     CounterSaved,
     CounterNotificationRequested,
     CounterBroadcasted,
@@ -78,6 +83,7 @@ export class CountersFeature extends Feature {
   ]
   listeners = [
     RecordCounterIncremented,
+    RecordCounterCreated,
     RecordCounterIncrementedAfterCommit,
     RecordCounterSaved,
     RecordCounterNotification,

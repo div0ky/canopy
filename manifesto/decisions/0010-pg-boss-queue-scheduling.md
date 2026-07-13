@@ -157,8 +157,8 @@ graceful draining. The later
 [scheduling vertical slice](../implementation/scheduling-vertical-slice.md) proves cron and interval
 declarations, deterministic reconciliation, time zones, overlap defaults, skipped misfires, schedule
 causation, and graceful scheduler draining. Crash-process tests, operator redrive, first-party
-fakes, catch-up misfires, and advanced concurrency remain required before the complete decision is
-production-ready.
+fakes, bounded catch-up misfires, and advanced concurrency are covered by the completed scheduling
+and operational-control proofs. Independent pre-1.0 review remains part of Doxa's release gate.
 
 ## References
 

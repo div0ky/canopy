@@ -51,7 +51,7 @@ import {
   UnitOfWork,
 } from '@doxajs/core'
 import { HonoHttpEngine } from '@doxajs/http-hono'
-import { Doxa, type BootOptions, type DoxaRuntime } from '@doxajs/runtime'
+import { Doxa, type BootOptions, type DoxaRuntime, type EventTestHook } from '@doxajs/runtime'
 
 export {
   FakeBroadcastTransport,
@@ -69,6 +69,100 @@ export class TestObservationRecorder extends MemoryObservationRecorder {
   dispose(): void {}
 }
 
+export interface TestEventRecord {
+  readonly id: string
+  readonly event: Event<unknown>
+  readonly context: ExecutionContext
+}
+
+export class TestEvents implements EventTestHook {
+  readonly records: TestEventRecord[] = []
+  #runtime?: DoxaRuntime
+  #fakeAll = false
+  #faked = new Set<Function>()
+
+  attach(runtime: DoxaRuntime): void {
+    this.#runtime = runtime
+  }
+
+  shouldFake(event: Event<unknown>): boolean {
+    return this.#fakeAll ? !this.#faked.has(event.constructor) : this.#faked.has(event.constructor)
+  }
+
+  dispatched(record: TestEventRecord): boolean {
+    this.records.push(Object.freeze({ ...record }))
+    return this.shouldFake(record.event)
+  }
+
+  fake(events?: readonly Function[]): this {
+    this.#fakeAll = events === undefined
+    this.#faked = new Set(events ?? [])
+    return this
+  }
+
+  fakeExcept(events: readonly Function[]): this {
+    this.#fakeAll = true
+    this.#faked = new Set(events)
+    return this
+  }
+
+  async fakeFor<Output>(
+    events: readonly Function[] | undefined,
+    work: () => Output | Promise<Output>,
+  ) {
+    const fakeAll = this.#fakeAll
+    const faked = this.#faked
+    this.fake(events)
+    try {
+      return await work()
+    } finally {
+      this.#fakeAll = fakeAll
+      this.#faked = faked
+    }
+  }
+
+  restore(): this {
+    this.#fakeAll = false
+    this.#faked.clear()
+    return this
+  }
+
+  clear(): this {
+    this.records.length = 0
+    return this
+  }
+
+  assertDispatched<Instance extends Event<unknown>>(
+    EventClass: abstract new (...arguments_: never[]) => Instance,
+    predicate?: (event: Instance) => boolean,
+  ): void {
+    const found = this.records.some(
+      (record) =>
+        record.event instanceof EventClass && (!predicate || predicate(record.event as Instance)),
+    )
+    if (!found) throw new Error(`${EventClass.name} was not dispatched with the expected payload.`)
+  }
+
+  assertNotDispatched(EventClass: abstract new (...arguments_: never[]) => Event<unknown>): void {
+    if (this.records.some((record) => record.event instanceof EventClass)) {
+      throw new Error(`${EventClass.name} was dispatched unexpectedly.`)
+    }
+  }
+
+  assertListening(
+    EventClass: abstract new (...arguments_: never[]) => Event<unknown>,
+    ListenerClass: abstract new (...arguments_: never[]) => object,
+  ): void {
+    const runtime = this.#runtime
+    if (!runtime) throw new Error('TestEvents is not attached to a Doxa runtime.')
+    const event = runtime.manifest.events.find((entry) => entry.name === EventClass.name)
+    const listener = runtime.manifest.listeners.find((entry) => entry.name === ListenerClass.name)
+    if (!event || !listener || listener.eventId !== event.id) {
+      throw new Error(`${ListenerClass.name} is not declared as a listener for ${EventClass.name}.`)
+    }
+  }
+}
+
 export class DoxaTestHarness {
   readonly http: HonoHttpEngine
   readonly logs: MemoryLogSink
@@ -80,6 +174,7 @@ export class DoxaTestHarness {
     logs: MemoryLogSink,
     readonly auth?: TestAuth,
     readonly observations?: TestObservationRecorder,
+    readonly events: TestEvents = new TestEvents(),
   ) {
     this.http = new HonoHttpEngine(runtime)
     this.logs = logs
@@ -99,6 +194,7 @@ export class DoxaTestHarness {
       ...(auth && options.authProviderId ? { [options.authProviderId]: auth } : {}),
     }
     const logs = new MemoryLogSink()
+    const events = new TestEvents()
     const logging =
       options.logging === false
         ? (false as const)
@@ -106,9 +202,11 @@ export class DoxaTestHarness {
     const runtime = await Doxa.boot(application, {
       ...options,
       providerOverrides: overrides,
+      eventTestHook: events,
       logging,
     })
-    return new DoxaTestHarness(runtime, logs, auth, observation?.recorder)
+    events.attach(runtime)
+    return new DoxaTestHarness(runtime, logs, auth, observation?.recorder, events)
   }
 
   actingAs(actor: ActorRef, authentication?: AuthenticationContext): this {
@@ -300,6 +398,12 @@ export class TestAuth extends Auth {
     _currentPassword: string,
     _newPassword: string,
   ): Promise<void> {}
+  async reauthenticate(_identityId: string, sessionId: string, _password: string): Promise<Date> {
+    const authenticatedAt = new Date()
+    const session = this.#sessions.get(sessionId)
+    if (session) this.#sessions.set(sessionId, { ...session, authenticatedAt })
+    return authenticatedAt
+  }
   async revokeSession(id: string): Promise<void> {
     const value = this.#sessions.get(id)
     if (value) this.#sessions.set(id, { ...value, revokedAt: new Date() })

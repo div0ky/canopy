@@ -13,8 +13,11 @@ export abstract class DoxaRole {
 
   constructor() {
     const construction = currentRoleConstruction()
+    const owner = this.constructor as RoleInjectionToken
     this.logger =
-      construction?.logger ?? new Logger({ channel: roleChannel(this.constructor.name) })
+      construction?.loggerFor?.(owner) ??
+      construction?.logger ??
+      new Logger({ channel: roleChannel(this.constructor.name) })
     const resolve = <Value extends object>(
       token: RoleInjectionToken<Value>,
       optional: boolean,
@@ -25,7 +28,7 @@ export abstract class DoxaRole {
           `${this.constructor.name} uses this.inject() and must be constructed by a Doxa execution scope.`,
         )
       }
-      return construction.resolve(token, optional)
+      return construction.resolve(token, optional, owner)
     }
     const inject = (<Value extends object>(token: RoleInjectionToken<Value>): Value => {
       const value = resolve(token, false)

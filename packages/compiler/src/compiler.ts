@@ -574,6 +574,7 @@ export async function compileApplication(
   function dependenciesFor(
     declaration: ts.ClassDeclaration,
     ownerId: string,
+    includeConstructorDependencies = true,
   ): readonly DependencyManifestEntry[] {
     const constructor = declaration.members.find(ts.isConstructorDeclaration)
     const frameworkRole = [
@@ -587,23 +588,29 @@ export async function compileApplication(
       'Observer',
       'Command',
     ].some((role) => extendsNamedClass(declaration, role, checker))
-    if (frameworkRole && constructor && constructor.parameters.length > 0) {
+    if (
+      includeConstructorDependencies &&
+      frameworkRole &&
+      constructor &&
+      constructor.parameters.length > 0
+    ) {
       fail(
         constructor,
         `${requiredClassName(declaration)} is a framework role; declare scoped dependencies with this.inject() instead of constructor parameters.`,
       )
     }
-    const constructorDependencies =
-      constructor?.parameters.map((parameter) =>
-        dependencyFor(
-          parameter,
-          parameter.name.getText(),
-          Boolean(parameter.questionToken || parameter.initializer) ||
-            includesUndefined(checker.getTypeAtLocation(parameter)),
-          'constructor',
-          classDeclarationForType(parameter, checker),
-        ),
-      ) ?? []
+    const constructorDependencies = includeConstructorDependencies
+      ? (constructor?.parameters.map((parameter) =>
+          dependencyFor(
+            parameter,
+            parameter.name.getText(),
+            Boolean(parameter.questionToken || parameter.initializer) ||
+              includesUndefined(checker.getTypeAtLocation(parameter)),
+            'constructor',
+            classDeclarationForType(parameter, checker),
+          ),
+        ) ?? [])
+      : []
     const injectionCalls: ts.CallExpression[] = []
     const visit = (node: ts.Node): void => {
       if (ts.isCallExpression(node) && roleInjectionKind(node)) {
@@ -1000,11 +1007,25 @@ export async function compileApplication(
       fail(declaration, `${requiredClassName(declaration)} must extend Event.`)
     }
     const name = requiredClassName(declaration)
+    const payloadVersion = readOptionalStaticNumber(declaration, 'version', 1)
+    if (!Number.isInteger(payloadVersion) || payloadVersion < 1) {
+      fail(declaration, `${name}.version must be a positive integer.`)
+    }
+    let domain: EventManifestEntry['domain'] = false
+    if (extendsNamedClass(declaration, 'DomainEvent', checker)) {
+      const modelDeclaration = readRequiredStaticClass(declaration, 'model', checker)
+      const model = modelByDeclaration.get(modelDeclaration)
+      if (!model) {
+        fail(declaration, `${name}.model must name a Model declared by a selected Feature.`)
+      }
+      domain = { entityType: model.entityType }
+    }
     const entry: EventManifestEntry = {
       id: `event:${ownerId}/${readRequiredStaticString(declaration, 'id')}`,
       ownerId,
       name,
       exportName: name,
+      payloadVersion,
       dispatch: implementsNamedInterface(declaration, 'ShouldDispatchAfterCommit', checker)
         ? 'after-commit'
         : 'immediate',
@@ -1013,7 +1034,9 @@ export async function compileApplication(
         : implementsNamedInterface(declaration, 'ShouldBroadcast', checker)
           ? 'queued'
           : false,
+      domain,
       source: sourceOf(declaration, normalized.projectRoot),
+      dependencies: dependenciesFor(declaration, ownerId, false),
     }
     eventByDeclaration.set(declaration, entry)
     events.push(entry)
@@ -1253,8 +1276,11 @@ export async function compileApplication(
       fail(declaration, `${requiredClassName(declaration)}.overlap must be "allow" or "serialize".`)
     }
     const misfire = readOptionalStaticString(declaration, 'misfire') ?? 'skip'
-    if (misfire !== 'skip') {
-      fail(declaration, `${requiredClassName(declaration)}.misfire currently supports only "skip".`)
+    if (misfire !== 'skip' && misfire !== 'catch-up-once') {
+      fail(
+        declaration,
+        `${requiredClassName(declaration)}.misfire must be "skip" or "catch-up-once".`,
+      )
     }
     const entry: ScheduleManifestEntry = {
       id: `schedule:${ownerId}/${readRequiredStaticString(declaration, 'id')}`,
@@ -1331,6 +1357,7 @@ export async function compileApplication(
       name,
       exportName: name,
       source: sourceOf(declaration, normalized.projectRoot),
+      dependencies: dependenciesFor(declaration, ownerId, false),
     }
     signalByDeclaration.set(declaration, entry)
     signals.push(entry)

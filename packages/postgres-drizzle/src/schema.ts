@@ -57,6 +57,7 @@ export const journalEntries = pgTable(
   {
     id: uuid('id').primaryKey(),
     factType: text('fact_type').notNull(),
+    payloadVersion: integer('payload_version').notNull().default(1),
     entityType: text('entity_type').notNull(),
     entityId: text('entity_id').notNull(),
     payload: jsonb('payload').$type<JsonValue>().notNull(),

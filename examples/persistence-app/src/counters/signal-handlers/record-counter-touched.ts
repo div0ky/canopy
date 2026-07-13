@@ -14,7 +14,7 @@ export class RecordCounterTouched extends SignalHandler<CounterTouched> {
     this.recorder.record({
       event: `counter-touched:${signal.payload.counterId}`,
       phase: 'signal',
-      correlationId: this.execution.context.correlationId,
+      correlationId: signal.correlationId(),
       actor: this.execution.context.actor.kind,
     })
   }

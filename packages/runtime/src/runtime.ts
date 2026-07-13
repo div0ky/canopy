@@ -26,6 +26,7 @@ import {
   CurrentExecution,
   CurrentJob,
   type Event,
+  type DomainEvent,
   type ExecutionContext,
   type ExecutionContextSeed,
   HttpRequest,
@@ -90,6 +91,7 @@ import {
   runWithLogContext,
   runWithModelSession,
   runWithRoleConstruction,
+  type RoleConstructionContext,
   runWithSignalDispatcher,
   type RoleInjectionToken,
   type SignalDispatcher,
@@ -113,6 +115,7 @@ import {
   type RegistryModule,
   type RouteManifestEntry,
   type SignalHandlerManifestEntry,
+  type SignalManifestEntry,
 } from '@doxajs/manifest'
 
 import {
@@ -157,6 +160,8 @@ export interface BootOptions {
   readonly deadlines?: Partial<LifecycleDeadlines>
   readonly roles?: Partial<{ readonly worker: boolean; readonly scheduler: boolean }>
   readonly providerOverrides?: Readonly<Record<string, object>>
+  /** Used by @doxajs/testing to record and selectively fake Event delivery before boot. */
+  readonly eventTestHook?: EventTestHook
   readonly logging?:
     | false
     | {
@@ -166,6 +171,15 @@ export interface BootOptions {
         readonly color?: boolean
         readonly destination?: ConsoleLogSinkOptions['destination']
       }
+}
+
+export interface EventTestHook {
+  shouldFake(event: Event<unknown>): boolean
+  dispatched(input: {
+    readonly id: string
+    readonly event: Event<unknown>
+    readonly context: ExecutionContext
+  }): boolean
 }
 
 const DEFAULT_DEADLINES: LifecycleDeadlines = {
@@ -241,6 +255,7 @@ export class DoxaRuntime {
     private readonly broadcastTransport: BroadcastTransport | undefined,
     private readonly telemetry: Telemetry,
     private readonly observations: ObservationRecorder,
+    private readonly eventTestHook: EventTestHook | undefined,
     logger: Logger,
   ) {
     this.logger = logger
@@ -454,6 +469,7 @@ export class DoxaRuntime {
       broadcastTransport,
       telemetry,
       observations,
+      options.eventTestHook,
       logger,
     )
     queues?.selectRoles({
@@ -588,27 +604,29 @@ export class DoxaRuntime {
     const execution = Promise.resolve(
       this.#storage.run(store, () =>
         runWithLogContext(logContext(context), () =>
-          runWithEventDispatcher(this.#eventDispatcher, () =>
-            runWithSignalDispatcher(this.#signalDispatcher, () =>
-              runWithJobDispatcher(this.#jobDispatcher, async () => {
-                let result: Output | undefined
-                let primaryError: unknown
-                let failed = false
-                try {
-                  result = await work(context)
-                } catch (error) {
-                  failed = true
-                  primaryError = error
-                }
+          runWithRoleConstruction(scope.constructionContext, () =>
+            runWithEventDispatcher(this.#eventDispatcher, () =>
+              runWithSignalDispatcher(this.#signalDispatcher, () =>
+                runWithJobDispatcher(this.#jobDispatcher, async () => {
+                  let result: Output | undefined
+                  let primaryError: unknown
+                  let failed = false
+                  try {
+                    result = await work(context)
+                  } catch (error) {
+                    failed = true
+                    primaryError = error
+                  }
 
-                const cleanupErrors = await scope.dispose(this.deadlines.dispose)
-                if (failed && cleanupErrors.length > 0) {
-                  throw new ExecutionFailureError(primaryError, cleanupErrors)
-                }
-                if (failed) throw primaryError
-                if (cleanupErrors.length > 0) throw new ExecutionCleanupError(cleanupErrors)
-                return result as Output
-              }),
+                  const cleanupErrors = await scope.dispose(this.deadlines.dispose)
+                  if (failed && cleanupErrors.length > 0) {
+                    throw new ExecutionFailureError(primaryError, cleanupErrors)
+                  }
+                  if (failed) throw primaryError
+                  if (cleanupErrors.length > 0) throw new ExecutionCleanupError(cleanupErrors)
+                  return result as Output
+                }),
+              ),
             ),
           ),
         ),
@@ -992,7 +1010,28 @@ export class DoxaRuntime {
       )
     }
     const unitOfWork = store.scope.currentUnitOfWork
+    if (manifest.domain) {
+      if (!unitOfWork) {
+        throw new OperationDispatchError(
+          `${manifest.id} is a DomainEvent and requires an active writable Unit of Work.`,
+        )
+      }
+      const domainEvent = event as DomainEvent<import('@doxajs/core').JsonValue>
+      await unitOfWork.record({
+        type: manifest.id,
+        version: manifest.payloadVersion,
+        entityType: manifest.domain.entityType,
+        entityId: domainEvent.entityId,
+        payload: serializeQueuePayload(domainEvent.payload),
+      })
+    }
     if (manifest.dispatch === 'after-commit' && unitOfWork) {
+      if (this.eventTestHook?.shouldFake(event)) {
+        unitOfWork.afterCommit(() => {
+          this.eventTestHook!.dispatched({ id: manifest.id, event, context: store.context })
+        })
+        return
+      }
       for (const listener of this.#listenersByEvent.get(manifest.id) ?? []) {
         if (listener.delivery === 'queued' || listener.delivery === 'queued-after-commit') {
           await this.enqueueListener(listener, manifest, event, store)
@@ -1082,6 +1121,7 @@ export class DoxaRuntime {
     store: ExecutionStore,
     skipQueued = false,
   ): Promise<void> {
+    if (this.eventTestHook?.dispatched({ id: manifest.id, event, context: store.context })) return
     for (const listener of this.#listenersByEvent.get(manifest.id) ?? []) {
       if (listener.delivery === 'queued' || listener.delivery === 'queued-after-commit') {
         if (!skipQueued) await this.enqueueListener(listener, manifest, event, store)
@@ -1111,7 +1151,8 @@ export class DoxaRuntime {
         kind: 'broadcast',
         targetId: manifest.id,
         eventId: manifest.id,
-        payload: serializeQueuePayload(event),
+        eventVersion: manifest.payloadVersion,
+        payload: serializeEventPayload(manifest, event),
         policy: { retries: 3, retryDelay: 1, backoff: true, timeout: 30 },
       },
       store,
@@ -1260,7 +1301,8 @@ export class DoxaRuntime {
         kind: 'listener',
         targetId: listener.id,
         eventId: eventManifest.id,
-        payload: serializeQueuePayload(event),
+        eventVersion: eventManifest.payloadVersion,
+        payload: serializeEventPayload(eventManifest, event),
         policy: {
           retries: 3,
           retryDelay: 1,
@@ -1507,6 +1549,7 @@ export class DoxaRuntime {
               if (
                 !eventManifest ||
                 !EventConstructor ||
+                envelope.eventVersion !== eventManifest.payloadVersion ||
                 typeof envelope.payload !== 'object' ||
                 envelope.payload === null ||
                 Array.isArray(envelope.payload)
@@ -1515,10 +1558,7 @@ export class DoxaRuntime {
                   `Queued broadcast ${envelope.targetId} cannot be rehydrated.`,
                 )
               }
-              const event = Object.assign(
-                Object.create(EventConstructor.prototype),
-                envelope.payload,
-              ) as Event<unknown>
+              const event = rehydrateEvent(eventManifest, EventConstructor, envelope.payload)
               await this.publishBroadcast(eventManifest, event)
               return
             }
@@ -1529,6 +1569,11 @@ export class DoxaRuntime {
             if (!listener || !eventManifest) {
               throw new OperationDispatchError(
                 `Queued listener ${envelope.targetId} is not declared correctly.`,
+              )
+            }
+            if (envelope.eventVersion !== eventManifest.payloadVersion) {
+              throw new OperationDispatchError(
+                `Queued event ${eventManifest.id} payload version ${String(envelope.eventVersion)} is unsupported; expected ${eventManifest.payloadVersion}.`,
               )
             }
             const EventConstructor = this.artifacts.registry.constructors[eventManifest.id]
@@ -1542,10 +1587,7 @@ export class DoxaRuntime {
                 `Queued event ${eventManifest.id} cannot be rehydrated.`,
               )
             }
-            const event = Object.assign(
-              Object.create(EventConstructor.prototype),
-              envelope.payload,
-            ) as Event<unknown>
+            const event = rehydrateEvent(eventManifest, EventConstructor, envelope.payload)
             await this.invokeListener(listener, event, store)
           },
         ),
@@ -2225,6 +2267,20 @@ class ExecutionScope {
     | ObserverManifestEntry
     | CommandManifestEntry
   >
+  readonly #dependencyOwnerById: ReadonlyMap<
+    string,
+    | ProviderManifestEntry
+    | OperationManifestEntry
+    | RouteManifestEntry
+    | EventManifestEntry
+    | ListenerManifestEntry
+    | JobManifestEntry
+    | PolicyManifestEntry
+    | SignalManifestEntry
+    | SignalHandlerManifestEntry
+    | ObserverManifestEntry
+    | CommandManifestEntry
+  >
   readonly #instances = new Map<string, object>()
   readonly #constructionStack = new Set<string>()
   readonly #disposables: LifecycleParticipant[] = []
@@ -2261,6 +2317,22 @@ class ExecutionScope {
         ...artifacts.manifest.observers,
         ...artifacts.manifest.commands,
       ].map((executable) => [executable.id, executable]),
+    )
+    this.#dependencyOwnerById = new Map(
+      [
+        ...artifacts.manifest.providers,
+        ...artifacts.manifest.actions,
+        ...artifacts.manifest.queries,
+        ...artifacts.manifest.routes,
+        ...artifacts.manifest.events,
+        ...artifacts.manifest.listeners,
+        ...artifacts.manifest.jobs,
+        ...artifacts.manifest.policies,
+        ...artifacts.manifest.signals,
+        ...artifacts.manifest.signalHandlers,
+        ...artifacts.manifest.observers,
+        ...artifacts.manifest.commands,
+      ].map((entry) => [entry.id, entry]),
     )
     for (const [id, Constructor] of Object.entries(artifacts.registry.constructors)) {
       this.#idByConstructor.set(Constructor, id)
@@ -2312,23 +2384,7 @@ class ExecutionScope {
           return resolved
         })
       const instance = runWithRoleConstruction(
-        {
-          logger: this.logger.channel(roleLogChannel(manifest.name)),
-          resolve: <Value extends object>(
-            token: RoleInjectionToken<Value>,
-            optional: boolean,
-          ): Value | undefined => {
-            const targetId = this.#injectionTarget(manifest, token, optional)
-            if (!targetId) return undefined
-            const resolved = this.resolve(targetId)
-            if (resolved === undefined) {
-              throw new RuntimeIntegrityError(
-                `Required role dependency ${targetId} for ${id} is unavailable.`,
-              )
-            }
-            return resolved as Value
-          },
-        },
+        this.constructionContext,
         () => new Constructor(...dependencies),
       )
       if (manifest.scope === 'execution') this.#instances.set(id, instance)
@@ -2339,13 +2395,54 @@ class ExecutionScope {
     }
   }
 
+  get constructionContext(): RoleConstructionContext {
+    return {
+      logger: this.logger,
+      loggerFor: (owner) => {
+        const manifest = this.#manifestForOwner(owner)
+        return this.logger.channel(roleLogChannel(manifest?.name ?? owner.name))
+      },
+      resolve: <Value extends object>(
+        token: RoleInjectionToken<Value>,
+        optional: boolean,
+        owner?: RoleInjectionToken,
+      ): Value | undefined => {
+        if (!owner) {
+          throw new RuntimeIntegrityError('Role injection is missing its owning role class.')
+        }
+        const manifest = this.#manifestForOwner(owner)
+        if (!manifest) {
+          throw new RuntimeIntegrityError(
+            `${owner.name || 'Anonymous role'} is not declared by a selected Feature.`,
+          )
+        }
+        const targetId = this.#injectionTarget(manifest, token, optional)
+        if (!targetId) return undefined
+        const resolved = this.resolve(targetId)
+        if (resolved === undefined) {
+          throw new RuntimeIntegrityError(
+            `Required role dependency ${targetId} for ${manifest.id} is unavailable.`,
+          )
+        }
+        return resolved as Value
+      },
+    }
+  }
+
+  #manifestForOwner(owner: RoleInjectionToken) {
+    const id = this.#idByConstructor.get(owner)
+    return id ? this.#dependencyOwnerById.get(id) : undefined
+  }
+
   #injectionTarget(
     manifest:
       | OperationManifestEntry
       | RouteManifestEntry
+      | EventManifestEntry
       | ListenerManifestEntry
       | JobManifestEntry
       | PolicyManifestEntry
+      | SignalManifestEntry
       | SignalHandlerManifestEntry
       | ObserverManifestEntry
       | CommandManifestEntry
@@ -2713,6 +2810,38 @@ function serializeQueuePayload(value: unknown): import('@doxajs/core').JsonValue
   } catch (cause) {
     throw new OperationDispatchError('Queued payloads must be JSON serializable.', { cause })
   }
+}
+
+function serializeEventPayload(
+  manifest: EventManifestEntry,
+  event: Event<unknown>,
+): import('@doxajs/core').JsonValue {
+  const payload = serializeQueuePayload(event.payload)
+  return manifest.domain
+    ? {
+        entityId: (event as DomainEvent<unknown>).entityId,
+        payload,
+      }
+    : payload
+}
+
+function rehydrateEvent(
+  manifest: EventManifestEntry,
+  Constructor: new (...dependencies: unknown[]) => object,
+  serialized: import('@doxajs/core').JsonValue,
+): Event<unknown> {
+  if (!manifest.domain) return new Constructor(serialized) as Event<unknown>
+  const record = serialized as Readonly<Record<string, import('@doxajs/core').JsonValue>>
+  if (
+    typeof serialized !== 'object' ||
+    serialized === null ||
+    Array.isArray(serialized) ||
+    typeof record.entityId !== 'string' ||
+    !('payload' in record)
+  ) {
+    throw new OperationDispatchError(`Queued DomainEvent ${manifest.id} is invalid.`)
+  }
+  return new Constructor(record.entityId, record.payload) as Event<unknown>
 }
 
 function validateBroadcastDestination(destination: BroadcastDestination): void {

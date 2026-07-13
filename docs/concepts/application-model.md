@@ -25,6 +25,11 @@ export class RegisterRoute extends Route {
 }
 ```
 
+Events and signals are payload roles created inside an admitted execution. They may use
+`this.inject()` and their inherited logger; their payload constructor is not dependency injection.
+Schedules are different: they are declaration-only timing metadata, are never constructed, and
+dispatch a Job that receives the schedule firing's execution scope.
+
 Ordinary services remain plain classes with constructor injection. Concrete services are directly
 shareable when the declaring Feature exposes them; abstract-class ports or typed tokens are added
 when polymorphism or isolation is meaningful.
