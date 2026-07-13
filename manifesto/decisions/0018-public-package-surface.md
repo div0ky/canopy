@@ -18,20 +18,22 @@ application dependencies. Internal package refactors must not require feature-co
 
 ## Separate public surfaces
 
-Testing and infrastructure adapters have intentionally separate packages:
+Testing and optional plugins have intentionally separate packages:
 
 ```ts
 import { DoxaTest } from '@doxajs/testing'
-import { HonoFeature } from '@doxajs/http-hono'
-import { DrizzleFeature } from '@doxajs/postgres-drizzle'
+// Added declaratively by `doxa add sendgrid`:
+// plugins = ['@doxajs/sendgrid']
 ```
 
 `@doxajs/testing` may expose test applications, fakes, assertions, clocks, and scoped overrides. It
 must not make test-only behavior available through the production programming model.
 
-Adapter packages expose composition-boundary Features, configuration schemas, and adapter-owned
-diagnostics. Feature and domain implementation code must not import their engine APIs or private
-adapter types.
+Hono, PostgreSQL/Drizzle, pg-boss, cache, and core authentication are mandatory Doxa implementation
+packages. Praxis installs and composes them automatically; applications do not select them as
+plugins or import their implementation classes. Optional plugin packages expose framework-owned
+configuration, diagnostics, migrations, and conformance evidence without leaking vendor types into
+Feature code.
 
 ## Core boundary
 
@@ -86,9 +88,10 @@ Package cycles and forbidden dependency directions fail architectural checks in 
 
 ## Composition boundary
 
-The Application declaration and host entry point may import first-party adapter Features to select
-infrastructure. Those imports are composition, not permission for domain Features to depend on
-adapter implementation types.
+The Application declaration selects user Features and optional plugin package IDs. Mandatory
+infrastructure is composed by Doxa and remains visible in the generated manifest, not in editable
+application source. `doxa add` is the supported path for optional plugins; custom adapter authors
+may deliberately own code under `src/adapters/`.
 
 The compiler records adapter provenance and verifies that private engine types do not cross into
 application-facing manifest contracts.

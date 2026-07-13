@@ -77,7 +77,8 @@ or placing migrations in an entrypoint.
 - The same image digest runs every role in one release.
 - Application secrets enter at runtime and are never copied into image layers.
 - Runtime processes run as a non-root user.
-- Web health checks use an application-owned health route.
+- Web health checks use Doxa's framework-owned `GET /health` endpoint. Applications cannot remove,
+  protect, or replace this operational contract.
 - Background health is process/lifecycle health; it does not pretend to expose HTTP.
 - `SIGTERM` reaches Praxis so Doxa drains before shutdown.
 - Theoria remains disabled in production unless explicitly overridden.
@@ -100,6 +101,7 @@ or placing migrations in an entrypoint.
 6. Migrations are explicit and absent from web/background startup.
 7. Gnosis reports the same topology and invariants as generated files.
 8. Docker validates the generated Dockerfile and Compose configuration.
+9. The framework-owned health endpoint remains present when the user-owned App Feature changes.
 
 ## References
 

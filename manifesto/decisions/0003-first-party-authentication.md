@@ -14,6 +14,11 @@ First-party ownership includes the public API, data model, lifecycle, security p
 session behavior, errors, audit trail, diagnostics, testing support, migrations, documentation, and
 compatibility contract.
 
+Core authentication routes are framework-owned declarations compiled from gitignored `.doxa/`
+source. Praxis must never scaffold registration, login, session, token, verification, or recovery
+handlers into editable application Features. Applications extend auth through documented events,
+policies, templates, mappings, and optional credential plugins rather than forking security flows.
+
 First-party does not mean inventing cryptographic algorithms or casually implementing security
 protocols. Doxa will use standards and narrowly scoped, audited primitives behind Doxa-owned
 contracts.

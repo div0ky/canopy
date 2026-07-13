@@ -39,12 +39,17 @@ narrowing provide the application-facing DX.
 
 ## Declared configuration groups
 
-The Application and selected Features explicitly declare the groups they make available:
+The Application and selected user Features explicitly declare application-owned groups. Mandatory
+framework and optional-plugin groups are declared by Doxa and materialized into the same manifest:
 
 ```ts
 export class Application extends DoxaApplication {
   configs = [AppConfig]
   features = [OrdersFeature, BillingFeature]
+  plugins = []
+  framework = {
+    auth: { secureCookies: true, trustedOrigins: ['https://shop.example'] },
+  }
 }
 ```
 
@@ -54,7 +59,9 @@ export class BillingFeature extends Feature {
 }
 ```
 
-Only groups declared by the Application or selected Features are resolved and injectable. A
+Only groups declared by the Application, selected Features, Doxa's mandatory framework Feature, or
+installed plugins are resolved and injectable. Connection strings, credentials, and other secrets
+remain environment-backed typed values; `app.config.ts` may supply non-secret structural defaults. A
 configuration class is declaration-only: it cannot define a constructor, methods, dynamic source
 selection, arbitrary executable factories, or runtime registration.
 

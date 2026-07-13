@@ -30,37 +30,29 @@ tests, and generated manifests contain no pg-boss types or queue-engine vocabula
 
 ## Application organization
 
-Before adding queue behavior, the integrated example was reorganized into the canonized enterprise
-default:
+The public application organization is now:
 
 ```text
+app.config.ts
 src/
-├── application.ts
-├── infrastructure/
-│   ├── infrastructure.feature.ts
-│   ├── database/
-│   └── queue/
-├── counters/
-│   ├── counters.feature.ts
-│   ├── actions/
-│   ├── events/
-│   ├── http/
-│   ├── jobs/
-│   ├── listeners/
-│   ├── models/
-│   ├── queries/
-│   └── support/
-└── system/
-    ├── system.feature.ts
-    ├── events/
-    ├── http/
-    ├── listeners/
-    └── support/
+├── app/
+│   └── app.feature.ts
+└── features/
+    └── counters/
+        ├── counters.feature.ts
+        ├── actions/
+        ├── events/
+        ├── http/
+        ├── jobs/
+        ├── listeners/
+        ├── models/
+        ├── queries/
+        └── support/
 ```
 
-The move required imports and Feature ownership declarations only. No path configuration or runtime
-discovery changed. Manifest IDs moved from the former `persistence` owner to `infrastructure`,
-`counters`, and `system`, proving that Feature declarations—not directories—own framework behavior.
+`app.config.ts` selects user Features. Doxa contributes pg-boss and the rest of its mandatory core
+through a framework-owned Feature generated under `.doxa/`; applications do not declare a queue
+adapter or infrastructure Feature. Feature declarations—not directories—own user behavior.
 
 ## Job authoring
 

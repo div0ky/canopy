@@ -11,21 +11,24 @@ pnpm add @doxajs/core
 ```ts
 import { Feature, Route, type HttpRequest } from '@doxajs/core'
 
-export class HealthRoute extends Route {
-  static override readonly id = 'health'
+export class HomeRoute extends Route {
+  static override readonly id = 'home'
   static override readonly access = 'public'
   readonly method = 'GET'
-  readonly path = '/health'
+  readonly path = '/'
   handle(_request: HttpRequest) {
-    return { status: 'ok' }
+    return { application: 'shop' }
   }
 }
 
 export class AppFeature extends Feature {
   id = 'app'
-  routes = [HealthRoute]
+  routes = [HomeRoute]
 }
 ```
+
+Doxa contributes mandatory infrastructure, authentication routes, and `GET /health` from
+framework-owned generated declarations. Application Features do not re-declare them.
 
 See the [Doxa repository](https://github.com/div0ky/doxajs) for documentation and support.
 

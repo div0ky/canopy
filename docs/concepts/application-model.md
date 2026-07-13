@@ -1,18 +1,21 @@
 # Application Model
 
-A Doxa Application is a declaration of selected Features. A Feature declares only the classes that
-face the framework: models, actions, queries, routes, events, listeners, signals, observers, jobs,
-schedules, policies, commands, configuration, and infrastructure providers.
+A Doxa Application is a root `app.config.ts` declaration of selected user Features, optional
+plugins, and typed framework configuration. Doxa automatically adds its mandatory core Feature for
+HTTP, PostgreSQL persistence, transactions, cache, pg-boss queues/scheduling, authentication, and
+health. A user Feature declares only application classes that face the framework: models, actions,
+queries, routes, events, listeners, signals, observers, jobs, schedules, policies, commands, and
+configuration.
 
 ```ts
-export class AccountsFeature extends Feature {
-  id = 'accounts'
-  models = [User]
-  actions = [RegisterUser]
-  routes = [RegisterRoute]
-  events = [UserRegistered]
-  listeners = [SendWelcomeEmail]
-  policies = [UserPolicy]
+export class OrdersFeature extends Feature {
+  id = 'orders'
+  models = [Order]
+  actions = [PlaceOrder]
+  routes = [PlaceOrderRoute]
+  events = [OrderPlaced]
+  listeners = [ReserveInventory]
+  policies = [OrderPolicy]
 }
 ```
 

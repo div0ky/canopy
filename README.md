@@ -19,26 +19,28 @@ misuse.
 ```ts
 import { Feature, Route, type HttpRequest } from '@doxajs/core'
 
-export class HealthRoute extends Route {
-  static override readonly id = 'health'
+export class HomeRoute extends Route {
+  static override readonly id = 'home'
   static override readonly access = 'public'
   readonly method = 'GET'
-  readonly path = '/health'
+  readonly path = '/'
 
   handle(_request: HttpRequest) {
-    return { status: 'ok' }
+    return { application: 'my-application' }
   }
 }
 
 export class AppFeature extends Feature {
   id = 'app'
-  routes = [HealthRoute]
+  routes = [HomeRoute]
 }
 ```
 
-The route returns only its payload. Doxa compiles the declaration, constructs its dependencies,
+The application route returns only its payload. Doxa separately owns the mandatory `GET /health`
+endpoint and its operational contract. Doxa compiles the declaration, constructs its dependencies,
 admits an execution scope, resolves the actor, enforces authorization, adds correlation and trace
-context, records structured evidence, and returns `{ ok: true, data: { status: 'ok' } }`.
+context, records structured evidence, and returns
+`{ ok: true, data: { application: 'my-application' } }`.
 
 ## Create an application
 
@@ -54,9 +56,9 @@ pnpm migrate
 pnpm dev
 ```
 
-Praxis generates a domain-organized application with HTTP, PostgreSQL/Drizzle persistence,
-Eloquent-style models, first-party authentication, policies, events, signals, observers, queues,
-schedules, tests, Gnosis knowledge, and production container files.
+Praxis generates a small application surface: root `app.config.ts`, an editable `AppFeature`, tests,
+Gnosis knowledge, and production container files. Mandatory HTTP, PostgreSQL/Drizzle, pg-boss,
+authentication, and operational routes remain framework-owned and out of user source.
 
 To work on Doxa itself before package publication, follow the
 [contributor setup](CONTRIBUTING.md#development-setup).

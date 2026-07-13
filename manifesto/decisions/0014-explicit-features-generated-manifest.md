@@ -24,27 +24,30 @@ claiming they are complete.
 
 ## Application composition
 
-The application root must make its selected features visible without relying on package side
-effects, whole-workspace scanning, or runtime discovery. A feature owns a coherent set of models,
-actions, queries, routes, policies, providers, events, listeners, observers, jobs, and schedules.
+`app.config.ts` must make the application's selected Features and optional plugins visible without
+relying on package side effects, whole-workspace scanning, or runtime discovery. A Feature owns a
+coherent set of application models, actions, queries, routes, policies, providers, events,
+listeners, observers, jobs, and schedules.
 
 The MVP authoring shape is a concise, class-first table of contents:
 
 ```ts
-export class AccountsFeature extends Feature {
-  id = 'accounts'
+export class OrdersFeature extends Feature {
+  id = 'orders'
 
-  models = [User]
-  actions = [RegisterUser, ChangePassword]
-  queries = [FindUser]
-  policies = [UserPolicy]
-  observers = [UserObserver]
-  listeners = [SendWelcomeEmail]
-  routes = [AccountRoutes]
+  models = [Order]
+  actions = [PlaceOrder, CancelOrder]
+  queries = [FindOrder]
+  policies = [OrderPolicy]
+  observers = [OrderObserver]
+  listeners = [ReserveInventory]
+  routes = [OrderRoutes]
 }
 
 export class Application extends DoxaApplication {
-  features = [AccountsFeature, BillingFeature, NotificationsFeature]
+  id = 'shop'
+  features = [OrdersFeature, BillingFeature, NotificationsFeature]
+  plugins = []
 }
 ```
 
@@ -59,9 +62,16 @@ clutter ordinary feature declarations.
 
 ## Declaration-only Application class
 
-The Application class is also compile-time metadata. It declares the stable application identity,
-selected Features, and other supported composition fields. Neither the compiler nor runtime
-constructs the Application or executes its code to discover the application graph.
+The Application class in root `app.config.ts` is compile-time metadata. It declares the stable
+application identity, selected user Features, optional plugins, and typed framework configuration.
+Neither the compiler nor runtime constructs the Application or executes its code to discover the
+application graph.
+
+Doxa always contributes one framework-owned Feature containing mandatory HTTP, PostgreSQL,
+transaction, cache, pg-boss queue/scheduling, first-party authentication, and operational-health
+declarations. That Feature is materialized under gitignored `.doxa/`, included in the canonical
+manifest, and cannot be omitted through `app.config.ts`. Application source must not contain copies
+of those providers or framework auth routes.
 
 The Application must not define a constructor, `register()` method, `boot()` method, dynamic Feature
 selection, environment-dependent branching, or arbitrary executable configuration. The compiler must
@@ -97,12 +107,12 @@ intentional cross-Feature API through `provides`, which accepts concrete classes
 ports, and typed Doxa tokens equally:
 
 ```ts
-export class AccountsFeature extends Feature {
-  provides = [AccountDirectory]
+export class InventoryFeature extends Feature {
+  provides = [InventoryCatalog]
 }
 ```
 
-Consumers inject the concrete `AccountDirectory` directly. They do not import `AccountsFeature` or
+Consumers inject the concrete `InventoryCatalog` directly. They do not import `InventoryFeature` or
 declare a module dependency. The Application selects both Features, and the compiler resolves the
 public identity through the manifest.
 
@@ -212,8 +222,9 @@ business data may change normally. They may influence behavior through declared 
 services but cannot secretly redefine which application capabilities exist.
 
 Development hot reload compiles a new graph and boots a replacement runtime. It does not patch the
-running graph in place. Installing or removing a plugin likewise requires compilation and runtime
-replacement.
+running graph in place. Installing or removing an optional plugin likewise requires compilation and
+runtime replacement. Plugins extend the mandatory framework graph; they cannot remove or replace its
+core capabilities.
 
 ## Stable manifest identity
 

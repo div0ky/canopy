@@ -20,27 +20,27 @@ pnpm migrate
 pnpm dev
 ```
 
-Open `http://127.0.0.1:3000/` for the generated application and `/health` for its health route.
-`pnpm dev` watches source, preserves the last valid runtime when compilation fails, and replaces it
-with a fresh process after a valid build.
+Open `http://127.0.0.1:3000/` for the generated application. Doxa owns the mandatory public
+`GET /health` operational endpoint. `pnpm dev` watches `app.config.ts` and source, preserves the
+last valid runtime when compilation fails, and replaces it with a fresh process after a valid build.
 
 ## Generated structure
 
 ```text
+app.config.ts
 src/
-  application.ts
   app/
-  accounts/
-  tasks/
-  infrastructure/
+  features/
 migrations/
 Dockerfile
 compose.yaml
 compose.production.yaml
 ```
 
-Folder names are organizational only. The Application chooses Features, each Feature explicitly
-declares framework-facing classes, and the compiler derives every reachable dependency.
+`app.config.ts` selects user Features and optional plugins. The editable `AppFeature` owns the
+default root route and any other application-level routes. Mandatory HTTP, PostgreSQL, pg-boss,
+cache, auth, and health declarations are generated under gitignored `.doxa/` and remain visible in
+the compiled manifest rather than user source. Folder names are organizational only.
 
 ## Useful commands
 
@@ -49,6 +49,8 @@ pnpm doxa route:list
 pnpm doxa model:list
 pnpm doxa graph
 pnpm doxa db:studio
+pnpm doxa add sendgrid
+pnpm doxa add twilio-sms
 pnpm doxa add theoria
 pnpm test
 ```

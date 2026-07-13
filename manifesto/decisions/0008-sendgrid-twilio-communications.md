@@ -9,6 +9,10 @@
 Doxa will own first-party mail and SMS contracts. The MVP will ship a SendGrid email plugin and a
 Twilio Programmable Messaging SMS plugin.
 
+Applications install them with `doxa add sendgrid` and `doxa add twilio-sms`. Installation updates
+the dependency set and the literal `plugins` array in `app.config.ts`; it does not generate provider
+subclasses or an application-owned infrastructure Feature.
+
 Applications will compose Doxa-owned messages, templates, addresses, delivery options, and
 assertions. Provider SDKs remain private implementation engines inside their plugins.
 
