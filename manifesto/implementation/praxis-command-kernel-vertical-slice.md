@@ -12,9 +12,10 @@ serve, worker, scheduler, combined development, and test processes; application 
 role inspection; Gnosis metadata; and queue, delivery, auth, journal, outbox, cache, and schedule
 operations. `doxa db:studio` launches the framework-pinned Drizzle Studio using the declared `.env`
 database without placing credentials in command arguments. Generators use the canonical Feature
-declaration, add imports and role-array entries automatically, reject overwrites, and require every
-generated entry point to choose `--public` or `--ability=...`. That safety choice makes the
-beautiful path the secure path.
+declaration, add imports and role-array entries automatically, and reject overwrites. Route
+generation requires an explicit path, defaults to `GET`, and emits explicitly public access unless
+`--ability=...` protects it. Other generated entry points continue to require an explicit `--public`
+or `--ability=...` posture.
 
 Manual schedule firing uses the transactional outbox instead of starting an incidental scheduler
 inside the command. It is therefore durable even when workers are offline. Schedule enablement is

@@ -74,6 +74,70 @@ describe('Praxis command suite', () => {
     ])
   })
 
+  it('generates public GET routes by default with optional method and ability overrides', async () => {
+    const root = await temporaryDirectory()
+    const errors: string[] = []
+    const io = {
+      out: () => undefined,
+      error: (message: string) => errors.push(message),
+    }
+    await runPraxis(['make:feature', 'Accounts'], root, io)
+
+    expect(
+      await runPraxis(['make:route', 'Accounts/ListAccounts', '--path=/accounts'], root, io),
+    ).toBe(0)
+    const publicRoute = await readFile(
+      path.join(root, 'src/accounts/http/list-accounts.ts'),
+      'utf8',
+    )
+    expect(publicRoute).toContain("static override readonly access = 'public'")
+    expect(publicRoute).toContain("readonly method = 'GET'")
+
+    expect(
+      await runPraxis(
+        [
+          'make:route',
+          'Accounts/CreateAccount',
+          '--path=/accounts',
+          '--method=POST',
+          '--ability=accounts.create',
+        ],
+        root,
+        io,
+      ),
+    ).toBe(0)
+    const protectedRoute = await readFile(
+      path.join(root, 'src/accounts/http/create-account.ts'),
+      'utf8',
+    )
+    expect(protectedRoute).toContain("static override readonly access = 'accounts.create'")
+    expect(protectedRoute).toContain("readonly method = 'POST'")
+    expect(errors).toEqual([])
+  })
+
+  it('rejects the removed --public route option', async () => {
+    const root = await temporaryDirectory()
+    const errors: string[] = []
+    await runPraxis(['make:feature', 'Accounts'], root, {
+      out: () => undefined,
+      error: () => undefined,
+    })
+
+    expect(
+      await runPraxis(
+        ['make:route', 'Accounts/ListAccounts', '--path=/accounts', '--public'],
+        root,
+        {
+          out: () => undefined,
+          error: (message) => errors.push(message),
+        },
+      ),
+    ).toBe(1)
+    expect(errors).toEqual([
+      'Routes are public by default; omit --public or use --ability=<stable ability>.',
+    ])
+  })
+
   it('launches pinned Drizzle Studio through db:studio without exposing credentials in arguments', async () => {
     const root = await temporaryDirectory()
     const connectionString = 'postgresql://doxa:private-password@127.0.0.1:54329/doxa'

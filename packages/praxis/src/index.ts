@@ -93,7 +93,7 @@ Generate:
   make:model <Feature/Name>
   make:action <Feature/Name> --public|--ability=<ability>
   make:query <Feature/Name> --public|--ability=<ability>
-  make:route <Feature/Name> --method=GET --path=/path --public|--ability=<ability>
+  make:route <Feature/Name> --path=/path [--method=GET] [--ability=<ability>]
   make:event <Feature/Name> [--model=Model] [--broadcast|--broadcast-now] [--channel=name] [--private|--presence]
   make:listener <Feature/Name> --event=Event [--queued|--after-commit|--queued-after-commit] --public|--ability=<ability>
   make:signal <Feature/Name>
@@ -1402,7 +1402,8 @@ async function writeGnosisKnowledge(cwd: string, manifest: Record<string, unknow
     safeMutations: {
       createRole: 'Use doxa make:* so the Feature declaration remains explicit.',
       migrations: 'Create a new forward migration; never edit an applied migration.',
-      authorization: 'Choose --public or --ability explicitly for every generated entry role.',
+      authorization:
+        'Routes default to explicit public access; protect them with --ability. Choose --public or --ability for other generated entry roles.',
     },
     roles: Object.fromEntries(roles.map((role) => [role, manifest[role] ?? []])),
     theoria: {
@@ -1959,18 +1960,14 @@ function roleDefinition(
   readonly folder: string
   readonly source: (name: string) => string
 } {
-  const access = [
-    'action',
-    'query',
-    'route',
-    'listener',
-    'signal-handler',
-    'job',
-    'schedule',
-    'command',
-  ].includes(role)
-    ? parseAccess(args)
-    : undefined
+  const access =
+    role === 'route'
+      ? parseRouteAccess(args)
+      : ['action', 'query', 'listener', 'signal-handler', 'job', 'schedule', 'command'].includes(
+            role,
+          )
+        ? parseAccess(args)
+        : undefined
   const simple =
     (base: string, extra = '') =>
     (name: string) =>
@@ -2032,11 +2029,11 @@ function roleDefinition(
   }
   if (role === 'signal') return { field: 'signals', folder: 'signals', source: simple('Signal') }
   if (role === 'route') {
-    const method = option(args, 'method')?.toUpperCase()
+    const method = (option(args, 'method') ?? 'GET').toUpperCase()
     const routePath = option(args, 'path')
-    if (!method || !['DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT'].includes(method))
+    if (!['DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT'].includes(method))
       throw new PraxisCommandError(
-        'Routes require --method=GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS.',
+        '--method must be GET, POST, PUT, PATCH, DELETE, HEAD, or OPTIONS.',
       )
     if (!routePath?.startsWith('/'))
       throw new PraxisCommandError('Routes require an absolute --path=/... value.')
@@ -2265,6 +2262,16 @@ function parseAccess(arguments_: readonly string[]): string {
   throw new PraxisCommandError(
     'Framework entry roles require --public or --ability=<stable ability>.',
   )
+}
+
+function parseRouteAccess(arguments_: readonly string[]): string {
+  if (arguments_.includes('--public'))
+    throw new PraxisCommandError(
+      'Routes are public by default; omit --public or use --ability=<stable ability>.',
+    )
+  const abilityArgument = arguments_.find((argument) => argument.startsWith('--ability='))
+  if (abilityArgument === undefined) return 'public'
+  return required(abilityArgument.slice(10), '--ability requires a stable ability name.')
 }
 
 async function writeNew(file: string, content: string): Promise<void> {

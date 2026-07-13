@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
+- **Amended:** 2026-07-13 — Route generation defaults to public GET access.
 - **Decision owners:** Doxa maintainers
 
 ## Decision
@@ -100,6 +101,13 @@ Every mutating CLI command must:
 Generators that edit existing code should prefer a parsed representation or a stable framework
 manifest over fragile string replacement. If a safe structural edit cannot be proved, the command
 must stop and explain the required manual change.
+
+`doxa make:route <Feature/Name> --path=/path` requires an explicit absolute path and defaults to a
+`GET` route with `static access = 'public'`. Developers may override the method with `--method=` or
+generate a protected route with `--ability=<stable ability>`. Route generation does not expose a
+`--public` flag because public is its canonical default. Generated source still declares the access
+posture explicitly so compilation, inspection, and review never depend on an implicit runtime
+default.
 
 ## Placement and source organization
 
