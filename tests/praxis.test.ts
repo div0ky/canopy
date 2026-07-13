@@ -1,5 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
-import { spawn } from 'node:child_process'
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -45,13 +44,16 @@ describe('Praxis command suite', () => {
       ),
     ).toBe(0)
 
-    const feature = await readFile(path.join(root, 'src/accounts/accounts.feature.ts'), 'utf8')
+    const feature = await readFile(
+      path.join(root, 'src/features/accounts/accounts.feature.ts'),
+      'utf8',
+    )
     expect(feature).toContain("import { User } from './models/user.js'")
     expect(feature).toContain("import { RegisterUser } from './actions/register-user.js'")
     expect(feature).toContain('models = [User]')
     expect(feature).toContain('actions = [RegisterUser]')
     expect(
-      await readFile(path.join(root, 'src/accounts/actions/register-user.ts'), 'utf8'),
+      await readFile(path.join(root, 'src/features/accounts/actions/register-user.ts'), 'utf8'),
     ).toContain("static override readonly access = 'accounts.register'")
     expect(errors).toEqual([])
   })
@@ -87,7 +89,7 @@ describe('Praxis command suite', () => {
       await runPraxis(['make:route', 'Accounts/ListAccounts', '--path=/accounts'], root, io),
     ).toBe(0)
     const publicRoute = await readFile(
-      path.join(root, 'src/accounts/http/list-accounts.ts'),
+      path.join(root, 'src/features/accounts/http/list-accounts.ts'),
       'utf8',
     )
     expect(publicRoute).toContain("static override readonly access = 'public'")
@@ -107,7 +109,7 @@ describe('Praxis command suite', () => {
       ),
     ).toBe(0)
     const protectedRoute = await readFile(
-      path.join(root, 'src/accounts/http/create-account.ts'),
+      path.join(root, 'src/features/accounts/http/create-account.ts'),
       'utf8',
     )
     expect(protectedRoute).toContain("static override readonly access = 'accounts.create'")
@@ -246,7 +248,10 @@ describe('Praxis command suite', () => {
       ],
     ]
     for (const command of commands) expect(await runPraxis(command, root, io)).toBe(0)
-    const feature = await readFile(path.join(root, 'src/commerce/commerce.feature.ts'), 'utf8')
+    const feature = await readFile(
+      path.join(root, 'src/features/commerce/commerce.feature.ts'),
+      'utf8',
+    )
     for (const field of [
       'models',
       'events',
@@ -266,31 +271,39 @@ describe('Praxis command suite', () => {
     }
     expect(feature).not.toContain('services =')
     expect(
-      await readFile(path.join(root, 'src/commerce/events/order-placed.ts'), 'utf8'),
+      await readFile(path.join(root, 'src/features/commerce/events/order-placed.ts'), 'utf8'),
     ).toContain('implements ShouldBroadcast')
     expect(
-      await readFile(path.join(root, 'src/commerce/events/order-placed.ts'), 'utf8'),
+      await readFile(path.join(root, 'src/features/commerce/events/order-placed.ts'), 'utf8'),
     ).toContain('static override readonly model = Order')
     expect(
-      await readFile(path.join(root, 'src/commerce/listeners/notify-warehouse.ts'), 'utf8'),
+      await readFile(
+        path.join(root, 'src/features/commerce/listeners/notify-warehouse.ts'),
+        'utf8',
+      ),
     ).toContain('implements ShouldQueueAfterCommit')
     expect(
-      await readFile(path.join(root, 'src/commerce/schedules/ship-pending-orders.ts'), 'utf8'),
+      await readFile(
+        path.join(root, 'src/features/commerce/schedules/ship-pending-orders.ts'),
+        'utf8',
+      ),
     ).toContain('everySeconds = 60')
     expect(
-      await readFile(path.join(root, 'src/commerce/schedules/ship-pending-orders.ts'), 'utf8'),
+      await readFile(
+        path.join(root, 'src/features/commerce/schedules/ship-pending-orders.ts'),
+        'utf8',
+      ),
     ).toContain("misfire = 'catch-up-once'")
     expect(
-      await readFile(path.join(root, 'src/commerce/policies/order-policy.ts'), 'utf8'),
+      await readFile(path.join(root, 'src/features/commerce/policies/order-policy.ts'), 'utf8'),
     ).toContain('orders.ship')
   })
 
   it('registers new Features in an existing Application and creates migrations and tests', async () => {
     const root = await temporaryDirectory()
-    await mkdir(path.join(root, 'src'), { recursive: true })
     await writeFile(
-      path.join(root, 'src/application.ts'),
-      "import { DoxaApplication } from '@doxajs/core'\n\nexport class Application extends DoxaApplication {\n  id = 'fixture'\n  features = []\n}\n",
+      path.join(root, 'app.config.ts'),
+      "import { DoxaApplication } from '@doxajs/core'\n\nexport class Application extends DoxaApplication {\n  id = 'fixture'\n  features = []\n  plugins = []\n}\n",
     )
     const io = {
       out: () => undefined,
@@ -299,7 +312,7 @@ describe('Praxis command suite', () => {
       },
     }
     expect(await runPraxis(['make:feature', 'Accounts'], root, io)).toBe(0)
-    expect(await readFile(path.join(root, 'src/application.ts'), 'utf8')).toContain(
+    expect(await readFile(path.join(root, 'app.config.ts'), 'utf8')).toContain(
       'features = [AccountsFeature]',
     )
     expect(await runPraxis(['make:migration', 'create orders'], root, io)).toBe(0)
@@ -320,13 +333,13 @@ describe('Praxis command suite', () => {
         error: (message) => errors.push(message),
       }),
     ).toBe(0)
-    const application = await readFile(path.join(destination, 'src/application.ts'), 'utf8')
+    const application = await readFile(path.join(destination, 'app.config.ts'), 'utf8')
     const feature = await readFile(path.join(destination, 'src/app/app.feature.ts'), 'utf8')
     expect(application).toContain("id = 'garden'")
-    expect(application).toContain(
-      'features = [InfrastructureFeature, AccountsFeature, TasksFeature, AppFeature]',
-    )
-    expect(feature).toContain('routes = [HomeRoute, HealthRoute]')
+    expect(application).toContain('features = [AppFeature]')
+    expect(application).toContain('plugins = []')
+    expect(feature).toContain('routes = [HomeRoute]')
+    expect(feature).not.toContain('HealthRoute')
     expect(JSON.parse(await readFile(path.join(destination, 'package.json'), 'utf8'))).toEqual(
       expect.objectContaining({
         packageManager: 'pnpm@11.10.0',
@@ -363,36 +376,16 @@ describe('Praxis command suite', () => {
     expect(await readFile(path.join(destination, '.env.example'), 'utf8')).toContain(
       'DATABASE_CONNECTION_STRING=',
     )
-    expect(
-      await readFile(path.join(destination, 'src/accounts/accounts.feature.ts'), 'utf8'),
-    ).toContain('TokenRoute')
-    expect(
-      await readFile(
-        path.join(destination, 'src/infrastructure/infrastructure.feature.ts'),
-        'utf8',
-      ),
-    ).toContain('ApplicationAuth')
-    expect(await readFile(path.join(destination, 'src/tasks/tasks.feature.ts'), 'utf8')).toContain(
-      'schedules = [ProcessTasks]',
-    )
+    expect(await fileExists(path.join(destination, 'src/accounts'))).toBe(false)
+    expect(await fileExists(path.join(destination, 'src/infrastructure'))).toBe(false)
+    expect(await fileExists(path.join(destination, 'src/tasks'))).toBe(false)
+    expect(await fileExists(path.join(destination, 'src/app/http/health.route.ts'))).toBe(false)
     const generatedHome = await readFile(
       path.join(destination, 'src/app/http/home.route.ts'),
       'utf8',
     )
-    const generatedTask = await readFile(
-      path.join(destination, 'src/tasks/complete-task.ts'),
-      'utf8',
-    )
-    const generatedEvent = await readFile(
-      path.join(destination, 'src/tasks/task-completed.event.ts'),
-      'utf8',
-    )
     expect(generatedHome).toContain('this.logger.info')
     expect(generatedHome).not.toContain('constructor(')
-    expect(generatedTask).toContain('this.inject(Authorization)')
-    expect(generatedTask).not.toContain('super()')
-    expect(generatedEvent).toContain('extends Event<{ taskId: string; ownerId: string }>')
-    expect(generatedEvent).not.toContain('constructor(')
     await symlink(path.join(workspace, 'node_modules'), path.join(destination, 'node_modules'))
     expect(
       await runPraxis(['build'], destination, {
@@ -405,15 +398,34 @@ describe('Praxis command suite', () => {
     ) as {
       applicationId: string
       buildHash: string
-      actions: Array<{ id: string; dependencies: Array<{ kind: string; targetId?: string }> }>
+      plugins: Array<{ package: string }>
+      features: Array<{ id: string }>
+      providers: Array<{ id: string; capabilities: string[] }>
+      routes: Array<{ id: string; path: string }>
     }
-    expect(generatedManifest).toEqual(expect.objectContaining({ applicationId: 'garden' }))
-    expect(
-      generatedManifest.actions.find((action) => action.id.endsWith('/complete-task'))
-        ?.dependencies,
-    ).toEqual(
+    expect(generatedManifest).toEqual(
+      expect.objectContaining({ applicationId: 'garden', plugins: [] }),
+    )
+    expect(generatedManifest.features.map((entry) => entry.id)).toEqual(['app', 'doxa'])
+    expect(generatedManifest.routes).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ kind: 'role', targetId: 'doxa:authorization' }),
+        expect.objectContaining({ id: 'route:app/home', path: '/' }),
+        expect.objectContaining({ id: 'route:doxa/health', path: '/health' }),
+        expect.objectContaining({ id: 'route:doxa/login', path: '/auth/login' }),
+      ]),
+    )
+    const listedRoutes: string[] = []
+    expect(
+      await runPraxis(['route:list'], destination, {
+        out: (message) => listedRoutes.push(message),
+        error: (message) => errors.push(message),
+      }),
+    ).toBe(0)
+    expect(listedRoutes).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('/health'),
+        expect.stringContaining('route:doxa/health'),
+        expect.stringContaining('/auth/login'),
       ]),
     )
     const gnosis = JSON.parse(
@@ -445,42 +457,23 @@ describe('Praxis command suite', () => {
     const GeneratedApplication = registry.constructors['application:garden']!
     const queue = new FakeQueueManager()
     const transactions = new MemoryTransactionManager(queue)
-    const mail = new FakeMailTransport()
-    const sms = new FakeSmsTransport()
     const harness = await DoxaTestHarness.boot(GeneratedApplication, {
       artifactsDirectory: path.join(destination, '.doxa'),
       dotenvPath: false,
       environment: { DATABASE_CONNECTION_STRING: 'generated-memory-database' },
-      authProviderId: 'provider:infrastructure/auth',
+      authProviderId: 'provider:doxa/auth',
       providerOverrides: {
-        'provider:infrastructure/transactions': transactions,
-        'provider:infrastructure/queues': queue,
-        'provider:infrastructure/cache': new MemoryCache(),
-        'provider:infrastructure/mail': mail,
-        'provider:infrastructure/sms': sms,
+        'provider:doxa/transactions': transactions,
+        'provider:doxa/queues': queue,
+        'provider:doxa/cache': new MemoryCache(),
+        'provider:doxa/mail': new FakeMailTransport(),
+        'provider:doxa/sms': new FakeSmsTransport(),
       },
     })
     try {
-      harness.actingAsUser('generated-user')
-      const completed = await harness.request('http://doxa.test/tasks/generated-task/complete', {
-        method: 'POST',
-      })
-      expect(completed.status).toBe(200)
-      expect(await completed.json()).toEqual({
-        ok: true,
-        data: expect.objectContaining({ id: 'generated-task', completed: true }),
-      })
-      expect(transactions.state.entities.get('model:tasks/task/generated-task')).toEqual(
-        expect.objectContaining({ version: 1 }),
-      )
-      expect(transactions.state.journal).toEqual(
-        expect.arrayContaining([expect.objectContaining({ type: 'task.completed' })]),
-      )
-      expect(queue.hasQueued('process-task')).toBe(true)
-      while (queue.queued.length > 0) await queue.runNext()
-      expect(mail.sent).toHaveLength(1)
-      expect(sms.sent).toHaveLength(1)
-      await queue.runSchedule('schedule:tasks/process-tasks')
+      const health = await harness.request('http://doxa.test/health')
+      expect(health.status).toBe(200)
+      expect(await health.json()).toEqual({ ok: true, data: { status: 'ok' } })
     } finally {
       await harness.shutdown()
     }
@@ -514,15 +507,10 @@ describe('Praxis command suite', () => {
         'theoria:prune': 'doxa theoria:prune',
       }),
     )
-    expect(
-      await readFile(path.join(destination, 'src/infrastructure/theoria.ts'), 'utf8'),
-    ).toContain('extends PostgresTheoria')
-    expect(
-      await readFile(
-        path.join(destination, 'src/infrastructure/infrastructure.feature.ts'),
-        'utf8',
-      ),
-    ).toContain('ApplicationTheoria]')
+    expect(await readFile(path.join(destination, 'app.config.ts'), 'utf8')).toContain(
+      "plugins = ['@doxajs/theoria']",
+    )
+    expect(await fileExists(path.join(destination, 'src/infrastructure'))).toBe(false)
     expect(messages.at(-1)).toContain('Run doxa migrate, then doxa theoria')
   })
 
@@ -710,72 +698,33 @@ describe('Praxis command suite', () => {
     ])
   })
 
-  it('boots background roles from prebuilt artifacts with scheduling enabled by default', async () => {
+  it('installs optional plugins through package metadata and app.config.ts only', async () => {
     const root = await temporaryDirectory()
-    await mkdir(path.join(root, 'src'), { recursive: true })
-    await writeFile(path.join(root, 'package.json'), JSON.stringify({ type: 'module' }))
-    await writeFile(
-      path.join(root, 'tsconfig.json'),
-      JSON.stringify({
-        compilerOptions: {
-          target: 'ES2024',
-          module: 'NodeNext',
-          moduleResolution: 'NodeNext',
-          strict: true,
-          rootDir: 'src',
-          outDir: 'dist',
-          skipLibCheck: true,
-        },
-        include: ['src/**/*.ts'],
-      }),
-    )
-    await writeFile(
-      path.join(root, 'src/application.ts'),
-      `import { DoxaApplication, Feature, QueueManager } from '@doxajs/core'
-import type { QueueDeliveryHandler, QueueEnvelope, QueueJobRecord, QueueRuntimeRoles, ScheduleDefinition } from '@doxajs/core'
-
-export class DeploymentQueue extends QueueManager {
-  static id = 'deployment-queue'
-  override selectRoles(roles: QueueRuntimeRoles): void { console.log('DOXA_ROLES:' + JSON.stringify(roles)) }
-  bind(_handler: QueueDeliveryHandler): void {}
-  reconcileSchedules(_schedules: readonly ScheduleDefinition[]): void {}
-  async enqueue(envelope: QueueEnvelope): Promise<string> { return envelope.id }
-  async flushOutbox(): Promise<number> { return 0 }
-  async findJob(_id: string): Promise<QueueJobRecord | undefined> { return undefined }
-}
-
-export class InfrastructureFeature extends Feature {
-  id = 'infrastructure'
-  providers = [DeploymentQueue]
-}
-
-export class Application extends DoxaApplication {
-  id = 'deployment-fixture'
-  features = [InfrastructureFeature]
-}
-`,
-    )
-    await symlink(path.join(workspace, 'node_modules'), path.join(root, 'node_modules'))
+    const destination = path.join(root, 'garden')
+    const errors: string[] = []
     expect(
-      await runPraxis(['build'], root, {
+      await runPraxis(['new', 'Garden', `--directory=${destination}`], root, {
         out: () => undefined,
-        error: (message) => {
-          throw new Error(message)
-        },
+        error: (message) => errors.push(message),
       }),
     ).toBe(0)
-    await rm(path.join(root, 'src'), { recursive: true })
-    await rm(path.join(root, 'tsconfig.json'))
-
-    expect(await runPrebuiltRole(root, ['work'])).toContain(
-      'DOXA_ROLES:{"worker":true,"scheduler":true}',
+    expect(
+      await runPraxis(['add', 'sendgrid'], destination, {
+        out: () => undefined,
+        error: (message) => errors.push(message),
+      }),
+    ).toBe(0)
+    const packageJson = JSON.parse(
+      await readFile(path.join(destination, 'package.json'), 'utf8'),
+    ) as { dependencies: Record<string, string> }
+    expect(packageJson.dependencies['@doxajs/sendgrid']).toBe(
+      packageJson.dependencies['@doxajs/core'],
     )
-    expect(await runPrebuiltRole(root, ['work', '--without-scheduler'])).toContain(
-      'DOXA_ROLES:{"worker":true,"scheduler":false}',
+    expect(await readFile(path.join(destination, 'app.config.ts'), 'utf8')).toContain(
+      "plugins = ['@doxajs/sendgrid']",
     )
-    expect(await runPrebuiltRole(root, ['schedule'])).toContain(
-      'DOXA_ROLES:{"worker":false,"scheduler":true}',
-    )
+    expect(await fileExists(path.join(destination, 'src/infrastructure'))).toBe(false)
+    expect(errors).toEqual([])
   })
 })
 
@@ -783,6 +732,15 @@ async function temporaryDirectory(): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), 'doxa-praxis-'))
   directories.push(directory)
   return directory
+}
+
+async function fileExists(target: string): Promise<boolean> {
+  try {
+    await access(target)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function upgradeFixturePackage(version = '0.1.0-alpha.4'): Record<string, unknown> {
@@ -826,55 +784,4 @@ function registryUpgradeTarget(version: string): { code: number; stdout: string;
     }),
     stderr: '',
   }
-}
-
-async function runPrebuiltRole(cwd: string, arguments_: readonly string[]): Promise<string> {
-  const child = spawn(
-    process.execPath,
-    [path.join(workspace, 'packages/praxis/dist/bin.js'), ...arguments_],
-    {
-      cwd,
-      env: { ...process.env, PATH: '/doxa-production-has-no-build-tools' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    },
-  )
-  let output = ''
-  child.stdout.setEncoding('utf8')
-  child.stderr.setEncoding('utf8')
-  child.stdout.on('data', (chunk: string) => {
-    output += chunk
-  })
-  child.stderr.on('data', (chunk: string) => {
-    output += chunk
-  })
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(
-      () => reject(new Error(`Prebuilt role did not become ready. ${output}`)),
-      10_000,
-    )
-    const inspect = () => {
-      if (!output.includes('role ready')) return
-      clearTimeout(timeout)
-      resolve()
-    }
-    child.stdout.on('data', inspect)
-    child.once('error', reject)
-    child.once('exit', (code) => {
-      if (!output.includes('role ready'))
-        reject(new Error(`Prebuilt role exited early (${code}). ${output}`))
-    })
-  })
-  child.kill('SIGTERM')
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      child.kill('SIGKILL')
-      reject(new Error('Prebuilt role did not stop.'))
-    }, 10_000)
-    child.once('exit', (code) => {
-      clearTimeout(timeout)
-      if (code === 0) resolve()
-      else reject(new Error(`Prebuilt role exited with ${code}. ${output}`))
-    })
-  })
-  return output
 }

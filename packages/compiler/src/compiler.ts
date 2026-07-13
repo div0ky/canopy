@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import ts from 'typescript'
 
@@ -21,6 +21,7 @@ import {
   type ObserverManifestEntry,
   type ProviderManifestEntry,
   type PolicyManifestEntry,
+  type PluginManifestEntry,
   type RouteManifestEntry,
   type ScheduleManifestEntry,
   type SignalManifestEntry,
@@ -29,6 +30,7 @@ import {
 } from '@doxajs/manifest'
 
 import { DoxaCompilationError } from './errors.js'
+import { prepareFrameworkSource } from './framework-source.js'
 import {
   assertAcyclicProviderGraph,
   assertScopeSafety,
@@ -42,6 +44,8 @@ const COMPILER_VERSION = '0.1.0'
 const DECLARATION_FIELDS = new Set([
   'id',
   'features',
+  'plugins',
+  'framework',
   'configs',
   'providers',
   'actions',
@@ -65,7 +69,13 @@ export interface CompileApplicationOptions {
   readonly sourceRoot: string
   readonly outputRoot: string
   readonly artifactsDirectory: string
+  readonly frameworkFile?: string
   readonly applicationExport?: string
+}
+
+export interface PrepareApplicationOptions {
+  readonly applicationFile: string
+  readonly frameworkFile: string
 }
 
 export interface CompileApplicationResult {
@@ -77,6 +87,33 @@ export interface CompileApplicationResult {
 interface RegisteredClass {
   readonly id: string
   readonly declaration: ts.ClassDeclaration
+}
+
+export async function prepareApplication(options: PrepareApplicationOptions): Promise<{
+  readonly applicationId: string
+  readonly plugins: readonly string[]
+  readonly frameworkFile: string
+}> {
+  const applicationFile = path.resolve(options.applicationFile)
+  const frameworkFile = path.resolve(options.frameworkFile)
+  const prepared = prepareFrameworkSource(
+    applicationFile,
+    await readFile(applicationFile, 'utf8').catch((error: unknown) => {
+      throw new DoxaCompilationError(
+        `Application configuration is not readable: ${applicationFile}`,
+        {
+          cause: error,
+        },
+      )
+    }),
+  )
+  await mkdir(path.dirname(frameworkFile), { recursive: true })
+  await writeFile(frameworkFile, prepared.source, 'utf8')
+  return {
+    applicationId: prepared.applicationId,
+    plugins: prepared.plugins,
+    frameworkFile,
+  }
 }
 
 export async function compileApplication(
@@ -99,7 +136,19 @@ export async function compileApplication(
   const applicationId = readRequiredInstanceString(applicationDeclaration, 'id')
   const applicationName = requiredClassName(applicationDeclaration)
 
-  const featureDeclarations = readClassArray(applicationDeclaration, 'features', checker)
+  const frameworkDeclaration = normalized.frameworkFile
+    ? findExportedClass(
+        program.getSourceFile(normalized.frameworkFile) ??
+          failSource(
+            `Framework source is not part of the TypeScript program: ${normalized.frameworkFile}`,
+          ),
+        'DoxaCoreFeature',
+      )
+    : undefined
+  const featureDeclarations = [
+    ...(frameworkDeclaration ? [frameworkDeclaration] : []),
+    ...readClassArray(applicationDeclaration, 'features', checker),
+  ]
   const features = featureDeclarations.map((declaration) => {
     assertDeclarationOnly(declaration, 'Feature')
     return {
@@ -109,6 +158,15 @@ export async function compileApplication(
     } satisfies FeatureManifestEntry
   })
   assertUnique(features, (feature) => feature.id, 'Feature ID')
+
+  const plugins: PluginManifestEntry[] = readStringArray(applicationDeclaration, 'plugins').map(
+    (packageName) => ({
+      id: packageName.replace(/^@doxajs\//, ''),
+      package: packageName,
+      source: sourceOf(applicationDeclaration, normalized.projectRoot),
+    }),
+  )
+  assertUnique(plugins, (plugin) => plugin.package, 'plugin package')
 
   const configurations: ConfigurationManifestEntry[] = []
   const configurationByDeclaration = new Map<ts.ClassDeclaration, ConfigurationManifestEntry>()
@@ -375,6 +433,7 @@ export async function compileApplication(
     frameworkVersion: FRAMEWORK_VERSION,
     compilerVersion: COMPILER_VERSION,
     application,
+    plugins: [...plugins].sort(byId),
     features: [...features].sort(byId),
     configurations: [...configurations].sort(byId),
     providers: [...providers].sort(byId),
@@ -1463,6 +1522,7 @@ interface NormalizedOptions {
   readonly sourceRoot: string
   readonly outputRoot: string
   readonly artifactsDirectory: string
+  readonly frameworkFile?: string
   readonly applicationExport: string
   readonly projectRoot: string
 }
@@ -1475,6 +1535,7 @@ function normalizeOptions(options: CompileApplicationOptions): NormalizedOptions
     sourceRoot: path.resolve(options.sourceRoot),
     outputRoot: path.resolve(options.outputRoot),
     artifactsDirectory: path.resolve(options.artifactsDirectory),
+    ...(options.frameworkFile ? { frameworkFile: path.resolve(options.frameworkFile) } : {}),
     applicationExport: options.applicationExport ?? 'Application',
     projectRoot: path.dirname(tsconfigPath),
   }
@@ -1574,6 +1635,22 @@ function readClassArray(
     if (!resolved) fail(element, `${element.getText()} does not resolve to a class declaration.`)
     return resolved
   })
+}
+
+function readStringArray(declaration: ts.ClassDeclaration, name: string): readonly string[] {
+  const property = findInstanceProperty(declaration, name)
+  if (!property) return []
+  if (!property.initializer || !ts.isArrayLiteralExpression(property.initializer)) {
+    fail(property, `${name} must be a literal string array.`)
+  }
+  return property.initializer.elements.map((element) => {
+    if (!ts.isStringLiteral(element)) fail(element, `${name} must contain string literals only.`)
+    return element.text
+  })
+}
+
+function failSource(message: string): never {
+  throw new DoxaCompilationError(message)
 }
 
 function resolveClassReference(

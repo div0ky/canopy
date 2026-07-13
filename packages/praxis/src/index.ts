@@ -56,7 +56,7 @@ Build and inspect:
   model:list            List models and physical storage ownership
   graph                 Summarize the compiled application graph
   gnosis                Generate Gnosis-readable application knowledge
-  add theoria           Install and wire the Theoria development debugger
+  add <plugin>          Install sendgrid, twilio-sms, or theoria
   delivery:list         List durable mail and SMS deliveries
   delivery:retry <id>   Redrive a failed or undelivered delivery
   queue:list            List durable queue jobs
@@ -160,9 +160,14 @@ export async function runPraxis(
     if (command === 'db:studio') {
       return await runDatabaseStudio(cwd, args, io)
     }
-    if (command === 'add' && args[0] === 'theoria') {
-      await addTheoria(cwd)
-      io.out('Installed Theoria. Run doxa migrate, then doxa theoria.')
+    if (command === 'add') {
+      const plugin = required(args[0], 'Plugin name is required.')
+      await addPlugin(cwd, plugin)
+      io.out(
+        plugin === 'theoria'
+          ? 'Installed Theoria. Run doxa migrate, then doxa theoria.'
+          : `Installed ${plugin}. Configure its generated environment contract before use.`,
+      )
       return 0
     }
     if (command === 'theoria') {
@@ -521,56 +526,51 @@ async function runTheoria(cwd: string, args: readonly string[], io: PraxisIo): P
   })
 }
 
-async function addTheoria(cwd: string): Promise<void> {
+async function addPlugin(cwd: string, name: string): Promise<void> {
+  const packageName =
+    name === 'sendgrid'
+      ? '@doxajs/sendgrid'
+      : name === 'twilio-sms'
+        ? '@doxajs/twilio-sms'
+        : name === 'theoria'
+          ? '@doxajs/theoria'
+          : undefined
+  if (!packageName) {
+    throw new PraxisCommandError(
+      `Unknown Doxa plugin ${name}. Supported plugins: sendgrid, twilio-sms, theoria.`,
+    )
+  }
   const packagePath = path.join(cwd, 'package.json')
   const packageJson = JSON.parse(await readFile(packagePath, 'utf8')) as {
     dependencies?: Record<string, string>
     scripts?: Record<string, string>
   }
   packageJson.dependencies ??= {}
-  packageJson.dependencies['@doxajs/theoria'] =
+  packageJson.dependencies[packageName] =
     packageJson.dependencies['@doxajs/core'] ?? (await frameworkDependencyRange())
-  packageJson.scripts ??= {}
-  packageJson.scripts.theoria = 'doxa theoria'
-  packageJson.scripts['theoria:prune'] = 'doxa theoria:prune'
+  if (name === 'theoria') {
+    packageJson.scripts ??= {}
+    packageJson.scripts.theoria = 'doxa theoria'
+    packageJson.scripts['theoria:prune'] = 'doxa theoria:prune'
+  }
   await writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`, 'utf8')
 
-  const providerPath = path.join(cwd, 'src/infrastructure/theoria.ts')
-  await mkdir(path.dirname(providerPath), { recursive: true })
-  if (!(await fileExists(providerPath))) {
-    await writeFile(
-      providerPath,
-      `import { PostgresTheoria } from '@doxajs/theoria'\nimport { DatabaseConfig } from './database.config.js'\n\nexport class ApplicationTheoria extends PostgresTheoria {\n  static override readonly id = 'theoria'\n  constructor(config: DatabaseConfig) {\n    super({ connectionString: config.connectionString.reveal() })\n  }\n}\n`,
-      'utf8',
-    )
+  const configPath = path.join(cwd, 'app.config.ts')
+  let source = await readFile(configPath, 'utf8').catch((error: unknown) => {
+    throw new PraxisCommandError('app.config.ts is required before adding a plugin.', {
+      cause: error,
+    })
+  })
+  if (source.includes(`'${packageName}'`) || source.includes(`"${packageName}"`)) return
+  const plugins = /(\n  plugins\s*=\s*\[)([^\]]*)(\])/
+  if (!plugins.test(source)) {
+    throw new PraxisCommandError('Application must declare a literal plugins array.')
   }
-  const featurePath = path.join(cwd, 'src/infrastructure/infrastructure.feature.ts')
-  let feature: string
-  try {
-    feature = await readFile(featurePath, 'utf8')
-  } catch {
-    throw new PraxisCommandError(
-      'Theoria expects src/infrastructure/infrastructure.feature.ts. Generate an Infrastructure Feature first.',
-    )
-  }
-  if (!feature.includes("from './theoria.js'")) {
-    const importLine = "import { ApplicationTheoria } from './theoria.js'\n"
-    const lastImport = [...feature.matchAll(/^import .*$/gm)].at(-1)
-    const insertAt = lastImport ? lastImport.index! + lastImport[0].length + 1 : 0
-    feature = feature.slice(0, insertAt) + importLine + feature.slice(insertAt)
-  }
-  if (!/providers\s*=\s*\[[^\]]*ApplicationTheoria/s.test(feature)) {
-    feature = feature.replace(
-      /providers\s*=\s*\[([^\]]*)\]/s,
-      (_match, providers: string) =>
-        `providers = [${providers.trim()}${providers.trim() ? ', ' : ''}ApplicationTheoria]`,
-    )
-  }
-  if (!feature.includes('ApplicationTheoria]'))
-    throw new PraxisCommandError(
-      'Could not add Theoria to the Infrastructure Feature providers array.',
-    )
-  await writeFile(featurePath, feature, 'utf8')
+  source = source.replace(plugins, (_match, open: string, contents: string, close: string) => {
+    const trimmed = contents.trim()
+    return `${open}${trimmed ? `${trimmed}, ` : ''}'${packageName}'${close}`
+  })
+  await writeFile(configPath, source, 'utf8')
 }
 
 async function redriveDelivery(pool: Pool, id: string): Promise<void> {
@@ -1029,8 +1029,9 @@ async function compile(cwd: string) {
   const { compileApplication } = await loadCompiler()
   return compileApplication({
     tsconfigPath: path.join(cwd, 'tsconfig.json'),
-    applicationFile: path.join(cwd, 'src/application.ts'),
-    sourceRoot: path.join(cwd, 'src'),
+    applicationFile: path.join(cwd, 'app.config.ts'),
+    frameworkFile: path.join(cwd, '.doxa/framework.ts'),
+    sourceRoot: cwd,
     outputRoot: path.join(cwd, 'dist'),
     artifactsDirectory: path.join(cwd, '.doxa'),
   })
@@ -1073,7 +1074,7 @@ async function makeApplication(directory: string, rawName: string): Promise<void
   const packageName = kebab(rawName)
   const frameworkRange = await frameworkDependencyRange()
   await mkdir(path.join(directory, 'src', 'app', 'http'), { recursive: true })
-  const files: Readonly<Record<string, string>> = {
+  const files: Record<string, string> = {
     'package.json': `${JSON.stringify(
       {
         name: packageName,
@@ -1235,45 +1236,38 @@ services:
       'DATABASE_CONNECTION_STRING=postgresql://doxa:doxa@127.0.0.1:54329/doxa\nPORT=3000\nHOST=127.0.0.1\nDOXA_LOG_LEVEL=info\n# DOXA_LOG_FORMAT=pretty\n',
     'compose.yaml': `services:\n  postgres:\n    image: postgres:17-alpine\n    environment:\n      POSTGRES_USER: doxa\n      POSTGRES_PASSWORD: doxa\n      POSTGRES_DB: doxa\n    ports:\n      - "54329:5432"\n    healthcheck:\n      test: ["CMD-SHELL", "pg_isready -U doxa"]\n      interval: 2s\n      timeout: 2s\n      retries: 20\n`,
     'README.md': `# ${name}\n\nGenerated by Doxa Praxis.\n\n\`\`\`sh\npnpm install\ncp .env.example .env\ndocker compose up -d\npnpm migrate\npnpm dev\n\`\`\`\n\n\`pnpm dev\` watches \`src/\`, keeps the last good server alive when a build fails, and hot reloads a fresh runtime after valid changes. Run \`pnpm db:studio\` to browse the configured PostgreSQL database.\n\n## Production containers\n\nDoxa builds one immutable image and runs it as separate web and background services. The background service consumes queues and runs distributed-safe schedules. Migrations are an explicit release job and never run during service startup.\n\n\`\`\`sh\nexport DATABASE_CONNECTION_STRING=postgresql://...\ndocker compose -f compose.production.yaml build\ndocker compose -f compose.production.yaml --profile release run --rm migrate\ndocker compose -f compose.production.yaml up -d web background\n\`\`\`\n\nFor advanced schedule isolation, run background replicas with \`doxa work --without-scheduler\` and a separate \`doxa schedule\` service from the same image.\n`,
-    'src/application.ts': `import { DoxaApplication } from '@doxajs/core'\n\nimport { AccountsFeature } from './accounts/accounts.feature.js'\nimport { AppFeature } from './app/app.feature.js'\nimport { InfrastructureFeature } from './infrastructure/infrastructure.feature.js'\nimport { TasksFeature } from './tasks/tasks.feature.js'\n\nexport class Application extends DoxaApplication {\n  id = '${packageName}'\n  features = [InfrastructureFeature, AccountsFeature, TasksFeature, AppFeature]\n}\n`,
-    'src/app/app.feature.ts': `import { Feature } from '@doxajs/core'\n\nimport { HealthRoute } from './http/health.route.js'\nimport { HomeRoute } from './http/home.route.js'\n\nexport class AppFeature extends Feature {\n  id = 'app'\n  routes = [HomeRoute, HealthRoute]\n}\n`,
     'src/app/http/home.route.ts': `import { type HttpRequest, Route } from '@doxajs/core'\n\nexport class HomeRoute extends Route {\n  static override readonly id = 'home'\n  static override readonly access = 'public'\n  readonly method = 'GET'\n  readonly path = '/'\n  handle(_request: HttpRequest) { this.logger.info('Home visited'); return { application: '${packageName}', framework: 'Doxa' } }\n}\n`,
-    'src/app/http/health.route.ts': `import { type HttpRequest, Route } from '@doxajs/core'\n\nexport class HealthRoute extends Route {\n  static override readonly id = 'health'\n  static override readonly access = 'public'\n  readonly method = 'GET'\n  readonly path = '/health'\n  handle(_request: HttpRequest) { return { status: 'ok' } }\n}\n`,
-    'src/infrastructure/database.config.ts': `import { Configuration, SecretString } from '@doxajs/core'\n\nexport class DatabaseConfig extends Configuration {\n  declare connectionString: SecretString\n}\n`,
-    'src/infrastructure/transactions.ts': `import { PostgresTransactionManager } from '@doxajs/postgres-drizzle'\nimport { DatabaseConfig } from './database.config.js'\n\nexport class Transactions extends PostgresTransactionManager {\n  static id = 'transactions'\n  constructor(config: DatabaseConfig) { super({ connectionString: config.connectionString.reveal(), applicationName: '${packageName}' }) }\n}\n`,
-    'src/infrastructure/queues.ts': `import { PgBossQueueManager } from '@doxajs/queue-pg-boss'\nimport { DatabaseConfig } from './database.config.js'\n\nexport class Queues extends PgBossQueueManager {\n  static id = 'queues'\n  constructor(config: DatabaseConfig) { super({ connectionString: config.connectionString.reveal(), applicationName: '${packageName}' }) }\n}\n`,
-    'src/infrastructure/auth.ts': `import { PostgresAuth } from '@doxajs/auth-postgres'\nimport { DatabaseConfig } from './database.config.js'\n\nexport class ApplicationAuth extends PostgresAuth {\n  static override readonly id = 'auth'\n  constructor(config: DatabaseConfig) { super({ connectionString: config.connectionString.reveal(), secureCookies: false, trustedOrigins: ['http://127.0.0.1:3000'] }) }\n}\n`,
-    'src/infrastructure/cache.ts': `import { PostgresCache } from '@doxajs/postgres-drizzle'\nimport { DatabaseConfig } from './database.config.js'\n\nexport class ApplicationCache extends PostgresCache {\n  static id = 'cache'\n  constructor(config: DatabaseConfig) { super({ connectionString: config.connectionString.reveal(), applicationName: '${packageName}-cache' }) }\n}\n`,
-    'src/infrastructure/mail.ts': `import { FakeMailTransport } from '@doxajs/core'\nexport class ApplicationMail extends FakeMailTransport { static id = 'mail' }\n`,
-    'src/infrastructure/sms.ts': `import { FakeSmsTransport } from '@doxajs/core'\nexport class ApplicationSms extends FakeSmsTransport { static id = 'sms' }\n`,
-    'src/infrastructure/infrastructure.feature.ts': `import { Feature } from '@doxajs/core'\nimport { ApplicationAuth } from './auth.js'\nimport { ApplicationCache } from './cache.js'\nimport { DatabaseConfig } from './database.config.js'\nimport { ApplicationMail } from './mail.js'\nimport { Queues } from './queues.js'\nimport { ApplicationSms } from './sms.js'\nimport { Transactions } from './transactions.js'\n\nexport class InfrastructureFeature extends Feature {\n  id = 'infrastructure'\n  configs = [DatabaseConfig]\n  providers = [Transactions, Queues, ApplicationAuth, ApplicationCache, ApplicationMail, ApplicationSms]\n}\n`,
-    'src/accounts/credentials.ts': `import { HttpError, type HttpRequest } from '@doxajs/core'\n\nexport async function credentials(request: HttpRequest): Promise<{ email: string; password: string }> {\n  const body = await request.json<{ email?: unknown; password?: unknown }>()\n  if (typeof body.email !== 'string' || typeof body.password !== 'string') throw new HttpError(422, 'validation_failed', 'email and password are required')\n  return { email: body.email, password: body.password }\n}\n`,
-    'src/accounts/send-auth-email.ts': `import { randomUUID } from 'node:crypto'\nimport { Action, Mailer } from '@doxajs/core'\n\nexport class SendAuthEmail extends Action<{ kind: 'verification' | 'password-reset'; to: string; token: string }, void> {\n  static id = 'send-auth-email'\n  static override readonly access = 'public'\n  private readonly mailer = this.inject(Mailer)\n  async handle(input: { kind: 'verification' | 'password-reset'; to: string; token: string }): Promise<void> {\n    await this.mailer.send({ id: randomUUID(), from: 'accounts@${packageName}.test', to: [input.to], subject: input.kind === 'verification' ? 'Verify your email' : 'Reset your password', text: input.token })\n  }\n}\n`,
-    'src/accounts/account.policy.ts': `import { allow, deny, isRecentPasswordAuthentication, Policy, type PolicyDecision, type PolicyRequest } from '@doxajs/core'\n\nexport class AccountPolicy extends Policy {\n  static override readonly id = 'account'\n  static override readonly abilities = ['accounts.view-self', 'accounts.reauthenticate', 'accounts.tokens.manage']\n  decide(request: PolicyRequest): PolicyDecision {\n    if (request.actor.kind !== 'user' || request.context.authentication.state !== 'authenticated') return deny('account', 'authentication_required')\n    if (request.ability === 'accounts.tokens.manage' && !isRecentPasswordAuthentication(request.context.authentication)) return deny('account', 'fresh_session_required')\n    return allow('account')\n  }\n}\n`,
-    'src/accounts/register.route.ts': `import { ActionBus, Auth, Http, type HttpRequest, Route } from '@doxajs/core'\nimport { credentials } from './credentials.js'\nimport { SendAuthEmail } from './send-auth-email.js'\n\nexport class RegisterRoute extends Route {\n  static override readonly id = 'register'; static override readonly access = 'public'\n  readonly method = 'POST'; readonly path = '/auth/register'\n  private readonly auth = this.inject(Auth)\n  private readonly actions = this.inject(ActionBus)\n  async handle(request: HttpRequest): Promise<Response> {\n    const identity = await this.auth.register(await credentials(request))\n    const challenge = await this.auth.issueEmailVerification(identity.id)\n    await this.actions.execute(SendAuthEmail, { kind: 'verification', to: identity.email, token: challenge.token.reveal() })\n    return Http.created({ identity: { id: identity.id, email: identity.email, emailVerified: identity.emailVerified } })\n  }\n}\n`,
-    'src/accounts/login.route.ts': `import { Auth, Http, type HttpRequest, Route } from '@doxajs/core'\nimport { credentials } from './credentials.js'\n\nexport class LoginRoute extends Route {\n  static override readonly id = 'login'; static override readonly access = 'public'\n  readonly method = 'POST'; readonly path = '/auth/login'\n  private readonly auth = this.inject(Auth)\n  async handle(request: HttpRequest): Promise<Response> {\n    const grant = await this.auth.login(await credentials(request), { userAgent: request.header('user-agent') ?? 'unknown' })\n    return Http.json({ identity: { id: grant.identity.id, email: grant.identity.email, emailVerified: grant.identity.emailVerified } }, 200, { 'set-cookie': this.auth.sessionCookie(grant) })\n  }\n}\n`,
-    'src/accounts/reauthenticate.route.ts': `import { Auth, CurrentExecution, HttpError, type HttpRequest, Route } from '@doxajs/core'\n\nexport class ReauthenticateRoute extends Route {\n  static override readonly id = 'reauthenticate'; static override readonly access = 'accounts.reauthenticate'\n  readonly method = 'POST'; readonly path = '/auth/reauthenticate'\n  private readonly auth = this.inject(Auth)\n  private readonly execution = this.inject(CurrentExecution)\n  async handle(request: HttpRequest) {\n    const authentication = this.execution.context.authentication\n    const body = await request.json<{ password?: unknown }>()\n    if (authentication.state !== 'authenticated' || authentication.method !== 'password' || !authentication.identityId || !authentication.sessionId) throw new HttpError(403, 'password_session_required', 'A password-authenticated browser session is required.')\n    if (typeof body.password !== 'string') throw new HttpError(422, 'validation_failed', 'password is required')\n    const authenticatedAt = await this.auth.reauthenticate(authentication.identityId, authentication.sessionId, body.password, { userAgent: request.header('user-agent') ?? 'unknown' })\n    return { authenticatedAt: authenticatedAt.toISOString() }\n  }\n}\n`,
-    'src/accounts/me.route.ts': `import { CurrentExecution, type HttpRequest, Route } from '@doxajs/core'\n\nexport class MeRoute extends Route {\n  static override readonly id = 'me'; static override readonly access = 'accounts.view-self'\n  readonly method = 'GET'; readonly path = '/auth/me'\n  private readonly execution = this.inject(CurrentExecution)\n  handle(_request: HttpRequest) { return { actor: this.execution.context.actor, authentication: this.execution.context.authentication } }\n}\n`,
-    'src/accounts/verify-email.route.ts': `import { Auth, HttpError, type HttpRequest, Route } from '@doxajs/core'\n\nexport class VerifyEmailRoute extends Route {\n  static override readonly id = 'verify-email'; static override readonly access = 'public'\n  readonly method = 'POST'; readonly path = '/auth/email/verify'\n  private readonly auth = this.inject(Auth)\n  async handle(request: HttpRequest) {\n    const body = await request.json<{ token?: unknown }>()\n    if (typeof body.token !== 'string') throw new HttpError(422, 'validation_failed', 'token is required')\n    const identity = await this.auth.verifyEmail(body.token)\n    return { identity: { id: identity.id, email: identity.email, emailVerified: identity.emailVerified } }\n  }\n}\n`,
-    'src/accounts/token.route.ts': `import { Auth, CurrentExecution, Http, HttpError, type HttpRequest, Route } from '@doxajs/core'\n\nexport class TokenRoute extends Route {\n  static override readonly id = 'issue-token'; static override readonly access = 'accounts.tokens.manage'\n  readonly method = 'POST'; readonly path = '/auth/tokens'\n  private readonly auth = this.inject(Auth)\n  private readonly execution = this.inject(CurrentExecution)\n  async handle(request: HttpRequest): Promise<Response> {\n    const identityId = this.execution.context.authentication.identityId\n    if (!identityId) throw new HttpError(401, 'authentication_required', 'Authentication is required.')\n    const body = await request.json<{ name?: unknown; constraints?: unknown }>()\n    if (typeof body.name !== 'string' || (body.constraints !== undefined && (!Array.isArray(body.constraints) || !body.constraints.every((value) => typeof value === 'string')))) throw new HttpError(422, 'validation_failed', 'name and string constraints are required')\n    const grant = await this.auth.issueAccessToken(identityId, { name: body.name, ...(body.constraints ? { constraints: body.constraints as string[] } : {}) })\n    return Http.created({ accessToken: grant.accessToken, token: grant.token.reveal() })\n  }\n}\n`,
-    'src/accounts/request-password-reset.route.ts': `import { ActionBus, Auth, type HttpRequest, Route } from '@doxajs/core'\nimport { SendAuthEmail } from './send-auth-email.js'\n\nexport class RequestPasswordResetRoute extends Route {\n  static override readonly id = 'request-password-reset'; static override readonly access = 'public'\n  readonly method = 'POST'; readonly path = '/auth/password/reset/request'\n  private readonly auth = this.inject(Auth)\n  private readonly actions = this.inject(ActionBus)\n  async handle(request: HttpRequest): Promise<Response> {\n    const body = await request.json<{ email?: unknown }>()\n    if (typeof body.email === 'string') { const challenge = await this.auth.issuePasswordReset(body.email); if (challenge) await this.actions.execute(SendAuthEmail, { kind: 'password-reset', to: body.email, token: challenge.token.reveal() }) }\n    return new Response(null, { status: 204 })\n  }\n}\n`,
-    'src/accounts/reset-password.route.ts': `import { Auth, HttpError, type HttpRequest, Route } from '@doxajs/core'\n\nexport class ResetPasswordRoute extends Route {\n  static override readonly id = 'reset-password'; static override readonly access = 'public'\n  readonly method = 'POST'; readonly path = '/auth/password/reset'\n  private readonly auth = this.inject(Auth)\n  async handle(request: HttpRequest): Promise<Response> {\n    const body = await request.json<{ token?: unknown; password?: unknown }>()\n    if (typeof body.token !== 'string' || typeof body.password !== 'string') throw new HttpError(422, 'validation_failed', 'token and password are required')\n    await this.auth.resetPassword(body.token, body.password); return new Response(null, { status: 204 })\n  }\n}\n`,
-    'src/accounts/accounts.feature.ts': `import { Feature } from '@doxajs/core'\nimport { AccountPolicy } from './account.policy.js'\nimport { LoginRoute } from './login.route.js'\nimport { MeRoute } from './me.route.js'\nimport { ReauthenticateRoute } from './reauthenticate.route.js'\nimport { RegisterRoute } from './register.route.js'\nimport { RequestPasswordResetRoute } from './request-password-reset.route.js'\nimport { ResetPasswordRoute } from './reset-password.route.js'\nimport { SendAuthEmail } from './send-auth-email.js'\nimport { TokenRoute } from './token.route.js'\nimport { VerifyEmailRoute } from './verify-email.route.js'\n\nexport class AccountsFeature extends Feature {\n  id = 'accounts'\n  actions = [SendAuthEmail]\n  routes = [RegisterRoute, LoginRoute, ReauthenticateRoute, MeRoute, VerifyEmailRoute, TokenRoute, RequestPasswordResetRoute, ResetPasswordRoute]\n  policies = [AccountPolicy]\n}\n`,
-    'src/tasks/task.ts': `import { Model, type ModelAttributes } from '@doxajs/core'\n\nexport interface TaskAttributes extends ModelAttributes { id: string; ownerId: string; title: string; completed: boolean }\n\nexport class Task extends Model<TaskAttributes> {\n  static override readonly id = 'task'\n  get ownerId(): string { return this.attributes.ownerId }\n  get completed(): boolean { return this.attributes.completed }\n  complete(): void {\n    if (this.attributes.completed) return\n    this.attributes.completed = true\n    this.journal('task.completed', { title: this.attributes.title })\n    this.outbox('task.completed', { taskId: this.id, ownerId: this.ownerId })\n  }\n}\n`,
-    'src/tasks/task.policy.ts': `import { allow, deny, Policy, type PolicyDecision, type PolicyRequest } from '@doxajs/core'\n\nexport class TaskPolicy extends Policy<{ ownerId: string }> {\n  static override readonly id = 'task'\n  static override readonly abilities = ['tasks.update']\n  decide(request: PolicyRequest<{ ownerId: string }>): PolicyDecision {\n    if (request.actor.kind !== 'user' || !request.actor.id) return deny('task', 'authentication_required')\n    if (request.resource && request.resource.ownerId !== request.actor.id) return deny('task', 'owner_required')\n    return allow('task')\n  }\n}\n`,
-    'src/tasks/task-completed.event.ts': `import { Event } from '@doxajs/core'\n\nexport class TaskCompleted extends Event<{ taskId: string; ownerId: string }> {\n  static override readonly id = 'task-completed'\n}\n`,
-    'src/tasks/task-touched.signal.ts': `import { Signal } from '@doxajs/core'\n\nexport class TaskTouched extends Signal<{ taskId: string }> {\n  static override readonly id = 'task-touched'\n}\n`,
-    'src/tasks/record-task-touched.ts': `import { SignalHandler } from '@doxajs/core'\nimport { TaskTouched } from './task-touched.signal.js'\n\nexport class RecordTaskTouched extends SignalHandler<TaskTouched> {\n  static id = 'record-task-touched'; static override readonly access = 'public'\n  handle(_signal: TaskTouched): void {}\n}\n`,
-    'src/tasks/task.observer.ts': `import { Observer } from '@doxajs/core'\nimport { Task } from './task.js'\n\nexport class TaskObserver extends Observer<Task> {\n  static id = 'task'\n  saving(_task: Task): void {}\n  committed(_task: Task): void {}\n}\n`,
-    'src/tasks/record-task-completed.ts': `import { Listener } from '@doxajs/core'\nimport { TaskCompleted } from './task-completed.event.js'\n\nexport class RecordTaskCompleted extends Listener<TaskCompleted> {\n  static id = 'record-task-completed'; static override readonly access = 'public'\n  handle(_event: TaskCompleted): void {}\n}\n`,
-    'src/tasks/queue-task-completed.ts': `import { Listener, type ShouldQueueAfterCommit } from '@doxajs/core'\nimport { TaskCompleted } from './task-completed.event.js'\n\nexport class QueueTaskCompleted extends Listener<TaskCompleted> implements ShouldQueueAfterCommit {\n  static id = 'queue-task-completed'; static override readonly access = 'public'\n  handle(_event: TaskCompleted): void {}\n}\n`,
-    'src/tasks/process-task.job.ts': `import { Job } from '@doxajs/core'\n\nexport class ProcessTask extends Job<{ taskId: string }> {\n  static override readonly id = 'process-task'; static override readonly access = 'public'\n  async handle(_input: { taskId: string }): Promise<void> {}\n}\n`,
-    'src/tasks/process-tasks.schedule.ts': `import { Schedule } from '@doxajs/core'\nimport { ProcessTask } from './process-task.job.js'\n\nexport class ProcessTasks extends Schedule<{ taskId: string }> {\n  static override readonly id = 'process-tasks'; static override readonly access = 'public'\n  static override readonly job = ProcessTask\n  static override readonly everySeconds = 3600\n  static override readonly input = { taskId: 'scheduled-maintenance' }\n}\n`,
-    'src/tasks/complete-task.ts': `import { randomUUID } from 'node:crypto'\nimport { Action, Authorization, CurrentExecution, Mailer, Sms } from '@doxajs/core'\nimport { ProcessTask } from './process-task.job.js'\nimport { Task } from './task.js'\nimport { TaskCompleted } from './task-completed.event.js'\nimport { TaskTouched } from './task-touched.signal.js'\n\nexport class CompleteTask extends Action<{ id: string }, { id: string; completed: boolean; jobId: string }> {\n  static id = 'complete-task'; static override readonly access = 'tasks.update'\n  private readonly authorization = this.inject(Authorization)\n  private readonly execution = this.inject(CurrentExecution)\n  private readonly mailer = this.inject(Mailer)\n  private readonly sms = this.inject(Sms)\n  async handle(input: { id: string }): Promise<{ id: string; completed: boolean; jobId: string }> {\n    const ownerId = this.execution.context.actor.id!\n    const task = await Task.find(input.id) ?? Task.make({ id: input.id, ownerId, title: 'Generated Doxa task', completed: false })\n    await this.authorization.authorize('tasks.update', { ownerId: task.ownerId })\n    task.complete()\n    await TaskTouched.dispatch({ taskId: task.id })\n    await TaskCompleted.dispatch({ taskId: task.id, ownerId: task.ownerId })\n    const jobId = await ProcessTask.dispatch({ taskId: task.id }, { idempotencyKey: 'task:' + task.id })\n    await this.mailer.send({ id: randomUUID(), from: 'tasks@${packageName}.test', to: [ownerId + '@${packageName}.test'], subject: 'Task completed', text: task.id })\n    await this.sms.send({ id: randomUUID(), to: '+15555550123', text: 'Task ' + task.id + ' completed' })\n    await task.save()\n    return { id: task.id, completed: task.completed, jobId }\n  }\n}\n`,
-    'src/tasks/complete-task.route.ts': `import { ActionBus, type HttpRequest, Route } from '@doxajs/core'\nimport { CompleteTask } from './complete-task.js'\n\nexport class CompleteTaskRoute extends Route {\n  static override readonly id = 'complete-task'; static override readonly access = 'tasks.update'\n  readonly method = 'POST'; readonly path = '/tasks/:id/complete'\n  private readonly actions = this.inject(ActionBus)\n  async handle(request: HttpRequest) { return await this.actions.execute(CompleteTask, { id: request.param('id') }) }\n}\n`,
-    'src/tasks/tasks.feature.ts': `import { Feature } from '@doxajs/core'\nimport { CompleteTask } from './complete-task.js'\nimport { CompleteTaskRoute } from './complete-task.route.js'\nimport { ProcessTask } from './process-task.job.js'\nimport { ProcessTasks } from './process-tasks.schedule.js'\nimport { QueueTaskCompleted } from './queue-task-completed.js'\nimport { RecordTaskCompleted } from './record-task-completed.js'\nimport { RecordTaskTouched } from './record-task-touched.js'\nimport { Task } from './task.js'\nimport { TaskCompleted } from './task-completed.event.js'\nimport { TaskObserver } from './task.observer.js'\nimport { TaskPolicy } from './task.policy.js'\nimport { TaskTouched } from './task-touched.signal.js'\n\nexport class TasksFeature extends Feature {\n  id = 'tasks'\n  models = [Task]\n  observers = [TaskObserver]\n  actions = [CompleteTask]\n  routes = [CompleteTaskRoute]\n  policies = [TaskPolicy]\n  events = [TaskCompleted]\n  listeners = [RecordTaskCompleted, QueueTaskCompleted]\n  signals = [TaskTouched]\n  signalHandlers = [RecordTaskTouched]\n  jobs = [ProcessTask]\n  schedules = [ProcessTasks]\n}\n`,
     'tests/app.test.ts': `import { describe, expect, it } from 'vitest'\n\ndescribe('${name}', () => {\n  it('is ready to build', () => expect(true).toBe(true))\n})\n`,
   }
+  files['app.config.ts'] =
+    `import { DoxaApplication } from '@doxajs/core'\n\nimport { AppFeature } from './src/app/app.feature.js'\n\nexport class Application extends DoxaApplication {\n  id = '${packageName}'\n  features = [AppFeature]\n  plugins = []\n  framework = {\n    auth: {\n      secureCookies: false,\n      trustedOrigins: ['http://127.0.0.1:3000'],\n    },\n  }\n}\n`
+  files['src/app/app.feature.ts'] =
+    `import { Feature } from '@doxajs/core'\n\nimport { HomeRoute } from './http/home.route.js'\n\nexport class AppFeature extends Feature {\n  id = 'app'\n  routes = [HomeRoute]\n}\n`
+  files['tsconfig.json'] = `${JSON.stringify(
+    {
+      compilerOptions: {
+        target: 'ES2024',
+        lib: ['ES2024'],
+        module: 'NodeNext',
+        moduleResolution: 'NodeNext',
+        types: ['node'],
+        strict: true,
+        noUncheckedIndexedAccess: true,
+        exactOptionalPropertyTypes: true,
+        verbatimModuleSyntax: true,
+        skipLibCheck: true,
+        rootDir: '.',
+        outDir: 'dist',
+        sourceMap: true,
+      },
+      include: ['app.config.ts', 'src/**/*.ts', '.doxa/framework.ts'],
+    },
+    null,
+    2,
+  )}\n`
+  files['.env.example'] =
+    'DATABASE_CONNECTION_STRING=postgresql://doxa:doxa@127.0.0.1:54329/doxa\nAUTH_SECURE_COOKIES=false\nAUTH_TRUSTED_ORIGINS=http://127.0.0.1:3000\nPORT=3000\nHOST=127.0.0.1\nDOXA_LOG_LEVEL=info\n# DOXA_LOG_FORMAT=pretty\n'
+
   for (const [relative, content] of Object.entries(files)) {
     const file = path.join(directory, relative)
     await mkdir(path.dirname(file), { recursive: true })
@@ -1282,6 +1276,13 @@ services:
 }
 
 async function buildApplication(cwd: string) {
+  if (await fileExists(path.join(cwd, 'app.config.ts'))) {
+    const { prepareApplication } = await loadCompiler()
+    await prepareApplication({
+      applicationFile: path.join(cwd, 'app.config.ts'),
+      frameworkFile: path.join(cwd, '.doxa/framework.ts'),
+    })
+  }
   const code = await runProcess(
     process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
     ['exec', 'tsc', '-p', 'tsconfig.json'],
@@ -1320,7 +1321,7 @@ async function loadPrebuiltApplication(cwd: string): Promise<PrebuiltApplication
   const artifactsDirectory = path.join(cwd, '.doxa')
   const manifestPath = path.join(artifactsDirectory, 'manifest.json')
   const registryPath = path.join(artifactsDirectory, 'registry.mjs')
-  const applicationPath = path.join(cwd, 'dist/application.js')
+  const applicationPath = path.join(cwd, 'dist/app.config.js')
   let manifest: PrebuiltApplication['manifest']
   try {
     const [manifestJson] = await Promise.all([
@@ -1448,7 +1449,7 @@ async function writeGnosisKnowledge(cwd: string, manifest: Record<string, unknow
         web: {
           command: 'doxa serve',
           scalesHorizontally: true,
-          health: 'application HTTP health route',
+          health: 'framework-owned HTTP health route',
         },
         background: {
           command: 'doxa work',
@@ -1589,10 +1590,10 @@ async function runHotDevelopment(
     await applyMigrations(pool, await discoverMigrations(cwd))
   })
   const supervisor = await HotReloadSupervisor.start({
-    watchPaths: [path.join(cwd, 'src')],
+    watchPaths: [path.join(cwd, 'src'), path.join(cwd, 'app.config.ts')],
     build: () => buildApplication(cwd).then(() => undefined),
     start: () => startDevelopmentChild(cwd, args),
-    onWatching: () => io.out('Doxa dev is watching src/ for changes.'),
+    onWatching: () => io.out('Doxa dev is watching app.config.ts and src/ for changes.'),
     onReloaded: () => io.out('Doxa hot reload complete.'),
     onError: (error, phase) =>
       io.error(
@@ -1871,16 +1872,16 @@ function errorMessage(error: unknown): string {
 async function makeFeature(cwd: string, rawName: string): Promise<void> {
   const name = pascal(rawName)
   const segment = kebab(name)
-  const directory = path.join(cwd, 'src', segment)
+  const directory = path.join(cwd, 'src', 'features', segment)
   await mkdir(directory, { recursive: true })
   await writeNew(
     path.join(directory, `${segment}.feature.ts`),
     `import { Feature } from '@doxajs/core'\n\nexport class ${name}Feature extends Feature {\n  id = '${segment}'\n}\n`,
   )
   await registerApplicationFeature(
-    path.join(cwd, 'src/application.ts'),
+    path.join(cwd, 'app.config.ts'),
     `${name}Feature`,
-    `./${segment}/${segment}.feature.js`,
+    `./src/features/${segment}/${segment}.feature.js`,
   )
 }
 
@@ -1940,8 +1941,14 @@ async function makeRole(
   const folder = definition.folder
   const className = pascal(target.name)
   const fileName = `${kebab(className)}.ts`
-  const directory = path.join(cwd, 'src', target.feature, folder)
-  const featureFile = path.join(cwd, 'src', target.feature, `${target.feature}.feature.ts`)
+  const directory = path.join(cwd, 'src', 'features', target.feature, folder)
+  const featureFile = path.join(
+    cwd,
+    'src',
+    'features',
+    target.feature,
+    `${target.feature}.feature.ts`,
+  )
   await mkdir(directory, { recursive: true })
   const source = definition.source(className)
   const file = path.join(directory, fileName)

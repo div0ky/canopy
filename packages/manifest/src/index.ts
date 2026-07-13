@@ -1,4 +1,4 @@
-export const MANIFEST_FORMAT_VERSION = 1 as const
+export const MANIFEST_FORMAT_VERSION = 2 as const
 
 export type Scope = 'singleton' | 'execution' | 'transient'
 
@@ -17,6 +17,12 @@ export interface ApplicationManifestEntry {
 export interface FeatureManifestEntry {
   readonly id: string
   readonly name: string
+  readonly source: SourceProvenance
+}
+
+export interface PluginManifestEntry {
+  readonly id: string
+  readonly package: string
   readonly source: SourceProvenance
 }
 
@@ -263,6 +269,7 @@ export interface DoxaManifest {
   readonly compilerVersion: string
   readonly buildHash: string
   readonly application: ApplicationManifestEntry
+  readonly plugins: readonly PluginManifestEntry[]
   readonly features: readonly FeatureManifestEntry[]
   readonly configurations: readonly ConfigurationManifestEntry[]
   readonly providers: readonly ProviderManifestEntry[]
@@ -322,6 +329,7 @@ export function assertManifest(value: unknown): asserts value is DoxaManifest {
 
   if (
     !isRecord(value.application) ||
+    !Array.isArray(value.plugins) ||
     !Array.isArray(value.features) ||
     !Array.isArray(value.configurations) ||
     !Array.isArray(value.providers) ||

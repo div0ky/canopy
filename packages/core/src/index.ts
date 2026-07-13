@@ -115,6 +115,22 @@ export type ConfigurationClass<T extends Configuration = Configuration> = abstra
 
 export type FeatureClass<T extends Feature = Feature> = abstract new () => T
 
+export type DoxaPluginPackage = '@doxajs/sendgrid' | '@doxajs/theoria' | '@doxajs/twilio-sms'
+
+export interface DoxaFrameworkConfiguration {
+  readonly database?: {
+    readonly applicationName?: string
+  }
+  readonly auth?: {
+    readonly secureCookies?: boolean
+    readonly trustedOrigins?: readonly string[]
+  }
+  readonly queue?: {
+    readonly localConcurrency?: number
+    readonly outboxPollingMilliseconds?: number
+  }
+}
+
 /**
  * Compile-time application declaration. Doxa never constructs this class.
  */
@@ -122,6 +138,8 @@ export abstract class DoxaApplication {
   declare readonly id: string
   declare readonly features: readonly FeatureClass[]
   declare readonly configs?: readonly ConfigurationClass[]
+  declare readonly plugins?: readonly DoxaPluginPackage[]
+  declare readonly framework?: DoxaFrameworkConfiguration
 }
 
 /**

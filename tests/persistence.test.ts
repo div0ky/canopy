@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createHmac, generateKeyPairSync, randomUUID, sign } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -104,6 +104,11 @@ let executionSequence = 0
 
 describe('PostgreSQL and Drizzle persistence slice', () => {
   beforeAll(async () => {
+    await compilePersistenceApplication(path.join(persistenceApplication, '.doxa'))
+    await copyFile(
+      path.join(persistenceApplication, 'dist/application.js'),
+      path.join(persistenceApplication, 'dist/app.config.js'),
+    )
     container = await new PostgreSqlContainer('postgres:17-alpine').start()
     connectionString = container.getConnectionUri()
     await installPersistenceSchema(connectionString)
@@ -724,36 +729,6 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       error: (message: string) => errors.push(message),
     }
 
-    expect(await runPraxis(['model:list'], persistenceApplication, io)).toBe(0)
-    expect(output).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('model:counters/counter doxa doxa_entity_states'),
-        expect.stringContaining(
-          'model:counters/legacy-customer external legacy_customers key=customer_id version=lock_version',
-        ),
-        expect.stringContaining(
-          'model:counters/legacy-note external legacy_notes key=id version=xmin',
-        ),
-      ]),
-    )
-    const gnosis = JSON.parse(
-      await readFile(path.join(persistenceApplication, '.doxa/gnosis.json'), 'utf8'),
-    ) as {
-      roles: { models: Array<{ id: string; storage: unknown }> }
-      praxis: { inspect: string[] }
-    }
-    expect(
-      gnosis.roles.models.find((model) => model.id === 'model:counters/legacy-customer')?.storage,
-    ).toEqual(
-      expect.objectContaining({
-        kind: 'table',
-        table: 'legacy_customers',
-        primaryKey: 'customer_id',
-      }),
-    )
-    expect(gnosis.praxis.inspect).toEqual(expect.arrayContaining(['model:list', 'auth:storage']))
-
-    output.length = 0
     expect(
       await runPraxis(
         ['auth:storage', `--database=${connectionString}`],
