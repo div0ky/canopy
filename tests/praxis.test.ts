@@ -145,14 +145,12 @@ describe('Praxis command suite', () => {
     const connectionString = 'postgresql://doxa:private-password@127.0.0.1:54329/doxa'
     await writeFile(path.join(root, '.env'), `DATABASE_CONNECTION_STRING=${connectionString}\n`)
     const output: string[] = []
-    let invocation:
-      | {
-          command: string
-          arguments_: readonly string[]
-          cwd: string
-          environment: NodeJS.ProcessEnv
-        }
-      | undefined
+    const invocations: Array<{
+      command: string
+      arguments_: readonly string[]
+      cwd: string
+      environment: NodeJS.ProcessEnv
+    }> = []
 
     expect(
       await runPraxis(['db:studio', '--host=127.0.0.1', '--port=5099', '--verbose'], root, {
@@ -161,34 +159,76 @@ describe('Praxis command suite', () => {
           throw new Error(message)
         },
         run: (command, arguments_, cwd, environment) => {
-          invocation = { command, arguments_, cwd, environment }
+          invocations.push({ command, arguments_, cwd, environment })
           return Promise.resolve(0)
         },
       }),
     ).toBe(0)
 
-    expect(invocation).toEqual(
+    const studioDirectory = path.join(root, '.doxa/drizzle-studio')
+    expect(invocations[0]).toEqual(
       expect.objectContaining({
         command: process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
-        cwd: root,
+        arguments_: ['--config.node-linker=hoisted', 'install'],
+        cwd: studioDirectory,
+      }),
+    )
+    expect(invocations[0]?.environment.DATABASE_CONNECTION_STRING).toBeUndefined()
+    expect(invocations[1]).toEqual(
+      expect.objectContaining({
+        command: process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+        cwd: studioDirectory,
         environment: expect.objectContaining({ DATABASE_CONNECTION_STRING: connectionString }),
       }),
     )
-    expect(invocation?.arguments_).toEqual([
-      'dlx',
-      '--allow-build=esbuild',
-      'drizzle-kit@0.31.10',
+    expect(invocations[1]?.arguments_).toEqual([
+      'exec',
+      'drizzle-kit',
       'studio',
-      `--config=${path.join(root, '.doxa/drizzle-studio.config.mjs')}`,
+      `--config=${path.join(studioDirectory, 'drizzle.config.mjs')}`,
       '--host=127.0.0.1',
       '--port=5099',
       '--verbose',
     ])
-    expect(invocation?.arguments_.join(' ')).not.toContain('private-password')
-    expect(await readFile(path.join(root, '.doxa/drizzle-studio.config.mjs'), 'utf8')).toContain(
+    expect(invocations[1]?.arguments_.join(' ')).not.toContain('private-password')
+    expect(JSON.parse(await readFile(path.join(studioDirectory, 'package.json'), 'utf8'))).toEqual({
+      private: true,
+      dependencies: {
+        'drizzle-kit': '0.31.10',
+        'drizzle-orm': '0.45.2',
+        pg: '8.22.0',
+      },
+    })
+    expect(await readFile(path.join(studioDirectory, 'pnpm-workspace.yaml'), 'utf8')).toBe(
+      `packages:\n  - .\n\nallowBuilds:\n  esbuild: true\n`,
+    )
+    expect(await readFile(path.join(studioDirectory, 'drizzle.config.mjs'), 'utf8')).toContain(
       'process.env.DATABASE_CONNECTION_STRING',
     )
     expect(output).toEqual(['Starting Drizzle Studio for Doxa (proxy 127.0.0.1:5099).'])
+  })
+
+  it('does not launch Drizzle Studio when its pinned tool installation fails', async () => {
+    const root = await temporaryDirectory()
+    await writeFile(
+      path.join(root, '.env'),
+      'DATABASE_CONNECTION_STRING=postgresql://doxa:doxa@127.0.0.1:54329/doxa\n',
+    )
+    const invocations: string[][] = []
+
+    expect(
+      await runPraxis(['db:studio'], root, {
+        out: () => undefined,
+        error: (message) => {
+          throw new Error(message)
+        },
+        run: (_command, arguments_) => {
+          invocations.push([...arguments_])
+          return Promise.resolve(17)
+        },
+      }),
+    ).toBe(17)
+    expect(invocations).toEqual([['--config.node-linker=hoisted', 'install']])
   })
 
   it('generates and registers every canonical framework role', async () => {
