@@ -16,9 +16,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { Application } from '../examples/persistence-app/dist/application.js'
 import { CreateCounter } from '../examples/persistence-app/dist/counters/actions/create-counter.js'
+import { AssignCounterTag } from '../examples/persistence-app/dist/counters/actions/assign-counter-tag.js'
+import { CreateCounterNote } from '../examples/persistence-app/dist/counters/actions/create-counter-note.js'
+import { RenameCounter } from '../examples/persistence-app/dist/counters/actions/rename-counter.js'
 import { QueueNotifications } from '../examples/persistence-app/dist/counters/actions/queue-notifications.js'
 import { SaveCounter } from '../examples/persistence-app/dist/counters/actions/save-counter.js'
 import { SaveLegacyCustomer } from '../examples/persistence-app/dist/counters/actions/save-legacy-customer.js'
+import { InspectCounterQueries } from '../examples/persistence-app/dist/counters/queries/inspect-counter-queries.js'
 import { CounterIncremented } from '../examples/persistence-app/dist/counters/events/counter-incremented.js'
 import { CounterSaved } from '../examples/persistence-app/dist/counters/events/counter-saved.js'
 import { CounterCreated } from '../examples/persistence-app/dist/counters/events/counter-created.js'
@@ -188,6 +192,151 @@ describe('@doxajs/testing', () => {
           state: { id: 'mapped-memory', displayName: 'Mapped', active: true },
           version: 1,
         }),
+      )
+    } finally {
+      await harness.shutdown()
+    }
+  })
+
+  it('matches typed query, cursor, and eager-relationship semantics in memory', async () => {
+    const transactions = new MemoryTransactionManager()
+    const harness = await DoxaTestHarness.boot(Application, {
+      artifactsDirectory: artifacts,
+      dotenvPath: false,
+      environment: { DATABASE_CONNECTION_STRING: 'test-memory-database' },
+      authProviderId: 'provider:infrastructure/auth',
+      providerOverrides: {
+        'provider:infrastructure/transactions': transactions,
+        'provider:infrastructure/queues': new FakeQueueManager(),
+        'provider:infrastructure/cache': new MemoryCache(),
+        'provider:infrastructure/mail': new FakeMailTransport(),
+        'provider:infrastructure/sms': new FakeSmsTransport(),
+        'provider:infrastructure/telemetry': new MemoryTelemetry(),
+      },
+    })
+    try {
+      harness.actingAsSystem()
+      for (const [id, value] of [
+        ['memory-a', 1],
+        ['memory-b', 2],
+        ['memory-c', 2],
+      ] as const) {
+        await harness.action(CreateCounter, { id, value })
+        await harness.action(RenameCounter, { id, label: 'memory-group' })
+      }
+      await harness.action(CreateCounter, { id: 'memory-unlabeled', value: 0 })
+      await harness.action(SaveLegacyCustomer, { id: 'memory-zed', displayName: 'Zed' })
+      await harness.action(SaveLegacyCustomer, { id: 'memory-ada', displayName: 'Ada' })
+      await harness.action(CreateCounterNote, {
+        id: 'memory-note-2',
+        counterId: 'memory-a',
+        body: 'Second',
+        rank: 2,
+      })
+      await harness.action(CreateCounterNote, {
+        id: 'memory-note-1',
+        counterId: 'memory-a',
+        body: 'First',
+        rank: 1,
+      })
+      await harness.action(CreateCounterNote, {
+        id: 'memory-note-3',
+        counterId: 'memory-c',
+        body: 'Third',
+        rank: 3,
+      })
+      await harness.action(AssignCounterTag, {
+        id: 'memory-assignment-a-z',
+        counterId: 'memory-a',
+        tagId: 'memory-tag-z',
+        tagName: 'Zeta',
+      })
+      await harness.action(AssignCounterTag, {
+        id: 'memory-assignment-a-a',
+        counterId: 'memory-a',
+        tagId: 'memory-tag-a',
+        tagName: 'Alpha',
+      })
+      await harness.action(AssignCounterTag, {
+        id: 'memory-assignment-c-a',
+        counterId: 'memory-c',
+        tagId: 'memory-tag-a',
+        tagName: 'Alpha',
+      })
+
+      expect(
+        await harness.query(InspectCounterQueries, {
+          minimumValue: 1,
+          constrainedNoteRank: 2,
+          page: 2,
+          perPage: 2,
+          cursorSize: 2,
+        }),
+      ).toEqual(
+        expect.objectContaining({
+          orderedIds: ['memory-a', 'memory-b', 'memory-c'],
+          count: 3,
+          totalValue: 5,
+          pageIds: ['memory-c'],
+          cursorIds: ['memory-a', 'memory-b'],
+          nextCursorIds: ['memory-c'],
+          previousCursorIds: ['memory-a', 'memory-b'],
+          invalidCursorError: 'InvalidModelCursorError',
+          eagerNotes: {
+            'memory-a': ['First', 'Second'],
+            'memory-b': [],
+            'memory-c': ['Third'],
+          },
+          primaryNotes: {
+            'memory-a': 'First',
+            'memory-b': undefined,
+            'memory-c': 'Third',
+          },
+          eagerTags: {
+            'memory-a': ['Alpha', 'Zeta'],
+            'memory-b': [],
+            'memory-c': ['Alpha'],
+          },
+          hasNotes: ['memory-a', 'memory-c'],
+          constrainedHasNotes: ['memory-a', 'memory-c'],
+          identityMapped: true,
+          readOnlyError: 'ReadOnlyExecutionError',
+          readOnlyErrors: [
+            'ReadOnlyExecutionError',
+            'ReadOnlyExecutionError',
+            'ReadOnlyExecutionError',
+          ],
+          iteratedIds: ['memory-a', 'memory-b', 'memory-c'],
+          filteredIds: ['memory-a', 'memory-b', 'memory-c'],
+          mappedCustomerIds: ['memory-ada', 'memory-zed'],
+          nestedIdentityMapped: true,
+          hasTags: ['memory-a', 'memory-c'],
+          belongsToNoteIds: ['memory-note-1', 'memory-note-2'],
+          staticWithIdentityMapped: true,
+          booleanIds: ['memory-a', 'memory-c'],
+          patternIds: ['memory-a', 'memory-b', 'memory-c'],
+          nullLabelIds: ['memory-unlabeled'],
+          notInIds: ['memory-b', 'memory-c'],
+          columnComparisonCount: 0,
+        }),
+      )
+      expect(harness.observations?.observations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'model',
+            name: 'query',
+            phase: 'occurred',
+            roleId: 'model:counters/counter',
+            attributes: expect.objectContaining({
+              model: 'Counter',
+              terminal: 'get',
+              constraintCount: 1,
+              ordering: ['value:asc', 'id:asc'],
+              eagerLoads: ['notes', 'primaryNote', 'tags', 'notes.counter'],
+              storage: { kind: 'entity-state' },
+            }),
+          }),
+        ]),
       )
     } finally {
       await harness.shutdown()

@@ -39,6 +39,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 
 import { Application } from '../examples/persistence-app/dist/application.js'
 import { AttemptCounterWrite } from '../examples/persistence-app/dist/counters/queries/attempt-counter-write.js'
+import { AssignCounterTag } from '../examples/persistence-app/dist/counters/actions/assign-counter-tag.js'
 import {
   capturedCounter,
   CaptureCounter,
@@ -47,6 +48,7 @@ import {
 import { Counter } from '../examples/persistence-app/dist/counters/models/counter.js'
 import { HttpPinged } from '../examples/persistence-app/dist/system/events/http-pinged.js'
 import { CreateCounter } from '../examples/persistence-app/dist/counters/actions/create-counter.js'
+import { CreateCounterNote } from '../examples/persistence-app/dist/counters/actions/create-counter-note.js'
 import { CreateDomainCounter } from '../examples/persistence-app/dist/counters/actions/create-domain-counter.js'
 import { DeleteCounter } from '../examples/persistence-app/dist/counters/actions/delete-counter.js'
 import { DispatchProcessCounter } from '../examples/persistence-app/dist/counters/actions/dispatch-process-counter.js'
@@ -61,9 +63,11 @@ import {
 } from '../examples/persistence-app/dist/support/recorded-events.js'
 import { SaveDetachedCounter } from '../examples/persistence-app/dist/counters/actions/save-detached-counter.js'
 import { InspectCounter } from '../examples/persistence-app/dist/counters/actions/inspect-counter.js'
+import { IncrementMatchingCounters } from '../examples/persistence-app/dist/counters/actions/increment-matching-counters.js'
 import { RefreshCounter } from '../examples/persistence-app/dist/counters/actions/refresh-counter.js'
 import { RenameCounter } from '../examples/persistence-app/dist/counters/actions/rename-counter.js'
 import { SaveCounter } from '../examples/persistence-app/dist/counters/actions/save-counter.js'
+import { InspectCounterQueries } from '../examples/persistence-app/dist/counters/queries/inspect-counter-queries.js'
 import { SaveLegacyCustomer } from '../examples/persistence-app/dist/counters/actions/save-legacy-customer.js'
 import { DeleteLegacyCustomer } from '../examples/persistence-app/dist/counters/actions/delete-legacy-customer.js'
 import { SaveLegacyNote } from '../examples/persistence-app/dist/counters/actions/save-legacy-note.js'
@@ -2538,6 +2542,150 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
 
     await runAction(runtime, DeleteCounter, 'lifecycle')
     expect(await durableRowCounts()).toEqual({ entities: 0, journal: 1, outbox: 1 })
+  })
+
+  it('executes typed model queries, pagination, cursors, and eager relationships through PostgreSQL', async () => {
+    const runtime = await bootPersistenceRuntime()
+    for (const [id, amount] of [
+      ['query-a', 1],
+      ['query-b', 2],
+      ['query-c', 2],
+    ] as const) {
+      await runAction(runtime, SaveCounter, { id, amount })
+      await runAction(runtime, RenameCounter, { id, label: 'query-group' })
+    }
+    await runAction(runtime, CreateCounter, { id: 'query-unlabeled', value: 0 })
+    await runAction(runtime, SaveLegacyCustomer, {
+      id: 'mapped-zed',
+      displayName: 'Zed',
+    })
+    await runAction(runtime, SaveLegacyCustomer, {
+      id: 'mapped-ada',
+      displayName: 'Ada',
+    })
+    await runAction(runtime, CreateCounterNote, {
+      id: 'note-a-2',
+      counterId: 'query-a',
+      body: 'Second',
+      rank: 2,
+    })
+    await runAction(runtime, CreateCounterNote, {
+      id: 'note-a-1',
+      counterId: 'query-a',
+      body: 'First',
+      rank: 1,
+    })
+    await runAction(runtime, CreateCounterNote, {
+      id: 'note-c-3',
+      counterId: 'query-c',
+      body: 'Third',
+      rank: 3,
+    })
+    await runAction(runtime, AssignCounterTag, {
+      id: 'assignment-a-z',
+      counterId: 'query-a',
+      tagId: 'tag-z',
+      tagName: 'Zeta',
+    })
+    await runAction(runtime, AssignCounterTag, {
+      id: 'assignment-a-a',
+      counterId: 'query-a',
+      tagId: 'tag-a',
+      tagName: 'Alpha',
+    })
+    resetObserverLog()
+    await runAction(runtime, AssignCounterTag, {
+      id: 'assignment-c-a',
+      counterId: 'query-c',
+      tagId: 'tag-a',
+      tagName: 'Alpha',
+    })
+
+    const result = await runtime.admit(
+      {
+        actor: { kind: 'system', id: 'query-test' },
+        transport: { kind: 'test' },
+      },
+      () =>
+        runtime.queries.execute(InspectCounterQueries, {
+          minimumValue: 1,
+          constrainedNoteRank: 2,
+          page: 2,
+          perPage: 2,
+          cursorSize: 2,
+        }),
+    )
+
+    expect(result).toEqual({
+      orderedIds: ['query-a', 'query-b', 'query-c'],
+      firstId: 'query-a',
+      count: 3,
+      totalValue: 5,
+      pageIds: ['query-c'],
+      pageTotal: 3,
+      cursorIds: ['query-a', 'query-b'],
+      nextCursorIds: ['query-c'],
+      previousCursorIds: ['query-a', 'query-b'],
+      invalidCursorError: 'InvalidModelCursorError',
+      eagerNotes: {
+        'query-a': ['First', 'Second'],
+        'query-b': [],
+        'query-c': ['Third'],
+      },
+      primaryNotes: {
+        'query-a': 'First',
+        'query-b': undefined,
+        'query-c': 'Third',
+      },
+      eagerTags: {
+        'query-a': ['Alpha', 'Zeta'],
+        'query-b': [],
+        'query-c': ['Alpha'],
+      },
+      hasNotes: ['query-a', 'query-c'],
+      constrainedHasNotes: ['query-a', 'query-c'],
+      identityMapped: true,
+      readOnlyError: 'ReadOnlyExecutionError',
+      readOnlyErrors: [
+        'ReadOnlyExecutionError',
+        'ReadOnlyExecutionError',
+        'ReadOnlyExecutionError',
+      ],
+      iteratedIds: ['query-a', 'query-b', 'query-c'],
+      filteredIds: ['query-a', 'query-b', 'query-c'],
+      mappedCustomerIds: ['mapped-ada', 'mapped-zed'],
+      nestedIdentityMapped: true,
+      hasTags: ['query-a', 'query-c'],
+      belongsToNoteIds: ['note-a-1', 'note-a-2'],
+      staticWithIdentityMapped: true,
+      booleanIds: ['query-a', 'query-c'],
+      patternIds: ['query-a', 'query-b', 'query-c'],
+      nullLabelIds: ['query-unlabeled'],
+      notInIds: ['query-b', 'query-c'],
+      columnComparisonCount: 0,
+    })
+    expect(observerLog).toEqual([
+      expect.objectContaining({ phase: 'retrieved', modelId: 'query-a' }),
+      expect.objectContaining({ phase: 'retrieved', modelId: 'query-b' }),
+      expect.objectContaining({ phase: 'retrieved', modelId: 'query-c' }),
+    ])
+    expect(await runAction(runtime, IncrementMatchingCounters, 'query-group')).toEqual([
+      'query-a',
+      'query-b',
+      'query-c',
+    ])
+    const stored = await pool.query<{ entity_id: string; value: string }>(
+      `SELECT entity_id, state ->> 'value' AS value
+       FROM doxa_entity_states
+       WHERE entity_type = 'model:counters/counter'
+         AND state ->> 'label' = 'query-group'
+       ORDER BY entity_id`,
+    )
+    expect(stored.rows).toEqual([
+      { entity_id: 'query-a', value: '2' },
+      { entity_id: 'query-b', value: '3' },
+      { entity_id: 'query-c', value: '3' },
+    ])
   })
 
   it('fails clearly for missing, detached, and stale models', async () => {

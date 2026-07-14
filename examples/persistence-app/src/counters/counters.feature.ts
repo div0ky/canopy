@@ -1,8 +1,10 @@
 import { Feature } from '@doxajs/core'
 
 import { CaptureCounter } from './actions/capture-counter.js'
+import { AssignCounterTag } from './actions/assign-counter-tag.js'
 import { BroadcastCounter } from './actions/broadcast-counter.js'
 import { CreateCounter } from './actions/create-counter.js'
+import { CreateCounterNote } from './actions/create-counter-note.js'
 import { CreateDomainCounter } from './actions/create-domain-counter.js'
 import { DeleteCounter } from './actions/delete-counter.js'
 import { DispatchProcessCounter } from './actions/dispatch-process-counter.js'
@@ -10,6 +12,7 @@ import { DispatchCounterSignal } from './actions/dispatch-counter-signal.js'
 import { ExerciseCache } from './actions/exercise-cache.js'
 import { QueueNotifications } from './actions/queue-notifications.js'
 import { InspectCounter } from './actions/inspect-counter.js'
+import { IncrementMatchingCounters } from './actions/increment-matching-counters.js'
 import { RefreshCounter } from './actions/refresh-counter.js'
 import { RenameCounter } from './actions/rename-counter.js'
 import { RequestCounterNotification } from './actions/request-counter-notification.js'
@@ -34,11 +37,12 @@ import { RecordCounterIncremented } from './listeners/record-counter-incremented
 import { RecordCounterCreated } from './listeners/record-counter-created.js'
 import { RecordCounterIncrementedAfterCommit } from './listeners/record-counter-incremented-after-commit.js'
 import { RecordCounterSaved } from './listeners/record-counter-saved.js'
-import { Counter } from './models/counter.js'
+import { Counter, CounterNote, CounterTag, CounterTagAssignment } from './models/counter.js'
 import { LegacyCustomer } from './models/legacy-customer.js'
 import { LegacyNote } from './models/legacy-note.js'
 import { CounterObserver } from './observers/counter.observer.js'
 import { AttemptCounterWrite } from './queries/attempt-counter-write.js'
+import { InspectCounterQueries } from './queries/inspect-counter-queries.js'
 import { ProcessCountersSchedule } from './schedules/process-counters.schedule.js'
 import { CounterTouched } from './signals/counter-touched.js'
 import { RecordCounterTouched } from './signal-handlers/record-counter-touched.js'
@@ -48,14 +52,17 @@ import { CounterPolicy } from './policies/counter.policy.js'
 export class CountersFeature extends Feature {
   id = 'counters'
   providers = [CounterEventRecorder]
-  models = [Counter, LegacyCustomer, LegacyNote]
+  models = [Counter, CounterNote, CounterTag, CounterTagAssignment, LegacyCustomer, LegacyNote]
   observers = [CounterObserver]
   actions = [
     BroadcastCounter,
+    AssignCounterTag,
     SaveCounter,
     CreateCounter,
+    CreateCounterNote,
     CreateDomainCounter,
     InspectCounter,
+    IncrementMatchingCounters,
     RefreshCounter,
     DeleteCounter,
     SaveDetachedCounter,
@@ -71,7 +78,7 @@ export class CountersFeature extends Feature {
     DeleteLegacyCustomer,
     SaveLegacyNote,
   ]
-  queries = [AttemptCounterWrite]
+  queries = [AttemptCounterWrite, InspectCounterQueries]
   routes = [IncrementCounterRoute, DeleteCounterRoute, SecureIncrementCounterRoute]
   events = [
     CounterIncremented,

@@ -80,3 +80,7 @@ requirement to its implementation and acceptance evidence.
 26. [Realtime broadcasting vertical slice](realtime-broadcasting-vertical-slice.md) — compiled
     queued/now event capabilities, transactional queue handoff, Keryx WebSockets, policy-backed
     private and presence subscriptions, reconnecting typed clients, fakes, and Praxis tooling.
+27. [Typed model query and relationship vertical slice](typed-model-query-relationship-vertical-slice.md)
+    — logical typed plans, read-only query sessions, PostgreSQL and memory conformance,
+    deterministic pagination and cursors, all relationship cardinalities, eager loading, identity
+    reuse, and explicit bulk-mutation and public-join deferrals.
