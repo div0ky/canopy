@@ -59,6 +59,23 @@ export type ModelChanges<Attributes extends ModelAttributes> = {
   [Key in keyof Attributes]?: Attributes[Key] | undefined
 }
 
+type MutableModelAttributeKey<Attributes extends ModelAttributes> = Exclude<
+  Extract<keyof Attributes, string>,
+  'id'
+>
+
+type OptionalModelAttributeKey<Attributes extends ModelAttributes> = {
+  [Key in MutableModelAttributeKey<Attributes>]-?: {} extends Pick<Attributes, Key> ? Key : never
+}[MutableModelAttributeKey<Attributes>]
+
+export type ModelAttributePatch<Attributes extends ModelAttributes> = {
+  [
+    Key in Exclude<MutableModelAttributeKey<Attributes>, OptionalModelAttributeKey<Attributes>>
+  ]?: Attributes[Key]
+} & {
+  [Key in OptionalModelAttributeKey<Attributes>]?: Attributes[Key] | undefined
+}
+
 export interface ModelJournalFact<Payload extends JsonValue = JsonValue> {
   readonly type: string
   readonly payload: Payload
@@ -111,6 +128,14 @@ export class DetachedModelError extends Error {
 
 export class StaleModelError extends Error {
   override readonly name = 'StaleModelError'
+}
+
+export class ModelIdentityMutationError extends Error {
+  override readonly name = 'ModelIdentityMutationError'
+
+  constructor() {
+    super('Model identity attribute id cannot be changed after construction.')
+  }
 }
 
 const MODEL_INTERNALS = Symbol('doxa.model.internals')
@@ -299,6 +324,25 @@ export abstract class Model<
   getAttribute(key: string): unknown
   getAttribute(key: string): unknown {
     return clone((this.attributes as Record<string, unknown>)[key])
+  }
+
+  setAttribute<Key extends MutableModelAttributeKey<Attributes>>(
+    key: Key,
+    value: Attributes[Key],
+  ): this {
+    if (key === ('id' as Key)) throw new ModelIdentityMutationError()
+    const attributes = this.attributes as Record<string, unknown>
+    if (value === undefined) delete attributes[key]
+    else attributes[key] = clone(value)
+    return this
+  }
+
+  fill(attributes: ModelAttributePatch<Attributes>): this {
+    if (Object.hasOwn(attributes, 'id')) throw new ModelIdentityMutationError()
+    for (const [key, value] of Object.entries(attributes)) {
+      this.setAttribute(key as MutableModelAttributeKey<Attributes>, value as never)
+    }
+    return this
   }
 
   isDirty(key?: keyof Attributes): boolean {

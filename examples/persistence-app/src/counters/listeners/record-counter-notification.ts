@@ -1,5 +1,6 @@
-import { CurrentExecution, CurrentJob, Listener, type ShouldQueue } from '@doxajs/core'
+import { ActionBus, CurrentExecution, CurrentJob, Listener, type ShouldQueue } from '@doxajs/core'
 
+import { RenameCounter } from '../actions/rename-counter.js'
 import { CounterNotificationRequested } from '../events/counter-notification-requested.js'
 import { CounterEventRecorder } from '../support/counter-event-recorder.js'
 
@@ -13,8 +14,13 @@ export class RecordCounterNotification
   private readonly recorder = this.inject(CounterEventRecorder)
   private readonly execution = this.inject(CurrentExecution)
   private readonly job = this.inject(CurrentJob)
+  private readonly actions = this.inject(ActionBus)
 
-  handle(event: CounterNotificationRequested): void {
+  async handle(event: CounterNotificationRequested): Promise<void> {
+    await this.actions.execute(RenameCounter, {
+      id: event.payload.counterId,
+      label: 'notification-delivered',
+    })
     this.recorder.record({
       event: 'counter-notification-requested',
       phase: 'queued',

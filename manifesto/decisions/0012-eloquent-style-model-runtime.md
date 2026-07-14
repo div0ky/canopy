@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
+- **Amended:** 2026-07-14
 - **Decision owners:** Doxa maintainers
 
 ## Decision
@@ -43,12 +44,22 @@ model.isClean()
 model.wasChanged()
 model.getChanges()
 model.getOriginal()
+model.getAttribute(key)
+model.setAttribute(key, value)
+model.fill(attributes)
 model.exists
 model.version
 ```
 
-The exact naming and overloads remain specification work, but the hydrated-object and explicit-save
-experience is accepted.
+`setAttribute` is the typed single-attribute primitive and `fill` is its batch form. Both clone
+incoming values, participate in ordinary dirty tracking, and never persist implicitly. Model
+identity is fixed at construction: neither API accepts `id`, and runtime calls that bypass
+TypeScript fail with `ModelIdentityMutationError`. Assigning `undefined` to an optional attribute
+removes it. Doxa does not add an equivalent `assign` alias.
+
+Intention-revealing model behavior remains the primary API when a change enforces invariants or
+raises journal facts, domain events, or outbox messages. Public attribute mutation is the concise
+path for already-validated ordinary state changes; it does not synthesize those domain effects.
 
 ## Entity, model, record, and state
 
@@ -122,6 +133,26 @@ and outbox writes together.
 Saving a detached model throws a stable detached-model error. Saving after its execution has ended
 throws a stale-execution error. Saving inside a query or other read-only execution throws a stable
 read-only-execution error.
+
+## Operation and entrypoint boundaries
+
+Model-session behavior follows the operation that owns persistence, not the transport that happened
+to initiate it:
+
+- Actions and jobs receive a writable transaction and writable `ModelSession`.
+- Queries receive a read-only transaction and read-only `ModelSession`.
+- HTTP routes and console commands coordinate work through the typed Action and Query buses rather
+  than silently becoming writable operations themselves.
+- Schedules target jobs and therefore receive the job transaction and model lifecycle.
+- Immediate listeners inherit an active Action, Job, or Query session when dispatched inside that
+  operation. A standalone or queued listener that needs durable mutation invokes an Action; it does
+  not receive a hidden transaction merely because it is a listener.
+- After-commit listeners never reuse the closed transaction or `ModelSession`. Additional durable
+  work is expressed as queued work with a fresh execution, transaction, and session.
+
+This is entrypoint parity: an Action or Query has identical model semantics whether initiated by
+HTTP, console, a listener, or another admitted adapter. It does not make every role an implicit
+mutation boundary.
 
 ## Lifecycle observers
 
@@ -206,15 +237,16 @@ The MVP must prove:
 5. Lifecycle ordering before write, after write, and after commit.
 6. Atomic state, journal, and outbox behavior when the action commits or rolls back.
 7. Stable failures for detached, stale, and read-only model saves.
-8. Identical model-session behavior in HTTP, job, schedule, console, and listener executions.
+8. Identical Action, Query, and Job model-session behavior when invoked through HTTP, schedule,
+   console, and listener entrypoints, including explicit post-commit and queued-listener boundaries.
 9. Test fakes that preserve model lifecycle and Unit of Work semantics.
 10. Explicit behavior for bulk updates and deletes that do not hydrate models.
 
-The [Eloquent-style model vertical slice](../implementation/eloquent-model-vertical-slice.md)
-implements the first executable proof of declarations, hydration, identity mapping, static lookup,
-instance persistence, dirty tracking, attachment safety, optimistic concurrency, and atomic
-model-driven journal/outbox durability. Mapper composition, observers, transport parity, test fakes,
-and bulk semantics remain required before this proof satisfies the complete MVP contract.
+The [Eloquent-style model vertical slice](../implementation/eloquent-model-vertical-slice.md) and
+subsequent observer, event, worker, scheduling, query, testing, and existing-table slices provide
+the complete MVP proof. Advanced multi-record mappers remain the explicit post-MVP extension point
+from [Decision 0023](0023-existing-table-model-auth-mapping.md). Bulk mutation remains unavailable
+until a separate accepted contract defines its lifecycle and bypass semantics.
 
 ## Revisit when
 

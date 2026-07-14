@@ -399,6 +399,9 @@ describe('@doxajs/testing', () => {
       expect(queue.hasQueued(ProcessCounterJob)).toBe(true)
       await queue.runNext()
       await queue.runSchedule('schedule:counters/process-counters')
+      expect(transactions.state.entities.get('model:counters/counter/scheduled-counter')).toEqual(
+        expect.objectContaining({ state: { id: 'scheduled-counter', value: 1 } }),
+      )
       expect(recordedEvents).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ event: 'counter-incremented', value: 2 }),

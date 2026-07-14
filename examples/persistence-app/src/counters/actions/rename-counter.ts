@@ -18,7 +18,7 @@ export class RenameCounter extends Action<RenameCounterInput, RenameCounterResul
 
   async handle(input: RenameCounterInput): Promise<RenameCounterResult> {
     const counter = await Counter.findOrFail(input.id)
-    counter.rename(input.label)
+    counter.fill({ label: input.label })
     await counter.save()
     return {
       label: counter.label,

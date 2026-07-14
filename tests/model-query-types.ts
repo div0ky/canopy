@@ -7,6 +7,9 @@ function modelQueryTypeProofs(): void {
   Counter.with({ notes: (query) => query.where('rank', '>=', 1).orderBy('body') })
   CounterNote.query().whereBelongsTo(new Counter({ id: 'counter', value: 1 }), 'counter')
   Counter.query().whereHas('notes', (query) => query.where('rank', '>=', 1))
+  Counter.prototype.setAttribute('value', 2)
+  Counter.prototype.setAttribute('label', undefined)
+  Counter.prototype.fill({ value: 2, label: undefined })
 
   // @ts-expect-error Unknown model attributes fail at compilation.
   Counter.where({ unknown: true })
@@ -24,6 +27,16 @@ function modelQueryTypeProofs(): void {
   Counter.where({ label: undefined })
   // @ts-expect-error Numeric aggregates require numeric attributes.
   Counter.query().sum('label')
+  // @ts-expect-error Model identity is immutable after construction.
+  Counter.prototype.setAttribute('id', 'other')
+  // @ts-expect-error Model identity cannot be mass assigned.
+  Counter.prototype.fill({ id: 'other' })
+  // @ts-expect-error Unknown model attributes fail at compilation.
+  Counter.prototype.setAttribute('unknown', true)
+  // @ts-expect-error Attribute values retain their declared types.
+  Counter.prototype.fill({ value: 'two' })
+  // @ts-expect-error Required attributes cannot be removed.
+  Counter.prototype.fill({ value: undefined })
 }
 
 void modelQueryTypeProofs

@@ -6,6 +6,7 @@ import { compileApplication } from '@doxajs/compiler'
 import {
   MemoryCache,
   Model,
+  ModelIdentityMutationError,
   type ModelQuery,
   RoleInjectionError,
   SecretString,
@@ -147,6 +148,35 @@ describe('foundational compile-to-boot slice', () => {
     expect(() =>
       QueryProofModel.query().where(() => OtherQueryProofModel.query() as never),
     ).toThrow('Grouped model constraints must return the same model query')
+  })
+
+  it('clones public model writes and rejects identity mutation atomically', () => {
+    class MutationProofModel extends Model<{
+      id: string
+      profile: { labels: string[] }
+      nickname?: string
+    }> {}
+    const model = new MutationProofModel({
+      id: 'mutation-proof',
+      profile: { labels: ['original'] },
+      nickname: 'before',
+    })
+    const profile = { labels: ['assigned'] }
+
+    expect(model.setAttribute('profile', profile)).toBe(model)
+    profile.labels.push('external')
+    expect(model.getAttribute('profile')).toEqual({ labels: ['assigned'] })
+    expect(model.fill({ nickname: undefined })).toBe(model)
+    expect(model.getAttribute('nickname')).toBeUndefined()
+
+    expect(() => model.setAttribute('id' as never, 'changed' as never)).toThrow(
+      ModelIdentityMutationError,
+    )
+    expect(() =>
+      model.fill({ profile: { labels: ['not-applied'] }, id: 'changed' } as never),
+    ).toThrow(ModelIdentityMutationError)
+    expect(model.id).toBe('mutation-proof')
+    expect(model.getAttribute('profile')).toEqual({ labels: ['assigned'] })
   })
 
   it('rejects model queries and cursors after their execution session ends', async () => {

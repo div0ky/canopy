@@ -803,6 +803,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
 
   it('executes declared console commands in an admitted actor-aware scope', async () => {
     const runtime = await bootPersistenceRuntime()
+    await runAction(runtime, SaveCounter, { id: 'command-counter', amount: 1 })
     await runtime.admit(
       {
         actor: { kind: 'system', id: 'doxa:praxis' },
@@ -811,7 +812,22 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       },
       () => runtime.dispatchCommand('doxa:describe', ['--verbose']),
     )
+    await runtime.admit(
+      {
+        actor: { kind: 'system', id: 'doxa:praxis' },
+        authentication: { state: 'authenticated', identityId: 'doxa:praxis', method: 'console' },
+        transport: { kind: 'console', name: 'counter:mark' },
+      },
+      () => runtime.dispatchCommand('counter:mark', ['command-counter', 'from-console']),
+    )
     expect(commandLog).toEqual([{ arguments: ['--verbose'], actor: 'system' }])
+    expect(
+      (
+        await pool.query<{ state: { label?: string } }>(`
+          SELECT state FROM doxa_entity_states WHERE entity_id = 'command-counter'
+        `)
+      ).rows[0]?.state.label,
+    ).toBe('from-console')
   })
 
   it('emits structured telemetry and propagates W3C trace context through HTTP', async () => {
@@ -1084,6 +1100,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
 
   it('delivers queued listeners with preserved context in a fresh execution', async () => {
     const runtime = await bootPersistenceRuntime()
+    await runAction(runtime, SaveCounter, { id: 'queued-counter', amount: 1 })
     await runtime.admit(
       {
         actor: { kind: 'user', id: 'notification-user' },
@@ -1112,6 +1129,13 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         retryCount: 0,
       }),
     )
+    expect(
+      (
+        await pool.query<{ state: { label?: string } }>(`
+          SELECT state FROM doxa_entity_states WHERE entity_id = 'queued-counter'
+        `)
+      ).rows[0]?.state.label,
+    ).toBe('notification-delivered')
   })
 
   it('honors delays and drains an active worker before runtime shutdown', async () => {
@@ -1222,6 +1246,13 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       ]),
     )
     expect(scheduledExecution.rows.some((entry) => entry.transport === 'schedule')).toBe(false)
+    expect(
+      (
+        await pool.query<{ state: { value: number } }>(`
+          SELECT state FROM doxa_entity_states WHERE entity_id = 'scheduled-counter'
+        `)
+      ).rows[0]?.state.value,
+    ).toBe(1)
   })
 
   it('admits one bounded schedule catch-up across concurrent scheduler replicas', async () => {

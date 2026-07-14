@@ -90,8 +90,9 @@ only after PostgreSQL confirms commit. On rollback the event is discarded. Witho
 transaction it dispatches immediately, matching Laravel's semantics.
 
 After-commit callbacks retain the admitted execution and its injectable services, but the action's
-closed `ModelSession` and Unit of Work are not reused. A first-party model/read session for
-post-commit listeners remains part of the complete listener execution specification.
+closed `ModelSession` and Unit of Work are never reused. A listener that needs additional durable
+mutation queues fresh work; a listener that needs a read invokes a Query. This operation boundary is
+the completed listener contract rather than an implicit post-commit transaction.
 
 The proof dispatches events from model behavior inside an action and directly from an HTTP route.
 Dispatch outside a managed execution fails with `EventDispatchError` rather than resolving a hidden

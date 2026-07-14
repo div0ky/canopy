@@ -377,7 +377,7 @@ export function registerCompilationAndTheoriaTests(
         timeZone: 'UTC',
         overlap: 'serialize',
         misfire: 'catch-up-once',
-        input: { key: 'scheduled-counter-sweep' },
+        input: { key: 'scheduled-counter-sweep', counterId: 'scheduled-counter' },
       }),
       expect.objectContaining({
         id: 'schedule:system/daily-health-check',
@@ -434,6 +434,11 @@ export function registerCompilationAndTheoriaTests(
       }),
     ])
     expect(result.manifest.commands).toEqual([
+      expect.objectContaining({
+        id: 'command:counters/mark-counter',
+        command: 'counter:mark',
+        access: 'public',
+      }),
       expect.objectContaining({
         id: 'command:system/describe-doxa',
         command: 'doxa:describe',

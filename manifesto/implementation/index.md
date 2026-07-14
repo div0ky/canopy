@@ -15,8 +15,9 @@ requirement to its implementation and acceptance evidence.
    transactions, Unit of Work, entity state, journal, outbox, concurrency, and after-commit
    behavior.
 4. [Eloquent-style model vertical slice](eloquent-model-vertical-slice.md) — declared models,
-   execution-scoped hydration and identity, dirty tracking, `save()` lifecycle, concurrency, and
-   atomic model-driven durability without ordinary Unit of Work ceremony.
+   execution-scoped hydration and immutable identity, typed cloned mutation, dirty tracking,
+   `save()` lifecycle, operation-boundary entrypoint parity, concurrency, and atomic model-driven
+   durability without ordinary Unit of Work ceremony.
 5. [Class events vertical slice](class-events-vertical-slice.md) — inherited static dispatch, typed
    listener inference, scoped role injection, execution context, local failure, and
    transaction-aware after-commit delivery.

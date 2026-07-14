@@ -218,10 +218,12 @@ export {
 export {
   DetachedModelError,
   Model,
+  ModelIdentityMutationError,
   ModelNotFoundError,
   ModelNotRegisteredError,
   StaleModelError,
   type ModelAttributes,
+  type ModelAttributePatch,
   type ModelChanges,
   type ModelConstructor,
   type ModelJournalFact,
