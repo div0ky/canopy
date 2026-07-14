@@ -45,3 +45,76 @@ boundary.
 The compiler reads declarations without executing application code and emits an inert JSON manifest
 plus a constructor-only registry. Runtime boot fails closed when artifacts, versions, stable IDs,
 providers, authorization, or dependency relationships are invalid.
+
+## Models and queries
+
+Models expose immutable, typed Doxa queries over logical attribute names. Drizzle remains private to
+the PostgreSQL adapter.
+
+```ts
+const contacts = await Contact.where({ ownerId }).get()
+const appointments = await Appointment.where({ contactId }).orderBy('scheduledAt').get()
+
+const page = await Contact.where({ ownerId }).paginate({ page: 1, perPage: 50 })
+const cursorPage = await Appointment.query().orderBy('scheduledAt').cursorPaginate({ first: 100 })
+```
+
+Start with `Model.query()` when the inherited static convenience does not name the first operation:
+
+```ts
+const matches = await Contact.query()
+  .where((query) => query.where({ active: true }).orWhere({ invited: true }))
+  .whereIn('status', ['active', 'pending'])
+  .orderByDesc('createdAt')
+  .get()
+```
+
+Queries also provide `first`, `firstOrFail`, `exists`, `count`, `value`, `pluck`, `min`, `max`,
+`sum`, `average`, offset pagination, opaque cursor pagination, and bounded async cursor iteration.
+Actions and jobs query models through their writable transaction. Query handlers receive the same
+identity-mapped model experience through a read-only session; `create`, `save`, and `delete` throw
+`ReadOnlyExecutionError` there.
+
+## Relationships and eager loading
+
+Declare relationships with Doxa model references and logical keys. Pivot-backed many-to-many
+relationships use a declared pivot model, so declarations never import database tables.
+
+```ts
+export interface PostRelations {
+  author: User
+  comments: readonly Comment[]
+}
+
+export class Post extends Model<PostAttributes, PostRelations> {
+  static relationships = {
+    author: belongsTo(() => User, { foreignKey: 'authorId' }),
+    comments: hasMany(() => Comment, { foreignKey: 'postId' }),
+  }
+
+  get author(): User {
+    return this.related('author')
+  }
+
+  get comments(): readonly Comment[] {
+    return this.related('comments')
+  }
+}
+```
+
+Use `with` for bounded eager loading. It supports multiple, nested, and constrained relationships;
+unloaded relationship access fails instead of silently causing an N+1 query.
+
+```ts
+const posts = await Post.with(['author', 'comments']).get()
+const nested = await Post.with('comments.author').get()
+const approved = await Post.query()
+  .with({ comments: (query) => query.where({ approved: true }).orderBy('createdAt') })
+  .whereHas('comments', (query) => query.where({ approved: true }))
+  .get()
+```
+
+Declared observers remain the only model lifecycle hook surface, including `retrieved`, `updating`,
+`updated`, and `committed`. Model-query bulk mutation and a public projection-style `join` API are
+deliberately deferred; query matching models inside an action and call instance behavior plus
+`save()` when observer and model lifecycle semantics are required.

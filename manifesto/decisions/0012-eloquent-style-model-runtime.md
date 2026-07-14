@@ -165,9 +165,13 @@ they exist on the object.
 Static retrieval methods such as `find` and `findOrFail` resolve the current `ModelSession` through
 Doxa's execution context. They are Doxa model APIs, not Drizzle query builders.
 
-The MVP does not need to reproduce Eloquent's complete query-builder surface. Complex reports,
-projections, aggregates, and optimized reads remain the responsibility of query handlers and read
-models behind Doxa-owned contracts.
+Decision 0029 subsequently accepts Doxa's ordinary typed model-query and relationship surface,
+including pagination, cursor iteration, and eager loading. Complex reports, unusual projections, and
+optimized database-specific reads remain the responsibility of query handlers and read models behind
+Doxa-owned contracts.
+
+Builder-level `update()` and `delete()` remain explicitly deferred until a bulk-mutation contract
+defines their lifecycle, concurrency, audit, and observer bypass semantics.
 
 ## Repositories
 
@@ -188,6 +192,8 @@ application ceremony for ordinary model work.
 - Drizzle continues to own SQL construction, physical schema definitions, and database mechanics.
 - Detached models and background work require explicit reload or reattachment through Doxa APIs.
 - Bulk writes that bypass hydration cannot claim normal model lifecycle semantics.
+- Declared observers remain the sole model lifecycle reaction mechanism; Doxa does not add a
+  parallel set of model-local lifecycle methods.
 
 ## Required implementation proof
 

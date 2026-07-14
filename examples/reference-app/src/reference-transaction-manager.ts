@@ -6,6 +6,9 @@ import {
   type OutboxMessage,
   type PersistedEntity,
   type SaveEntity,
+  type ModelQueryPlan,
+  type ModelQueryValue,
+  type ModelReader,
   type StagedDelivery,
   type DeliveryTransition,
   UnitOfWork,
@@ -15,6 +18,13 @@ import { operationLog } from './operation-log.js'
 
 export class ReferenceTransactionManager extends TransactionManager {
   static id = 'transactions'
+
+  read<Output>(
+    _context: ExecutionContext,
+    work: (reader: ModelReader) => Promise<Output>,
+  ): Promise<Output> {
+    return work(new ReferenceUnitOfWork())
+  }
 
   async transaction<Output>(
     context: ExecutionContext,
@@ -42,6 +52,24 @@ class ReferenceUnitOfWork extends UnitOfWork {
     _id: string,
   ): Promise<PersistedEntity<State> | undefined> {
     return Promise.resolve(undefined)
+  }
+
+  queryEntities<State extends JsonValue>(
+    _type: string,
+    _storage: import('@doxajs/core').ModelStorage,
+    _plan: ModelQueryPlan,
+  ): Promise<readonly PersistedEntity<State>[]> {
+    return Promise.resolve([])
+  }
+
+  aggregateEntities(
+    _type: string,
+    _storage: import('@doxajs/core').ModelStorage,
+    _plan: ModelQueryPlan,
+    operation: 'count' | 'min' | 'max' | 'sum' | 'average',
+    _attribute?: string,
+  ): Promise<number | ModelQueryValue | undefined> {
+    return Promise.resolve(operation === 'count' ? 0 : undefined)
   }
 
   saveEntity<State extends JsonValue>(_entity: SaveEntity<State>): Promise<number> {

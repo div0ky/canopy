@@ -128,6 +128,22 @@ export function registerCompilationAndTheoriaTests(
       expect.objectContaining({
         id: 'model:counters/counter',
         entityType: 'model:counters/counter',
+        attributes: ['id', 'label', 'value'],
+        storage: { kind: 'entity-state' },
+      }),
+      expect.objectContaining({
+        id: 'model:counters/counter-note',
+        entityType: 'model:counters/counter-note',
+        storage: { kind: 'entity-state' },
+      }),
+      expect.objectContaining({
+        id: 'model:counters/counter-tag',
+        entityType: 'model:counters/counter-tag',
+        storage: { kind: 'entity-state' },
+      }),
+      expect.objectContaining({
+        id: 'model:counters/counter-tag-assignment',
+        entityType: 'model:counters/counter-tag-assignment',
         storage: { kind: 'entity-state' },
       }),
       expect.objectContaining({

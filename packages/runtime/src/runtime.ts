@@ -44,6 +44,7 @@ import {
   type MailMessage,
   MailTransport,
   type Model,
+  type ModelQueryDiagnostic,
   type ModelObserverDispatcher,
   type ModelObserverPhase,
   type Query,
@@ -215,7 +216,11 @@ export class DoxaRuntime {
   readonly #operationsByConstructor = new Map<Function, OperationManifestEntry>()
   readonly #modelsByConstructor = new Map<
     Function,
-    { readonly entityType: string; readonly storage: import('@doxajs/core').ModelStorage }
+    {
+      readonly entityType: string
+      readonly storage: import('@doxajs/core').ModelStorage
+      readonly attributes?: ReadonlySet<string>
+    }
   >()
   readonly #observersByModel = new Map<string, readonly ObserverManifestEntry[]>()
   readonly #eventsByConstructor = new Map<Function, EventManifestEntry>()
@@ -290,12 +295,14 @@ export class DoxaRuntime {
         this.#modelsByConstructor.set(Constructor, {
           entityType: model.entityType,
           storage: model.storage,
+          ...(model.attributes ? { attributes: new Set(model.attributes) } : {}),
         })
       this.#observersByModel.set(
         model.id,
         manifest.observers.filter((observer) => observer.modelId === model.id),
       )
     }
+    assertModelRelationships(this.#modelsByConstructor)
     for (const event of manifest.events) {
       const Constructor = artifacts.registry.constructors[event.id]
       if (Constructor) this.#eventsByConstructor.set(Constructor, event)
@@ -919,6 +926,8 @@ export class DoxaRuntime {
                         unitOfWork,
                         this.#modelsByConstructor,
                         this.modelObserverDispatcher(store),
+                        true,
+                        this.modelQueryDiagnosticRecorder(),
                       )
                       return store.scope.withUnitOfWork(unitOfWork, async () =>
                         runWithModelSession(models, async () => {
@@ -951,14 +960,35 @@ export class DoxaRuntime {
     const store = this.requireExecution('query')
     const operation = this.operationFor(query, 'query')
     if (operation.access !== 'public') await this.authorization.authorize(operation.access)
-    const handler = store.scope.resolve(operation.id) as Query<Input, Output>
+    if (!this.transactions) {
+      throw new OperationDispatchError('No persistence manager is available for query dispatch.')
+    }
     store.operationStack.push('query')
     try {
       return (await this.observeObservation(
         'query',
         operation.id,
         {},
-        () => this.observeLog('query', 'Query', { id: operation.id }, () => handler.handle(input)),
+        () =>
+          this.observeLog('query', 'Query', { id: operation.id }, () =>
+            this.transactions!.read(store.context, async (reader) => {
+              const models = new ModelSession(
+                reader,
+                this.#modelsByConstructor,
+                this.modelObserverDispatcher(store),
+                false,
+                this.modelQueryDiagnosticRecorder(),
+              )
+              return runWithModelSession(models, async () => {
+                try {
+                  const handler = store.scope.resolve(operation.id) as Query<Input, Output>
+                  return await handler.handle(input)
+                } finally {
+                  models.close()
+                }
+              })
+            }),
+          ),
         operation.id,
       )) as Awaited<Output>
     } finally {
@@ -1113,6 +1143,17 @@ export class DoxaRuntime {
         }
       },
     })
+  }
+
+  private modelQueryDiagnosticRecorder(): (diagnostic: ModelQueryDiagnostic) => Promise<void> {
+    return (diagnostic) =>
+      this.recordObservation({
+        kind: 'model',
+        name: 'query',
+        phase: 'occurred',
+        roleId: diagnostic.entityType,
+        attributes: { ...diagnostic },
+      })
   }
 
   private async dispatchEventNow(
@@ -1654,6 +1695,8 @@ export class DoxaRuntime {
                 unitOfWork,
                 this.#modelsByConstructor,
                 this.modelObserverDispatcher(store),
+                true,
+                this.modelQueryDiagnosticRecorder(),
               )
               return store.scope.withUnitOfWork(unitOfWork, async () =>
                 runWithModelSession(models, async () => {
@@ -2510,6 +2553,24 @@ class ReadOnlyUnitOfWork extends UnitOfWork {
     return Promise.reject(this.error())
   }
 
+  queryEntities<State extends import('@doxajs/core').JsonValue>(
+    _type: string,
+    _storage: import('@doxajs/core').ModelStorage,
+    _plan: import('@doxajs/core').ModelQueryPlan,
+  ): Promise<readonly import('@doxajs/core').PersistedEntity<State>[]> {
+    return Promise.reject(this.error())
+  }
+
+  aggregateEntities(
+    _type: string,
+    _storage: import('@doxajs/core').ModelStorage,
+    _plan: import('@doxajs/core').ModelQueryPlan,
+    _operation: 'count' | 'min' | 'max' | 'sum' | 'average',
+    _attribute?: string,
+  ): Promise<number | import('@doxajs/core').ModelQueryValue | undefined> {
+    return Promise.reject(this.error())
+  }
+
   saveEntity<State extends import('@doxajs/core').JsonValue>(
     _entity: import('@doxajs/core').SaveEntity<State>,
   ): Promise<number> {
@@ -2549,13 +2610,112 @@ class ReadOnlyUnitOfWork extends UnitOfWork {
   }
 }
 
+function assertModelRelationships(
+  models: ReadonlyMap<
+    Function,
+    {
+      readonly entityType: string
+      readonly storage: import('@doxajs/core').ModelStorage
+      readonly attributes?: ReadonlySet<string>
+    }
+  >,
+): void {
+  for (const Constructor of models.keys()) {
+    const relationships = (
+      Constructor as typeof Model & {
+        readonly relationships?: Readonly<Record<string, import('@doxajs/core').ModelRelationship>>
+      }
+    ).relationships
+    for (const [name, relationship] of Object.entries(relationships ?? {})) {
+      if (!name.trim()) {
+        throw new RuntimeIntegrityError(`${Constructor.name} declares an empty relationship name.`)
+      }
+      let Related: Function
+      try {
+        Related = relationship.related()
+      } catch (error) {
+        throw new RuntimeIntegrityError(
+          `${Constructor.name}.${name} could not resolve its related model: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+      if (!models.has(Related)) {
+        throw new RuntimeIntegrityError(
+          `${Constructor.name}.${name} targets ${Related.name}, which is not declared by a selected Feature.`,
+        )
+      }
+      if (relationship.kind === 'belongsToMany') {
+        let Through: Function
+        try {
+          Through = relationship.through()
+        } catch (error) {
+          throw new RuntimeIntegrityError(
+            `${Constructor.name}.${name} could not resolve its pivot model: ${error instanceof Error ? error.message : String(error)}`,
+          )
+        }
+        if (!models.has(Through)) {
+          throw new RuntimeIntegrityError(
+            `${Constructor.name}.${name} uses ${Through.name} as a pivot model, but it is not declared by a selected Feature.`,
+          )
+        }
+      }
+      const keys =
+        relationship.kind === 'belongsTo'
+          ? [relationship.foreignKey, relationship.ownerKey]
+          : relationship.kind === 'belongsToMany'
+            ? [
+                relationship.localKey,
+                relationship.relatedKey,
+                relationship.foreignKey,
+                relationship.relatedForeignKey,
+              ]
+            : [relationship.localKey, relationship.foreignKey]
+      if (keys.some((key) => !key.trim())) {
+        throw new RuntimeIntegrityError(
+          `${Constructor.name}.${name} declares an empty relationship key.`,
+        )
+      }
+      const source = models.get(Constructor)!
+      const target = models.get(Related)!
+      if (relationship.kind === 'belongsTo') {
+        assertRelationshipKey(Constructor, name, source, relationship.foreignKey)
+        assertRelationshipKey(Constructor, name, target, relationship.ownerKey)
+      } else if (relationship.kind === 'hasOne' || relationship.kind === 'hasMany') {
+        assertRelationshipKey(Constructor, name, source, relationship.localKey)
+        assertRelationshipKey(Constructor, name, target, relationship.foreignKey)
+      } else {
+        const pivot = models.get(relationship.through())!
+        assertRelationshipKey(Constructor, name, source, relationship.localKey)
+        assertRelationshipKey(Constructor, name, target, relationship.relatedKey)
+        assertRelationshipKey(Constructor, name, pivot, relationship.foreignKey)
+        assertRelationshipKey(Constructor, name, pivot, relationship.relatedForeignKey)
+      }
+    }
+  }
+}
+
+function assertRelationshipKey(
+  Constructor: Function,
+  relationship: string,
+  definition: { readonly entityType: string; readonly attributes?: ReadonlySet<string> },
+  key: string,
+): void {
+  if (definition.attributes && !definition.attributes.has(key)) {
+    throw new RuntimeIntegrityError(
+      `${Constructor.name}.${relationship} references unknown ${definition.entityType} attribute ${key}.`,
+    )
+  }
+}
+
 function assertOperationInfrastructure(manifest: DoxaManifest): void {
   const transactionProviders = manifest.providers.filter((provider) =>
     provider.capabilities.includes('transactions'),
   )
-  if (manifest.actions.length > 0 && transactionProviders.length !== 1) {
+  if (
+    (manifest.actions.length > 0 || (manifest.queries.length > 0 && manifest.models.length > 0)) &&
+    transactionProviders.length !== 1
+  ) {
     throw new RuntimeIntegrityError(
-      `Applications with actions require exactly one transaction provider; found ${transactionProviders.length}.`,
+      `Applications with writable actions or model queries require exactly one transaction provider; found ${transactionProviders.length}.`,
     )
   }
   const queueProviders = manifest.providers.filter((provider) =>

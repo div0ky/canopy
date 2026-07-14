@@ -107,6 +107,7 @@ import type { Observer } from './observer.js'
 import type { Command } from './command.js'
 import type { DeliveryTransition, StagedDelivery } from './communications.js'
 import { DoxaRole } from './role.js'
+import type { ModelQueryPlan, ModelQueryValue } from './model-query.js'
 
 export { DoxaRole, RoleInjectionError, type RoleInjector } from './role.js'
 export type { RoleInjectionToken } from './role-context.js'
@@ -225,7 +226,35 @@ export {
   type ModelConstructor,
   type ModelJournalFact,
   type ModelOutboxMessage,
+  type ModelQueryDiagnostic,
+  type ModelRelations,
 } from './model.js'
+export {
+  applyModelQueryPlan,
+  InvalidModelCursorError,
+  MODEL_QUERY_MAX_PAGE_SIZE,
+  ModelQuery,
+  ModelQueryError,
+  validateModelQueryPlan,
+  type ModelCursorPage,
+  type ModelEagerLoadConstraints,
+  type ModelPage,
+  type ModelQueryConstraint,
+  type ModelQueryDirection,
+  type ModelQueryOperator,
+  type ModelQueryOrder,
+  type ModelQueryPlan,
+  type ModelQueryPredicate,
+  type ModelQueryValue,
+  type ModelRelationPath,
+} from './model-query.js'
+export {
+  belongsTo,
+  belongsToMany,
+  hasMany,
+  hasOne,
+  type ModelRelationship,
+} from './model-relation.js'
 export { Observer, type ModelObserverDispatcher, type ModelObserverPhase } from './observer.js'
 import type { Model, ModelAttributes, ModelConstructor } from './model.js'
 
@@ -432,13 +461,31 @@ export interface OutboxMessage<Payload extends JsonValue = JsonValue> {
   readonly availableAt?: Date
 }
 
-export abstract class UnitOfWork {
+/** Read-only persistence boundary used by model queries in every execution mode. */
+export abstract class ModelReader {
   abstract findEntity<State extends JsonValue = JsonValue>(
     type: string,
     id: string,
     storage?: ModelStorage,
   ): Promise<PersistedEntity<State> | undefined>
 
+  abstract queryEntities<State extends JsonValue = JsonValue>(
+    type: string,
+    storage: ModelStorage,
+    plan: ModelQueryPlan,
+  ): Promise<readonly PersistedEntity<State>[]>
+
+  abstract aggregateEntities(
+    type: string,
+    storage: ModelStorage,
+    plan: ModelQueryPlan,
+    operation: 'count' | 'min' | 'max' | 'sum' | 'average',
+    attribute?: string,
+  ): Promise<number | ModelQueryValue | undefined>
+}
+
+/** Writable transaction boundary; actions and jobs also use it as their model reader. */
+export abstract class UnitOfWork extends ModelReader {
   abstract saveEntity<State extends JsonValue>(entity: SaveEntity<State>): Promise<number>
   abstract deleteEntity(
     type: string,
@@ -491,6 +538,11 @@ export class AfterCommitError extends PersistenceError {
 
 /** Infrastructure boundary used by the runtime for every action transaction. */
 export abstract class TransactionManager {
+  abstract read<Output>(
+    context: ExecutionContext,
+    work: (reader: ModelReader) => Promise<Output>,
+  ): Promise<Output>
+
   abstract transaction<Output>(
     context: ExecutionContext,
     work: (unitOfWork: UnitOfWork) => Promise<Output>,

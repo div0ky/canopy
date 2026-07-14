@@ -58,15 +58,15 @@ lifecycle, and execution scope.
 
 ## Application operations
 
-| Area                           | Status                      | Central question                                                                                                                                                          |
-| ------------------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Actions and dispatch           | Exploring                   | What guarantees surround an intentional state change?                                                                                                                     |
-| Queries and dispatch           | Exploring                   | How do optimized reads retain common context, policy, and error behavior?                                                                                                 |
-| Domain models and repositories | Exploring                   | [How does Eloquent-style model persistence retain Doxa transaction semantics?](decisions/0012-eloquent-style-model-runtime.md)                                            |
-| Existing-table model mapping   | MVP common path implemented | [How can ordinary models override table, key, column, timestamp, and version conventions without importing Drizzle?](decisions/0023-existing-table-model-auth-mapping.md) |
-| Units of work and transactions | Exploring                   | Where do atomicity and after-commit behavior begin and end?                                                                                                               |
-| Validation and error documents | Accepted                    | [How are Standard Schema inputs validated and represented consistently?](decisions/0006-standard-schema-zod-validation.md)                                                |
-| Resources and serialization    | Unexplored                  | How does domain output become a stable external representation?                                                                                                           |
+| Area                           | Status                      | Central question                                                                                                                                                                  |
+| ------------------------------ | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Actions and dispatch           | Exploring                   | What guarantees surround an intentional state change?                                                                                                                             |
+| Queries and dispatch           | Exploring                   | How do optimized reads retain common context, policy, and error behavior?                                                                                                         |
+| Domain models and repositories | Query contract accepted     | [How do Eloquent-style persistence, typed model queries, relationships, and eager loading retain Doxa transaction semantics?](specifications/model-querying-and-relationships.md) |
+| Existing-table model mapping   | MVP common path implemented | [How can ordinary models override table, key, column, timestamp, and version conventions without importing Drizzle?](decisions/0023-existing-table-model-auth-mapping.md)         |
+| Units of work and transactions | Exploring                   | Where do atomicity and after-commit behavior begin and end?                                                                                                                       |
+| Validation and error documents | Accepted                    | [How are Standard Schema inputs validated and represented consistently?](decisions/0006-standard-schema-zod-validation.md)                                                        |
+| Resources and serialization    | Unexplored                  | How does domain output become a stable external representation?                                                                                                                   |
 
 The [execution and operations vertical slice](implementation/execution-operations-vertical-slice.md)
 provides executable evidence for the initial action, query, context, transaction-boundary, and scope

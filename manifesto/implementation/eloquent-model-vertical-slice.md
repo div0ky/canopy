@@ -73,9 +73,9 @@ A manually constructed model fails with `DetachedModelError`. A retained model o
 used after its action ends fails with `StaleModelError`. Missing required state fails with
 `ModelNotFoundError`.
 
-Static model access is intentionally enabled for mutating action executions in this proof. Queries
-continue to use read models and read-only Unit of Work contracts until the complete read API is
-specified.
+Static model access was initially enabled only for mutating action executions in this proof. The
+later [typed model query and relationship slice](typed-model-query-relationship-vertical-slice.md)
+adds the accepted read-only query session, builder, relationships, pagination, and eager loading.
 
 ## Persistence semantics
 
@@ -134,7 +134,8 @@ This slice does not yet claim the complete accepted model runtime. Remaining wor
 - Equivalent session semantics for jobs, schedules, listeners, console commands, and HTTP actions.
 - Model-aware testing fakes with the same lifecycle and Unit of Work behavior.
 - Specified bulk update and delete behavior when hydration is bypassed.
-- A deliberate read-model and model-query surface beyond identity lookup.
+- Relationship aggregates beyond existence counts and public flat-row join projections, whose
+  contracts remain intentionally deferred by Decision 0029.
 
 ## Next slice
 

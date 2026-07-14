@@ -907,12 +907,44 @@ export async function compileApplication(
       name,
       exportName: name,
       entityType: `model:${ownerId}/${localId}`,
+      attributes: compileModelAttributes(declaration),
       storage: compileModelStorage(declaration),
       source: sourceOf(declaration, normalized.projectRoot),
     }
     modelByDeclaration.set(declaration, entry)
     models.push(entry)
     return entry
+  }
+
+  function compileModelAttributes(declaration: ts.ClassDeclaration): readonly string[] {
+    const symbol = declaration.name ? checker.getSymbolAtLocation(declaration.name) : undefined
+    if (!symbol) fail(declaration, 'Model attributes could not be resolved.')
+    const modelType = checker.getDeclaredTypeOfSymbol(symbol)
+    const attributes = modelAttributeType(modelType)
+    if (!attributes) {
+      fail(declaration, `${requiredClassName(declaration)} must declare Model attribute types.`)
+    }
+    const names = checker
+      .getPropertiesOfType(attributes)
+      .map((property) => property.name)
+      .filter((name) => validIdentifier(name))
+      .sort((left, right) => left.localeCompare(right))
+    if (!names.includes('id')) {
+      fail(declaration, `${requiredClassName(declaration)} model attributes must include id.`)
+    }
+    return names
+  }
+
+  function modelAttributeType(type: ts.Type): ts.Type | undefined {
+    for (const base of checker.getBaseTypes(type as ts.InterfaceType)) {
+      const declaration = base.getSymbol()?.declarations?.[0]
+      if (base.getSymbol()?.name === 'Model' && declaration && isCoreDeclaration(declaration)) {
+        return checker.getTypeArguments(base as ts.TypeReference)[0]
+      }
+      const nested = modelAttributeType(base)
+      if (nested) return nested
+    }
+    return undefined
   }
 
   function compileModelStorage(declaration: ts.ClassDeclaration): ModelManifestEntry['storage'] {
