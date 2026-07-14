@@ -509,15 +509,13 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
   it('verifies, normalizes, and deduplicates provider delivery webhooks', async () => {
     const runtime = await bootPersistenceRuntime()
     const queued = await runAction(runtime, QueueNotifications, undefined)
-    await waitFor(
-      async () =>
-        (
-          await pool.query(
-            `SELECT 1 FROM doxa_delivery_messages WHERE id = $1 AND state = 'accepted'`,
-            [queued.mailId],
-          )
-        ).rowCount === 1,
-    )
+    await waitFor(async () => {
+      const rows = await pool.query<{ state: string }>(
+        `SELECT state FROM doxa_delivery_messages WHERE id = ANY($1::uuid[])`,
+        [[queued.mailId, queued.smsId]],
+      )
+      return rows.rows.length === 2 && rows.rows.every((row) => row.state === 'accepted')
+    })
     const http = new HonoHttpEngine(runtime)
 
     const timestamp = String(Math.floor(Date.now() / 1_000))
