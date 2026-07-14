@@ -93,16 +93,16 @@ applications and tools do not depend on undocumented behavior.
 
 ## Developer experience
 
-| Capability                  | State    | Remaining acceptance work                                                                                                                                   |
-| --------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Praxis command kernel       | Complete | One first-party executable owns generation, build, run, migration, inspection, recovery, and application commands.                                          |
-| `new` application generator | Complete | A clean generated app compiles and boots auth, HTTP, persistence, policy, model, observer, event, signal, job, schedule, mail, SMS, telemetry, and tests.   |
-| `make:*` generators         | Complete | Every canonical role is generated, registered, overwrite-safe, and authorization-explicit.                                                                  |
-| Database commands           | Complete | Forward migration, status, batching, checksums, advisory lock, and drift refusal are proven; destructive rollback is intentionally excluded.                |
-| Runtime commands            | Complete | `serve`, default combined `work`, advanced isolated `work --without-scheduler`/`schedule`, combined dev, and fail-safe fresh-runtime hot reload are proven. |
-| Inspection commands         | Complete | Graph, routes, reactive roles, policies, commands, queues, deliveries, infrastructure, auth, and schedules are proven.                                      |
-| Testing package and fakes   | Complete | HTTP/auth/persistence/queue/comms/cache/telemetry plus direct event, signal, job, and schedule APIs are proven against real manifests.                      |
-| Gnosis integration          | Complete | Derived manifest knowledge, command discovery, conventions, principles, and safe mutation guidance are generated.                                           |
+| Capability                  | State    | Remaining acceptance work                                                                                                                                                          |
+| --------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Praxis command kernel       | Complete | One first-party executable owns generation, build, run, migration, inspection, recovery, and application commands.                                                                 |
+| `new` application generator | Complete | A clean generated app compiles and boots auth, HTTP, persistence, policy, model, observer, event, signal, job, schedule, mail, SMS, telemetry, and tests.                          |
+| `make:*` generators         | Complete | Every canonical role is generated, registered, overwrite-safe, and authorization-explicit.                                                                                         |
+| Database commands           | Complete | Forward migration, status, batching, checksums, advisory lock, and drift refusal are proven; destructive rollback is intentionally excluded.                                       |
+| Runtime commands            | Complete | `serve`, default combined `work`, advanced isolated `work --without-scheduler`/`schedule`, combined dev, and fail-safe fresh-runtime hot reload are proven.                        |
+| Inspection commands         | Complete | Graph, routes, reactive roles, policies, commands, queues, deliveries, infrastructure, auth, and schedules are proven.                                                             |
+| Testing package and fakes   | Complete | HTTP/auth/persistence/queue/comms/cache/telemetry plus direct event, signal, job, and schedule APIs are proven against real manifests.                                             |
+| Gnosis integration          | Complete | Shared typed introspection, manifest relationship metadata, bounded read-only MCP tools/resources, exact-version local guidance, stdio launch, and generated knowledge are proven. |
 
 ## Reference application acceptance
 

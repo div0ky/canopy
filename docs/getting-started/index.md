@@ -57,3 +57,14 @@ pnpm test
 
 Run `pnpm doxa --help` for generators, inspection, recovery, authentication, queue, schedule, cache,
 migration, Gnosis, and runtime commands.
+
+## Gnosis and coding agents
+
+Generated applications include project-scoped Gnosis registration for Codex, Claude Code, Cursor,
+and VS Code. After `pnpm install`, open the application in a supported client. The client launches
+Gnosis over stdio when it needs Doxa inspection or documentation and stops it with the client
+session; there is no Gnosis daemon to start. A client may ask you to trust the project MCP server on
+first use.
+
+Run `pnpm doxa gnosis:install --agent=all` only to regenerate deleted or customized registration.
+`doxa mcp` is the client entrypoint and protocol-debugging command, not an ordinary startup step.

@@ -84,3 +84,6 @@ requirement to its implementation and acceptance evidence.
     — logical typed plans, read-only query sessions, PostgreSQL and memory conformance,
     deterministic pagination and cursors, all relationship cardinalities, eager loading, identity
     reuse, and explicit bulk-mutation and public-join deferrals.
+28. [Gnosis read-only local engineering vertical slice](gnosis-read-only-vertical-slice.md) — shared
+    typed introspection, manifest relationship metadata, bounded MCP tools and resources,
+    exact-version local guidance, stdio launch, redaction, and production dependency isolation.

@@ -76,22 +76,25 @@ To work on Doxa itself before package publication, follow the
 - W3C trace context, structured logs, metrics, diagnostics, and testing fakes.
 - Theoria, the causal development debugger.
 - Praxis, the generator, migration, runtime, inspection, and recovery command suite.
-- Gnosis, the generated application knowledge contract for AI-assisted engineering.
+- Gnosis, the automatically registered local read-only MCP server over the compiled application
+  graph and versioned guidance.
 
 ## Repository map
 
-| Area                                     | Purpose                                                           |
-| ---------------------------------------- | ----------------------------------------------------------------- |
-| [`packages/core`](packages/core)         | Stable application-facing programming model                       |
-| [`packages/manifest`](packages/manifest) | Versioned inert manifest contract                                 |
-| [`packages/compiler`](packages/compiler) | Semantic TypeScript compiler                                      |
-| [`packages/runtime`](packages/runtime)   | Container, execution, dispatch, and lifecycle                     |
-| [`packages/praxis`](packages/praxis)     | Generator and command suite                                       |
-| [`packages/testing`](packages/testing)   | First-party harnesses and fakes                                   |
-| `packages/*` adapters                    | Hono, PostgreSQL, queues, auth, communications, and Theoria       |
-| [`examples`](examples)                   | Runtime, persistence, and external Next.js reference applications |
-| [`docs`](docs)                           | User and maintainer documentation                                 |
-| [`manifesto`](manifesto/index.md)        | Principles, accepted decisions, specifications, and proof ledger  |
+| Area                                               | Purpose                                                           |
+| -------------------------------------------------- | ----------------------------------------------------------------- |
+| [`packages/core`](packages/core)                   | Stable application-facing programming model                       |
+| [`packages/manifest`](packages/manifest)           | Versioned inert manifest contract                                 |
+| [`packages/compiler`](packages/compiler)           | Semantic TypeScript compiler                                      |
+| [`packages/introspection`](packages/introspection) | Typed protocol-independent application inspection                 |
+| [`packages/gnosis`](packages/gnosis)               | Local read-only MCP engineering server                            |
+| [`packages/runtime`](packages/runtime)             | Container, execution, dispatch, and lifecycle                     |
+| [`packages/praxis`](packages/praxis)               | Generator and command suite                                       |
+| [`packages/testing`](packages/testing)             | First-party harnesses and fakes                                   |
+| `packages/*` adapters                              | Hono, PostgreSQL, queues, auth, communications, and Theoria       |
+| [`examples`](examples)                             | Runtime, persistence, and external Next.js reference applications |
+| [`docs`](docs)                                     | User and maintainer documentation                                 |
+| [`manifesto`](manifesto/index.md)                  | Principles, accepted decisions, specifications, and proof ledger  |
 
 ## Documentation
 
