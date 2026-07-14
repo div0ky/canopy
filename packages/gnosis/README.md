@@ -6,5 +6,8 @@ Code, Cursor, or VS Code and the client starts and stops Gnosis automatically.
 
 The registered command uses the application's installed Praxis package. Praxis compiles the current
 application before connecting Gnosis over MCP stdio. Gnosis exposes bounded structured inspection
-and version-matched local documentation without booting the application or reading application data.
-Clients may require their normal first-use project trust confirmation.
+and version-matched local documentation from the compiled artifact. Its `query_models` tool may boot
+that exact artifact in a fresh non-production, read-only console execution to retrieve explicitly
+selected logical model fields; it does not accept SQL or expose mutation. Praxis also installs a
+managed Doxa guidance block in the application's root `AGENTS.md`. Clients may require their normal
+first-use project trust confirmation.

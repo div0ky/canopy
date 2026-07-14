@@ -13,12 +13,65 @@ export async function installGnosisRegistration(
   cwd: string,
   agents: readonly GnosisAgent[] = GNOSIS_AGENTS,
 ): Promise<readonly string[]> {
-  const files: string[] = []
+  const files: string[] = [await installGnosisGuidelines(cwd)]
   for (const agent of agents) {
     const file = await registerAgent(cwd, agent)
     files.push(path.relative(cwd, file))
   }
   return files
+}
+
+async function installGnosisGuidelines(cwd: string): Promise<string> {
+  const file = path.join(cwd, 'AGENTS.md')
+  const startMarker = '<doxa-gnosis-guidelines>'
+  const endMarker = '</doxa-gnosis-guidelines>'
+  const existing = (await readOptional(file)) ?? ''
+  const starts = occurrences(existing, startMarker)
+  const ends = occurrences(existing, endMarker)
+  const start = existing.indexOf(startMarker)
+  const end = existing.indexOf(endMarker)
+  if (starts !== ends || starts > 1 || (starts === 1 && end < start)) {
+    throw new PraxisCommandError(
+      'AGENTS.md contains malformed or duplicate Doxa Gnosis guideline markers.',
+    )
+  }
+  const { renderGnosisGuidelines } = await loadGnosisGuidelines()
+  const block = `${startMarker}\n${renderGnosisGuidelines().trim()}\n\n${endMarker}`
+  let content: string
+  if (starts === 0) {
+    const separator =
+      existing.length === 0
+        ? ''
+        : existing.endsWith('\n\n')
+          ? ''
+          : existing.endsWith('\n')
+            ? '\n'
+            : '\n\n'
+    content = `${existing}${separator}${block}\n`
+  } else {
+    const afterBlock = end + endMarker.length
+    const suffix = existing.slice(afterBlock)
+    content = `${existing.slice(0, start)}${block}${suffix || '\n'}`
+  }
+  await writeChanged(file, content)
+  return path.relative(cwd, file)
+}
+
+async function loadGnosisGuidelines(): Promise<
+  Pick<typeof import('@doxajs/gnosis'), 'renderGnosisGuidelines'>
+> {
+  try {
+    return await import('@doxajs/gnosis')
+  } catch (error) {
+    throw new PraxisCommandError(
+      'Gnosis tooling is not installed. Reinstall development dependencies before installing agent guidance.',
+      { cause: error },
+    )
+  }
+}
+
+function occurrences(value: string, search: string): number {
+  return value.split(search).length - 1
 }
 
 export function parseGnosisAgents(args: readonly string[]): readonly GnosisAgent[] {

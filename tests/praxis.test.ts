@@ -400,6 +400,10 @@ describe('Praxis command suite', () => {
     expect(await readFile(path.join(destination, '.codex/config.toml'), 'utf8')).toBe(
       `[mcp_servers.gnosis]\ncommand = "node"\nargs = ["./node_modules/@doxajs/praxis/dist/bin.js","mcp"]\nstartup_timeout_sec = 120\n`,
     )
+    const agents = await readFile(path.join(destination, 'AGENTS.md'), 'utf8')
+    expect(agents).toContain('<doxa-gnosis-guidelines>')
+    expect(agents).toContain('Use Gnosis MCP tools')
+    expect(agents).toContain('Use `query_models` instead of raw SQL')
     expect(JSON.parse(await readFile(path.join(destination, '.mcp.json'), 'utf8'))).toEqual({
       mcpServers: {
         gnosis: {
@@ -562,6 +566,7 @@ describe('Praxis command suite', () => {
       path.join(root, '.mcp.json'),
       `${JSON.stringify({ mcpServers: { existing: { command: 'existing-server' } } }, null, 2)}\n`,
     )
+    await writeFile(path.join(root, 'AGENTS.md'), '# Project instructions\n\nKeep this text.\n')
     const output: string[] = []
     const io = {
       out: (message: string) => output.push(message),
@@ -589,11 +594,39 @@ describe('Praxis command suite', () => {
     })
     expect(await fileExists(path.join(root, '.cursor/mcp.json'))).toBe(false)
     expect(await fileExists(path.join(root, '.vscode/mcp.json'))).toBe(false)
+    const agents = await readFile(path.join(root, 'AGENTS.md'), 'utf8')
+    expect(agents).toContain('# Project instructions\n\nKeep this text.')
+    expect(agents.match(/<doxa-gnosis-guidelines>/g)).toHaveLength(1)
+    expect(agents).toContain('Use `query_models` instead of raw SQL')
 
     expect(await runPraxis(['gnosis:install', '--agent=codex,claude'], root, io)).toBe(0)
     expect(await readFile(path.join(root, '.codex/config.toml'), 'utf8')).toBe(codex)
     expect(await readFile(path.join(root, '.mcp.json'), 'utf8')).toBe(claude)
+    expect(await readFile(path.join(root, 'AGENTS.md'), 'utf8')).toBe(agents)
     expect(output.at(-1)).toContain('Your MCP client will start it on demand.')
+  })
+
+  it('fails Gnosis installation closed on malformed managed guidance', async () => {
+    for (const original of [
+      '# Project instructions\n\n<doxa-gnosis-guidelines>\nIncomplete block.\n',
+      '</doxa-gnosis-guidelines>\nReversed block.\n<doxa-gnosis-guidelines>\n',
+    ]) {
+      const root = await temporaryDirectory()
+      await writeFile(path.join(root, 'AGENTS.md'), original)
+      const errors: string[] = []
+
+      expect(
+        await runPraxis(['gnosis:install', '--agent=codex'], root, {
+          out: () => undefined,
+          error: (message) => errors.push(message),
+        }),
+      ).toBe(1)
+      expect(errors).toEqual([
+        'AGENTS.md contains malformed or duplicate Doxa Gnosis guideline markers.',
+      ])
+      expect(await readFile(path.join(root, 'AGENTS.md'), 'utf8')).toBe(original)
+      expect(await fileExists(path.join(root, '.codex/config.toml'))).toBe(false)
+    }
   })
 
   it('installs and wires Theoria without manual package or Feature edits', async () => {

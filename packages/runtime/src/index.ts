@@ -11,6 +11,9 @@ export {
   RuntimeShutdownError,
   type BootOptions,
   type EventTestHook,
+  type ModelRecordQuery,
+  type ModelRecordQueryResult,
+  type RuntimeProfile,
   type RuntimeState,
 } from './runtime.js'
 

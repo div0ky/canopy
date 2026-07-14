@@ -77,7 +77,7 @@ To work on Doxa itself before package publication, follow the
 - Theoria, the causal development debugger.
 - Praxis, the generator, migration, runtime, inspection, and recovery command suite.
 - Gnosis, the automatically registered local read-only MCP server over the compiled application
-  graph and versioned guidance.
+  graph, versioned guidance, and bounded non-production model queries.
 
 ## Repository map
 

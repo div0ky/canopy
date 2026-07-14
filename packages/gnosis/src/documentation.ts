@@ -54,7 +54,7 @@ export function documentationIndex(version: string): readonly DocumentationSecti
       version,
       'gnosis.md',
       'Read-only local server',
-      'Gnosis runs locally over MCP stdio. It exposes the validated compiled application graph and version-matched guidance. It does not boot the application, read application data, run arbitrary commands, or mutate the workspace.',
+      'Gnosis runs locally over MCP stdio. It exposes the validated compiled application graph and version-matched guidance. Its query_models tool performs bounded non-production reads by stable model ID and logical attribute through a fresh read-only Doxa execution. It does not accept SQL, run arbitrary commands, or mutate application data or the workspace.',
     ),
   ])
 }

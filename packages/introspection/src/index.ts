@@ -325,8 +325,7 @@ function isSafeDoxaToken(key: string | undefined, value: unknown): boolean {
 }
 
 function redactText(value: string): string {
-  return value
-    .replace(/([a-z][a-z0-9+.-]*:\/\/[^:\s/@]+:)[^@\s/]+@/gi, '$1[REDACTED]@')
+  return redactUriCredentials(value)
     .replace(/\b(Bearer\s+)[A-Za-z0-9._~+\/-]+=*/gi, '$1[REDACTED]')
     .replace(/\b(token|password|secret|api[-_]?key|authorization)=([^\s&]+)/gi, '$1=[REDACTED]')
     .replace(/\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[REDACTED]')
@@ -334,6 +333,47 @@ function redactText(value: string): string {
       /-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z0-9]+ )?PRIVATE KEY-----/g,
       '[REDACTED]',
     )
+    .slice(0, 20_000)
+}
+
+function redactUriCredentials(value: string): string {
+  let cursor = 0
+  let searchFrom = 0
+  let redacted = ''
+  while (searchFrom < value.length) {
+    const protocol = value.indexOf('://', searchFrom)
+    if (protocol === -1) break
+    let schemeStart = protocol - 1
+    while (schemeStart >= 0 && isUriSchemeCharacter(value[schemeStart]!)) schemeStart -= 1
+    schemeStart += 1
+    if (schemeStart === protocol || !/[A-Za-z]/.test(value[schemeStart]!)) {
+      searchFrom = protocol + 3
+      continue
+    }
+    const authorityStart = protocol + 3
+    let authorityEnd = authorityStart
+    while (authorityEnd < value.length && !isUriAuthorityBoundary(value[authorityEnd]!)) {
+      authorityEnd += 1
+    }
+    const at = value.lastIndexOf('@', authorityEnd - 1)
+    const separator = value.indexOf(':', authorityStart)
+    if (at < authorityStart || separator < authorityStart || separator >= at) {
+      searchFrom = Math.max(authorityEnd, protocol + 3)
+      continue
+    }
+    redacted += `${value.slice(cursor, separator + 1)}[REDACTED]`
+    cursor = at
+    searchFrom = authorityEnd
+  }
+  return `${redacted}${value.slice(cursor)}`
+}
+
+function isUriSchemeCharacter(character: string): boolean {
+  return /[A-Za-z0-9+.-]/.test(character)
+}
+
+function isUriAuthorityBoundary(character: string): boolean {
+  return character === '/' || character === '?' || character === '#' || /\s/u.test(character)
 }
 
 function safeErrorMessage(error: unknown): string {

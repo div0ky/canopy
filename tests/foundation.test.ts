@@ -328,6 +328,60 @@ describe('foundational compile-to-boot slice', () => {
     ])
   })
 
+  it('seals the model-reader profile to the transaction-provider lifecycle closure', async () => {
+    const artifactsDirectory = await temporaryDirectory()
+    await compile(artifactsDirectory)
+    const runtime = await Doxa.boot(Application, {
+      artifactsDirectory,
+      profile: 'model-reader',
+      dotenvPath: false,
+      environment: {
+        APP_PORT: 'not-a-number',
+        WORKER_CONCURRENCY: 'not-a-number',
+      },
+    })
+
+    expect(runtime.profile).toBe('model-reader')
+    expect(lifecycleLog).toEqual([])
+    await expect(
+      runtime.admit(
+        { actor: { kind: 'system', id: 'not-a-model-query' }, transport: { kind: 'test' } },
+        () => undefined,
+      ),
+    ).rejects.toBeInstanceOf(ExecutionAdmissionError)
+    await expect(
+      runtime.queryModelRecords(
+        { modelId: 'model:missing', fields: ['id'] },
+        { actor: { kind: 'system', id: 'model-reader' }, transport: { kind: 'test' } },
+      ),
+    ).rejects.toThrow('authenticated system console execution')
+    await expect(
+      runtime.queryModelRecords(
+        { modelId: 'model:missing', fields: ['id'] },
+        {
+          actor: { kind: 'system', id: 'model-reader' },
+          authentication: {
+            state: 'authenticated',
+            identityId: 'model-reader',
+            method: 'console',
+          },
+          transport: { kind: 'console', name: 'model-reader' },
+        },
+      ),
+    ).rejects.toThrow('model:missing is not a declared model')
+    await runtime.shutdown()
+    expect(lifecycleLog).toEqual([])
+
+    await expect(
+      Doxa.boot(Application, {
+        artifactsDirectory,
+        profile: 'unknown' as 'application',
+        dotenvPath: false,
+        environment: {},
+      }),
+    ).rejects.toThrow('Unknown Doxa runtime profile unknown')
+  })
+
   it('preserves startup failure and unwinds successfully started dependencies', async () => {
     const artifactsDirectory = await temporaryDirectory()
     await compile(artifactsDirectory)

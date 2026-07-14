@@ -42,6 +42,21 @@ Individual phase controls are internal host-adapter capabilities. Ordinary appli
 skip drain, stop resources without disposal, force readiness, or manually transition lifecycle
 state.
 
+### Restricted tooling profiles
+
+An accepted first-party development tool may request a named restricted runtime profile when the
+complete application lifecycle would violate that tool's safety boundary. A restricted profile is
+not a partially started application runtime: it validates the complete artifact pair, then
+materializes configuration, constructs providers, and runs lifecycle hooks only for the explicitly
+owned capability and its declared dependency closure.
+
+The `model-reader` profile exists solely for bounded Gnosis model inspection. It starts the selected
+transaction provider and its dependency closure, substitutes no-op diagnostics, does not construct
+or start unrelated queue, observation, authentication, communication, cache, or broadcast providers,
+and admits only the dedicated model-record query entrypoint. Shutdown owns exactly the participants
+that the profile started. Adding another profile requires an accepted decision; hosts cannot supply
+arbitrary provider filters.
+
 ## Process host integration
 
 `Doxa.boot()` does not install `SIGTERM`, `SIGINT`, uncaught-error, rejection, or other
@@ -63,8 +78,9 @@ Runtime startup proceeds through these phases:
 
 1. Validate manifest format, manifest-registry integrity, configuration, dependency graph, scopes,
    and required capabilities without executing application behavior.
-2. Construct the singleton graph through synchronous, side-effect-free constructors.
-3. Invoke `start()` for lifecycle participants in dependency order.
+2. Construct the complete singleton graph, or the declared dependency closure for an accepted
+   restricted profile, through synchronous, side-effect-free constructors.
+3. Invoke `start()` for the selected lifecycle participants in dependency order.
 4. Perform declared readiness checks.
 5. Transition atomically to `ready` and begin admitting work.
 

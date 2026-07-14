@@ -11,9 +11,11 @@ Gnosis is Doxa's local AI engineering server. Phase 1 exposes the compiled appli
 version-matched Doxa guidance through MCP over stdio. It is a development tool, never a production
 runtime role, and never a source of truth for application discovery.
 
-Gnosis does not scan source, boot the application, query application data, run arbitrary code, or
-mutate the workspace. Remote transport, test execution, logs, database contents, generators,
-migrations, redrive, and operation application are explicitly deferred.
+Gnosis does not scan source, run arbitrary code, accept SQL, or mutate the workspace. Remote
+transport, test execution, logs, generators, migrations, redrive, and operation application are
+explicitly deferred. The bounded `query_models` tool is the sole application-data capability: its
+Praxis bridge boots a fresh artifact-only runtime for one read-only execution and shuts it down
+before returning.
 
 ## One chain of truth
 
@@ -43,9 +45,17 @@ compiles the development application through the ordinary Praxis build path befo
 A failed compilation prevents the server from starting. The server then receives the in-memory
 manifest returned by that build; it does not trust an independently discovered or stale artifact.
 
+Application creation, upgrades, and `doxa gnosis:install` also create or refresh a managed
+`<doxa-gnosis-guidelines>` block in repository-root `AGENTS.md`. Existing content outside that block
+is preserved. Missing guidance is appended; malformed or duplicate managed markers fail without
+rewriting the file.
+
 The server uses the official pinned TypeScript MCP SDK and stdio transport. It writes no protocol
-information to stdout outside the MCP transport. Shutdown closes the transport without booting or
-draining a Doxa application runtime.
+information to stdout outside the MCP transport. Ordinary shutdown does not boot an application
+runtime. A `query_models` call delegates one bounded `model-reader` profile boot, execution, and
+shutdown to Praxis. That profile materializes and starts only the transaction provider and its
+declared configuration and provider dependency closure. It does not construct or start unrelated
+providers, and its ordinary `admit` entrypoint is closed.
 
 ## Initial resources and tools
 
@@ -73,12 +83,25 @@ Phase 1 provides these read-only tools:
 - `list_policies`
 - `list_commands`
 - `search_docs`
+- `query_models`
 
 All results use stable ordering. List and search results are bounded to 100 records. Documentation
 queries are bounded to 200 characters and results to 20 sections. Unknown model IDs return MCP error
 results with stable JSON error bodies; malformed arguments fail through MCP schema validation rather
 than reaching tool handlers or raw internal exceptions. Error results do not include
 `structuredContent`, because MCP output schemas describe successful tool output.
+
+`query_models` requires a stable model ID, one through fifty logical fields, at most twenty
+comparison predicates, at most five logical ordering entries, and a row limit from one through one
+hundred. It accepts only JSON scalar comparison values, caps string comparisons at 10,000
+characters, caps the sanitized structured result at 1,000,000 UTF-8 bytes, and returns detached
+plain records. It does not accept SQL, physical table or column names, relationship callbacks,
+arbitrary expressions, or mutation terminals. Praxis admits the work as the authenticated
+`doxa:gnosis` system actor, uses a read-only model session without invoking application model
+observers, disables runtime logging and application observation or telemetry adapters on the
+protocol process, refuses production execution, and shuts the runtime down in `finally`. The runtime
+itself rejects model-reader calls whose actor, authenticated identity, authentication method, or
+transport does not match that system-console boundary.
 
 ## Application information
 
@@ -108,6 +131,8 @@ contract.
   installations.
 - Transport is stdio only.
 - No tool accepts a filesystem path, command, SQL, URL, or arbitrary expression.
+- Model-data results include only explicitly requested logical fields, are bounded to 100 rows, and
+  pass through recursive credential redaction.
 - Manifest configuration records expose keys, kinds, optionality, and sensitivity, never resolved
   values.
 - Returned text and structured content pass through recursive credential redaction.
