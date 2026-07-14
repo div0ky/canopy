@@ -10,6 +10,7 @@ import {
 export const INTROSPECTION_SCHEMA_VERSION = 1 as const
 export const GNOSIS_KNOWLEDGE_SCHEMA_VERSION = 2 as const
 export const MAX_INSPECTION_RESULTS = 100
+export const MAX_INSPECTION_OBJECT_PROPERTIES = 100
 
 export type InspectionSurface =
   | 'actions'
@@ -303,10 +304,9 @@ export function sanitizeInspectionValue(value: unknown, key?: string, depth = 0)
   if (!isRecord(value)) return value
   return Object.freeze(
     Object.fromEntries(
-      Object.entries(value).map(([name, entry]) => [
-        name,
-        sanitizeInspectionValue(entry, name, depth + 1),
-      ]),
+      Object.entries(value)
+        .slice(0, MAX_INSPECTION_OBJECT_PROPERTIES)
+        .map(([name, entry]) => [name, sanitizeInspectionValue(entry, name, depth + 1)]),
     ),
   )
 }
@@ -326,9 +326,14 @@ function isSafeDoxaToken(key: string | undefined, value: unknown): boolean {
 
 function redactText(value: string): string {
   return value
-    .replace(/(postgres(?:ql)?:\/\/[^:\s/@]+:)[^@\s/]+@/gi, '$1[REDACTED]@')
+    .replace(/([a-z][a-z0-9+.-]*:\/\/[^:\s/@]+:)[^@\s/]+@/gi, '$1[REDACTED]@')
     .replace(/\b(Bearer\s+)[A-Za-z0-9._~+\/-]+=*/gi, '$1[REDACTED]')
     .replace(/\b(token|password|secret|api[-_]?key|authorization)=([^\s&]+)/gi, '$1=[REDACTED]')
+    .replace(/\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[REDACTED]')
+    .replace(
+      /-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z0-9]+ )?PRIVATE KEY-----/g,
+      '[REDACTED]',
+    )
 }
 
 function safeErrorMessage(error: unknown): string {

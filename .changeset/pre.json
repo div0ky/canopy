@@ -20,11 +20,14 @@
     "@doxajs/theoria": "0.1.0-alpha.0",
     "@doxajs/keryx": "0.1.0-alpha.0",
     "@doxajs/realtime": "0.1.0-alpha.0",
-    "@doxajs/website": "0.1.0"
+    "@doxajs/website": "0.1.0",
+    "@doxajs/gnosis": "0.1.0-alpha.11",
+    "@doxajs/introspection": "0.1.0-alpha.11"
   },
   "changesets": [
     "add-doxa-upgrade",
     "alpha-eight-release",
+    "alpha-eleven-release",
     "alpha-five-release",
     "alpha-four-release",
     "alpha-nine-release",
@@ -38,12 +41,14 @@
     "fix-plugin-array-inference",
     "fix-praxis-pnpm-scaffold",
     "framework-owned-application-core",
+    "gnosis-read-only-phase-one",
     "install-pg-boss-schema",
     "manifest-safety-and-schedule-catchup",
     "migrate-framework-application-root",
     "open-source-foundation",
     "reject-stale-package-collisions",
     "remove-praxis-install-scripts",
+    "typed-model-queries",
     "version-aligned-praxis-test"
   ]
 }

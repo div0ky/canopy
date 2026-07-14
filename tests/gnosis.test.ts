@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm, symlink } from 'node:fs/promises'
+import { spawn } from 'node:child_process'
+import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -56,7 +57,7 @@ describe('Gnosis read-only local engineering server', () => {
 
   it('compiles model relationships into the canonical manifest', () => {
     expect(manifest.formatVersion).toBe(3)
-    expect(manifest.frameworkVersion).toBe('0.1.0-alpha.11')
+    expect(manifest.frameworkVersion).toBe('0.1.0-alpha.12')
     expect(manifest.models.find((model) => model.id.endsWith('/counter'))?.relationships).toEqual([
       {
         name: 'notes',
@@ -93,7 +94,7 @@ describe('Gnosis read-only local engineering server', () => {
       expect.objectContaining({
         applicationId: 'persistence-reference-app',
         manifestFormatVersion: 3,
-        frameworkVersion: '0.1.0-alpha.11',
+        frameworkVersion: '0.1.0-alpha.12',
       }),
     )
 
@@ -102,12 +103,23 @@ describe('Gnosis read-only local engineering server', () => {
         dependency: { token: 'doxa:transactions' },
         schedule: { token: 'plain-secret', authorization: 'Bearer top-secret' },
         database: 'postgres://doxa:password@localhost/doxa',
+        queue: 'redis://doxa:password@localhost/0',
+        assertion: 'eyJhbGciOiJIUzI1NiJ9.cGF5bG9hZA.c2lnbmF0dXJl',
       }),
     ).toEqual({
       dependency: { token: 'doxa:transactions' },
       schedule: { token: '[REDACTED]', authorization: '[REDACTED]' },
       database: 'postgres://doxa:[REDACTED]@localhost/doxa',
+      queue: 'redis://doxa:[REDACTED]@localhost/0',
+      assertion: '[REDACTED]',
     })
+    expect(
+      Object.keys(
+        sanitizeInspectionValue(
+          Object.fromEntries(Array.from({ length: 101 }, (_, index) => [`field${index}`, index])),
+        ) as object,
+      ),
+    ).toHaveLength(100)
 
     let staleError: unknown
     try {
@@ -188,6 +200,18 @@ describe('Gnosis read-only local engineering server', () => {
         message: 'Model model:missing is not declared.',
       })
 
+      const sensitiveMissing = await client.callTool({
+        name: 'describe_model',
+        arguments: { id: 'password=not-for-errors' },
+      })
+      const sensitiveContent = sensitiveMissing.content as Array<{ type: string; text?: string }>
+      expect(
+        JSON.parse(sensitiveContent[0]?.type === 'text' ? (sensitiveContent[0].text ?? '') : ''),
+      ).toEqual({
+        code: 'not_found',
+        message: 'Model password=[REDACTED] is not declared.',
+      })
+
       const invalid = await client.callTool({
         name: 'describe_model',
         arguments: { id: '' },
@@ -209,7 +233,7 @@ describe('Gnosis read-only local engineering server', () => {
           items: expect.arrayContaining([
             expect.objectContaining({
               package: '@doxajs/core',
-              version: '0.1.0-alpha.11',
+              version: '0.1.0-alpha.12',
               source: 'models.md',
             }),
           ]),
@@ -266,11 +290,107 @@ describe('Gnosis read-only local engineering server', () => {
         expect.objectContaining({
           applicationId: 'garden',
           manifestFormatVersion: 3,
-          gnosisVersion: '0.1.0-alpha.11',
+          gnosisVersion: '0.1.0-alpha.12',
         }),
       )
     } finally {
       await client.close()
     }
   }, 15_000)
+
+  it('rejects relationship declarations that can diverge from runtime behavior', async () => {
+    const root = path.join(artifactsDirectory, 'relationship-guard')
+    const errors: string[] = []
+    expect(
+      await runPraxis(['new', 'RelationshipGuard', `--directory=${root}`], workspace, {
+        out: () => undefined,
+        error: (message) => errors.push(message),
+      }),
+    ).toBe(0)
+    await symlink(path.join(workspace, 'node_modules'), path.join(root, 'node_modules'))
+    await writeFile(
+      path.join(root, 'src/app/app.feature.ts'),
+      `import { Feature } from '@doxajs/core'\n\nimport { Owner, Related, Other } from './models.js'\n\nexport class AppFeature extends Feature {\n  id = 'app'\n  models = [Owner, Related, Other]\n}\n`,
+    )
+    const models = path.join(root, 'src/app/models.ts')
+    await writeFile(
+      models,
+      `import { hasMany as doxaHasMany, Model, type ModelRelationship } from '@doxajs/core'\n\ninterface Attributes { id: string; ownerId: string }\nexport class Related extends Model<Attributes> { static override readonly id = 'related' }\nexport class Other extends Model<Attributes> { static override readonly id = 'other' }\nfunction hasMany(related: Parameters<typeof doxaHasMany>[0], options: Parameters<typeof doxaHasMany>[1]): ModelRelationship {\n  return doxaHasMany(related, { foreignKey: \`ignored-\${options.foreignKey}\` })\n}\nexport class Owner extends Model<Attributes> {\n  static override readonly id = 'owner'\n  static override readonly relationships = {\n    related: hasMany(() => Related, { foreignKey: 'ownerId' }),\n  }\n}\n`,
+    )
+    expect(
+      await runPraxis(['build'], root, {
+        out: () => undefined,
+        error: (message) => errors.push(message),
+      }),
+    ).toBe(1)
+    expect(errors.at(-1)).toContain('must call a Doxa relationship helper directly')
+
+    errors.length = 0
+    await writeFile(
+      models,
+      `import { hasMany, Model } from '@doxajs/core'\n\ninterface Attributes { id: string; ownerId: string }\nexport class Related extends Model<Attributes> { static override readonly id = 'related' }\nexport class Other extends Model<Attributes> { static override readonly id = 'other' }\nexport class Owner extends Model<Attributes> {\n  static override readonly id = 'owner'\n  static override readonly relationships = {\n    related: hasMany(() => {\n      if (Date.now() > 0) return Related\n      return Other\n    }, { foreignKey: 'ownerId' }),\n  }\n}\n`,
+    )
+    expect(
+      await runPraxis(['build'], root, {
+        out: () => undefined,
+        error: (message) => errors.push(message),
+      }),
+    ).toBe(1)
+    expect(errors.at(-1)).toContain('must reference a model selected by an application Feature')
+
+    errors.length = 0
+    await writeFile(
+      models,
+      `import { hasMany, Model } from '@doxajs/core'\n\ninterface Attributes { id: string; ownerId: string }\nconst runtimeOptions = Date.now() > 0 ? { foreignKey: 'runtimeOwnerId' } : {}\nexport class Related extends Model<Attributes> { static override readonly id = 'related' }\nexport class Other extends Model<Attributes> { static override readonly id = 'other' }\nexport class Owner extends Model<Attributes> {\n  static override readonly id = 'owner'\n  static override readonly relationships = {\n    related: hasMany(() => Related, { foreignKey: 'ownerId', ...runtimeOptions }),\n  }\n}\n`,
+    )
+    expect(
+      await runPraxis(['build'], root, {
+        out: () => undefined,
+        error: (message) => errors.push(message),
+      }),
+    ).toBe(1)
+    expect(errors.at(-1)).toContain('relationship options must use explicit property assignments')
+  })
+
+  it('keeps TypeScript diagnostics off MCP stdout when compilation fails', async () => {
+    const invalidSource = path.join(generatedApplication, 'src/app/invalid.ts')
+    await writeFile(invalidSource, 'const invalid: string = 42\n')
+    try {
+      const result = await runChild(
+        process.execPath,
+        [path.join(workspace, 'packages/praxis/dist/bin.js'), 'mcp'],
+        generatedApplication,
+      )
+      expect(result.code).not.toBe(0)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).toContain('TypeScript build failed with exit code')
+      expect(result.stderr).toContain('error TS2322')
+    } finally {
+      await rm(invalidSource, { force: true })
+    }
+  })
 })
+
+function runChild(
+  command: string,
+  args: readonly string[],
+  cwd: string,
+): Promise<{ readonly code: number; readonly stdout: string; readonly stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, [...args], {
+      cwd,
+      env: { ...process.env, CI: '1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (chunk: string) => (stdout += chunk))
+    child.stderr.on('data', (chunk: string) => (stderr += chunk))
+    child.once('error', reject)
+    child.once('exit', (code, signal) =>
+      resolve({ code: code ?? (signal ? 1 : 0), stdout, stderr }),
+    )
+  })
+}

@@ -76,7 +76,6 @@ async function registerCodex(cwd: string): Promise<string> {
     header,
     `command = ${JSON.stringify(serverCommand)}`,
     `args = ${JSON.stringify(serverArguments)}`,
-    'cwd = ".."',
     'startup_timeout_sec = 120',
   ].join('\n')
   const existing = await readOptional(file)

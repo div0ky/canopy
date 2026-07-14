@@ -12,6 +12,7 @@ import {
   inspectGraph,
   inspectSurface,
   safeManifest,
+  sanitizeInspectionValue,
   type InspectionSurface,
 } from '@doxajs/introspection'
 import type { DoxaManifest } from '@doxajs/manifest'
@@ -26,10 +27,6 @@ export { documentationIndex, searchDocumentation, type DocumentationSection }
 
 export const GNOSIS_PROTOCOL_ADAPTER_VERSION = 1 as const
 export const GNOSIS_VERSION = packageVersion()
-
-export interface GnosisServerOptions {
-  readonly documentation?: readonly DocumentationSection[]
-}
 
 const readOnlyAnnotations = Object.freeze({
   readOnlyHint: true,
@@ -103,12 +100,9 @@ const surfaceTools: Readonly<Record<string, InspectionSurface>> = {
   list_commands: 'commands',
 }
 
-export function createGnosisServer(
-  manifest: DoxaManifest,
-  options: GnosisServerOptions = {},
-): McpServer {
+export function createGnosisServer(manifest: DoxaManifest): McpServer {
   assertCurrentManifest(manifest)
-  const docs = options.documentation ?? documentationIndex(manifest.frameworkVersion)
+  const docs = documentationIndex(manifest.frameworkVersion)
   const server = new McpServer({ name: 'doxa-gnosis', version: GNOSIS_VERSION })
 
   registerJsonResource(server, 'application-manifest', 'doxa://application/manifest', () =>
@@ -201,11 +195,8 @@ export function createGnosisServer(
   return server
 }
 
-export async function startGnosisServer(
-  manifest: DoxaManifest,
-  options: GnosisServerOptions = {},
-): Promise<void> {
-  const server = createGnosisServer(manifest, options)
+export async function startGnosisServer(manifest: DoxaManifest): Promise<void> {
+  const server = createGnosisServer(manifest)
   await server.connect(new StdioServerTransport())
 }
 
@@ -242,7 +233,8 @@ async function toolResult(read: () => unknown) {
 }
 
 function safeFailure(error: unknown): { readonly code: string; readonly message: string } {
-  if (error instanceof IntrospectionError) return { code: error.code, message: error.message }
+  if (error instanceof IntrospectionError)
+    return { code: error.code, message: sanitizeInspectionValue(error.message) as string }
   return {
     code: 'gnosis_failure',
     message: 'Gnosis could not complete the request.',

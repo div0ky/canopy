@@ -946,9 +946,15 @@ export async function compileApplication(
         if (!name || !ts.isCallExpression(call) || !ts.isIdentifier(call.expression)) {
           fail(member, 'Model relationships must call a Doxa relationship helper directly.')
         }
-        const kind = call.expression.text
-        if (!['belongsTo', 'hasOne', 'hasMany', 'belongsToMany'].includes(kind)) {
-          fail(call, `Unsupported model relationship helper ${kind}.`)
+        const helper = resolveNamedDeclaration(call.expression, checker)
+        const kind = helper?.name?.text
+        if (
+          !helper ||
+          !isCoreDeclaration(helper) ||
+          !kind ||
+          !['belongsTo', 'hasOne', 'hasMany', 'belongsToMany'].includes(kind)
+        ) {
+          fail(call, 'Model relationships must call a Doxa relationship helper directly.')
         }
         const related = resolveModelReference(call.arguments[0], checker)
         const relatedEntry = related ? modelByDeclaration.get(related) : undefined
@@ -1004,6 +1010,11 @@ export async function compileApplication(
     const unwrapped = node ? unwrapLiteralExpression(node) : undefined
     if (!unwrapped || !ts.isObjectLiteralExpression(unwrapped)) {
       fail(node ?? source, `${name} relationship options must be a literal object.`)
+    }
+    for (const property of unwrapped.properties) {
+      if (!ts.isPropertyAssignment(property) || !propertyName(property.name)) {
+        fail(property, `${name} relationship options must use explicit property assignments.`)
+      }
     }
     return unwrapped
   }
@@ -1855,8 +1866,11 @@ function resolveModelReference(
   if (!node) return undefined
   const reference = unwrapLiteralExpression(node)
   if (!ts.isArrowFunction(reference) && !ts.isFunctionExpression(reference)) return undefined
+  const statement = ts.isBlock(reference.body) ? reference.body.statements.at(0) : undefined
   const returned = ts.isBlock(reference.body)
-    ? reference.body.statements.find(ts.isReturnStatement)?.expression
+    ? reference.body.statements.length === 1 && statement && ts.isReturnStatement(statement)
+      ? statement.expression
+      : undefined
     : reference.body
   return returned ? resolveClassReference(unwrapLiteralExpression(returned), checker) : undefined
 }

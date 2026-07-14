@@ -169,7 +169,7 @@ export async function runPraxis(
     }
     if (command === 'mcp') {
       if (args.length > 0) throw new PraxisCommandError(`Unknown mcp option ${args[0]}.`)
-      const result = await buildApplication(cwd)
+      const result = await buildApplication(cwd, true)
       const { startGnosisServer } = await loadGnosisTools()
       await startGnosisServer(result.manifest)
       return 0
@@ -1338,7 +1338,7 @@ services:
   await installGnosisRegistration(directory)
 }
 
-async function buildApplication(cwd: string) {
+async function buildApplication(cwd: string, protocolStdio = false) {
   if (await fileExists(path.join(cwd, 'app.config.ts'))) {
     const { prepareApplication } = await loadCompiler()
     await prepareApplication({
@@ -1346,7 +1346,11 @@ async function buildApplication(cwd: string) {
       frameworkFile: path.join(cwd, '.doxa/framework.ts'),
     })
   }
-  const code = await runProcess(process.execPath, [typescriptCli(), '-p', 'tsconfig.json'], cwd)
+  const code = await (protocolStdio ? runProtocolBuild : runProcess)(
+    process.execPath,
+    [typescriptCli(), '-p', 'tsconfig.json'],
+    cwd,
+  )
   if (code !== 0) throw new PraxisCommandError(`TypeScript build failed with exit code ${code}.`)
   const result = await compile(cwd)
   await writeGnosisKnowledge(cwd, result.manifest)
@@ -1659,6 +1663,23 @@ function runProcess(
 ): Promise<number> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, [...args], { cwd, stdio: 'inherit', env: environment })
+    child.once('error', reject)
+    child.once('exit', (code, signal) => resolve(code ?? (signal ? 1 : 0)))
+  })
+}
+
+function runProtocolBuild(
+  command: string,
+  args: readonly string[],
+  cwd: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, [...args], {
+      cwd,
+      stdio: ['ignore', process.stderr, process.stderr],
+      env: environment,
+    })
     child.once('error', reject)
     child.once('exit', (code, signal) => resolve(code ?? (signal ? 1 : 0)))
   })

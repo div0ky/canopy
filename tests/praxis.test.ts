@@ -398,7 +398,7 @@ describe('Praxis command suite', () => {
       `packages:\n  - .\n\nallowBuilds:\n  esbuild: true\n`,
     )
     expect(await readFile(path.join(destination, '.codex/config.toml'), 'utf8')).toBe(
-      `[mcp_servers.gnosis]\ncommand = "node"\nargs = ["./node_modules/@doxajs/praxis/dist/bin.js","mcp"]\ncwd = ".."\nstartup_timeout_sec = 120\n`,
+      `[mcp_servers.gnosis]\ncommand = "node"\nargs = ["./node_modules/@doxajs/praxis/dist/bin.js","mcp"]\nstartup_timeout_sec = 120\n`,
     )
     expect(JSON.parse(await readFile(path.join(destination, '.mcp.json'), 'utf8'))).toEqual({
       mcpServers: {
@@ -576,6 +576,7 @@ describe('Praxis command suite', () => {
     expect(codex).toContain('model = "gpt-example"')
     expect(codex).toContain('[mcp_servers.existing]')
     expect(codex.match(/\[mcp_servers\.gnosis\]/g)).toHaveLength(1)
+    expect(codex).not.toContain('cwd =')
     expect(JSON.parse(claude)).toEqual({
       mcpServers: {
         existing: { command: 'existing-server' },
