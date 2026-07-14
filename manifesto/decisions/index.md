@@ -161,6 +161,9 @@ observable programming contract remains to be specified.
 27. [Name the framework Doxa.js](0027-doxajs-framework-name.md) — Accepted on 2026-07-11.
 28. [Name Doxa's realtime broadcasting implementation Keryx](0028-keryx-realtime-broadcasting.md) —
     Accepted on 2026-07-11.
+29. [Provide typed model queries and relationships](0029-typed-model-queries-relationships.md) —
+    Accepted on 2026-07-13; builder-level bulk mutation and a public typed join projection API are
+    explicitly deferred.
 
 ## Adding a decision
 
