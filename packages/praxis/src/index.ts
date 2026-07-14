@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { fork, spawn, type ChildProcess } from 'node:child_process'
@@ -1822,16 +1822,22 @@ async function makeFeature(cwd: string, rawName: string): Promise<void> {
   const name = pascal(rawName)
   const segment = kebab(name)
   const directory = path.join(cwd, 'src', 'features', segment)
+  const file = path.join(directory, `${segment}.feature.ts`)
   await mkdir(directory, { recursive: true })
   await writeNew(
-    path.join(directory, `${segment}.feature.ts`),
+    file,
     `import { Feature } from '@doxajs/core'\n\nexport class ${name}Feature extends Feature {\n  id = '${segment}'\n}\n`,
   )
-  await registerApplicationFeature(
-    path.join(cwd, 'app.config.ts'),
-    `${name}Feature`,
-    `./src/features/${segment}/${segment}.feature.js`,
-  )
+  try {
+    await registerApplicationFeature(
+      path.join(cwd, 'app.config.ts'),
+      `${name}Feature`,
+      `./src/features/${segment}/${segment}.feature.js`,
+    )
+  } catch (error) {
+    await rm(file, { force: true })
+    throw error
+  }
 }
 
 async function registerApplicationFeature(
@@ -1890,21 +1896,46 @@ async function makeRole(
   const folder = definition.folder
   const className = pascal(target.name)
   const fileName = `${kebab(className)}.ts`
-  const directory = path.join(cwd, 'src', 'features', target.feature, folder)
-  const featureFile = path.join(
-    cwd,
-    'src',
-    'features',
-    target.feature,
-    `${target.feature}.feature.ts`,
-  )
+  const featureFile = await resolveFeatureFile(cwd, target.feature)
+  const directory = path.join(path.dirname(featureFile), folder)
   await mkdir(directory, { recursive: true })
   const source = definition.source(className)
   const file = path.join(directory, fileName)
   await writeNew(file, source)
-  if (field)
-    await registerFeatureClass(featureFile, field, className, `./${folder}/${kebab(className)}.js`)
+  try {
+    if (field)
+      await registerFeatureClass(
+        featureFile,
+        field,
+        role,
+        className,
+        `./${folder}/${kebab(className)}.js`,
+      )
+  } catch (error) {
+    await rm(file, { force: true })
+    throw error
+  }
   return file
+}
+
+async function resolveFeatureFile(cwd: string, feature: string): Promise<string> {
+  const conventional = path.join(cwd, 'src', 'features', feature, `${feature}.feature.ts`)
+  if (await fileExists(conventional)) return conventional
+
+  let applicationSource: string
+  try {
+    applicationSource = await readFile(path.join(cwd, 'app.config.ts'), 'utf8')
+  } catch {
+    return conventional
+  }
+  const featureClass = `${pascal(feature)}Feature`
+  const featureImport = namedImports(applicationSource).find(
+    (binding) => binding.local === featureClass && binding.specifier.startsWith('.'),
+  )
+  if (!featureImport) return conventional
+  const sourceSpecifier = featureImport.specifier.replace(/\.js$/, '.ts')
+  const imported = path.resolve(cwd, sourceSpecifier)
+  return (await fileExists(imported)) ? imported : conventional
 }
 
 function roleDefinition(
@@ -1937,8 +1968,8 @@ function roleDefinition(
     }
   if (role === 'action' || role === 'query')
     return {
-      field: `${role}s`,
-      folder: `${role}s`,
+      field: role === 'query' ? 'queries' : 'actions',
+      folder: role === 'query' ? 'queries' : 'actions',
       source: (name) =>
         `import { ${pascal(role)} } from '@doxajs/core'\n\nexport class ${name} extends ${pascal(role)}<void, void> {\n  static id = '${kebab(name)}'\n  static override readonly access = '${access}'\n\n  async handle(): Promise<void> {\n    // TODO: implement ${name}.\n  }\n}\n`,
     }
@@ -2104,23 +2135,83 @@ function roleDefinition(
 async function registerFeatureClass(
   featureFile: string,
   field: string,
+  role: GeneratorRole,
   className: string,
   specifier: string,
 ): Promise<void> {
   let source = await readFile(featureFile, 'utf8')
-  if (source.includes(`{ ${className} }`))
-    throw new PraxisCommandError(`${className} is already registered.`)
-  source = source.replace(/(export class )/, `import { ${className} } from '${specifier}'\n\n$1`)
   const existing = new RegExp(`(\\n  ${field}\\s*=\\s*\\[)([^\\]]*)(\\])`)
+  const match = existing.exec(source)
+  const registered = new Set(
+    (match?.[2] ?? '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+  )
+  const imports = namedImports(source)
+  const exactImport = imports.find(
+    (binding) => binding.imported === className && binding.specifier === specifier,
+  )
+  if (exactImport && registered.has(exactImport.local))
+    throw new PraxisCommandError(`${className} is already registered.`)
+
+  const localName = exactImport?.local ?? availableRoleName(imports, className, role)
+  if (!exactImport) {
+    const importedName = localName === className ? className : `${className} as ${localName}`
+    const updated = source.replace(
+      /(export class )/,
+      `import { ${importedName} } from '${specifier}'\n\n$1`,
+    )
+    if (updated === source)
+      throw new PraxisCommandError('Feature must export a class before roles can be registered.')
+    source = updated
+  }
   if (existing.test(source)) {
     source = source.replace(existing, (_match, open: string, contents: string, close: string) => {
       const trimmed = contents.trim()
-      return `${open}${trimmed ? `${trimmed}, ` : ''}${className}${close}`
+      return `${open}${trimmed ? `${trimmed}, ` : ''}${localName}${close}`
     })
   } else {
-    source = source.replace(/\n}\s*$/, `\n  ${field} = [${className}]\n}\n`)
+    const updated = source.replace(/\n}\s*$/, `\n  ${field} = [${localName}]\n}\n`)
+    if (updated === source)
+      throw new PraxisCommandError(
+        'Feature must end with a class declaration before roles can be registered.',
+      )
+    source = updated
   }
   await writeFile(featureFile, source, 'utf8')
+}
+
+interface NamedImport {
+  readonly imported: string
+  readonly local: string
+  readonly specifier: string
+}
+
+function namedImports(source: string): NamedImport[] {
+  const imports: NamedImport[] = []
+  for (const match of source.matchAll(/import\s*{([^}]*)}\s*from\s*['"]([^'"]+)['"]/g)) {
+    const specifier = match[2]!
+    for (const entry of match[1]!.split(',')) {
+      const [imported, local = imported] = entry.trim().split(/\s+as\s+/)
+      if (imported) imports.push({ imported, local: local!, specifier })
+    }
+  }
+  return imports
+}
+
+function availableRoleName(
+  imports: readonly NamedImport[],
+  className: string,
+  role: GeneratorRole,
+): string {
+  const used = new Set(imports.map((binding) => binding.local))
+  if (!used.has(className)) return className
+  const base = `${className}${pascal(role)}`
+  let candidate = base
+  let suffix = 2
+  while (used.has(candidate)) candidate = `${base}${suffix++}`
+  return candidate
 }
 
 function generatorRole(command: string): GeneratorRole | undefined {

@@ -58,6 +58,84 @@ describe('Praxis command suite', () => {
     expect(errors).toEqual([])
   })
 
+  it('generates App roles beside the Feature created by doxa new', async () => {
+    const root = await temporaryDirectory()
+    const destination = path.join(root, 'example')
+    const errors: string[] = []
+    const io = {
+      out: () => undefined,
+      error: (message: string) => errors.push(message),
+    }
+
+    expect(await runPraxis(['new', 'Example', `--directory=${destination}`], root, io)).toBe(0)
+    expect(await runPraxis(['make:model', 'App/Contact'], destination, io)).toBe(0)
+    expect(await fileExists(path.join(destination, 'src/app/models/contact.ts'))).toBe(true)
+    expect(await readFile(path.join(destination, 'src/app/app.feature.ts'), 'utf8')).toContain(
+      'models = [Contact]',
+    )
+
+    await symlink(path.join(workspace, 'node_modules'), path.join(destination, 'node_modules'))
+    expect(await runPraxis(['build'], destination, io)).toBe(0)
+    expect(errors).toEqual([])
+  })
+
+  it('pluralizes queries and permits same-named classes in different roles', async () => {
+    const root = await temporaryDirectory()
+    const destination = path.join(root, 'example')
+    const output: string[] = []
+    const errors: string[] = []
+    const io = {
+      out: (message: string) => output.push(message),
+      error: (message: string) => errors.push(message),
+    }
+
+    expect(await runPraxis(['new', 'Example', `--directory=${destination}`], root, io)).toBe(0)
+    expect(await runPraxis(['make:feature', 'Crm'], destination, io)).toBe(0)
+    expect(await runPraxis(['make:query', 'Crm/CurrentUser', '--public'], destination, io)).toBe(0)
+    expect(
+      await runPraxis(['make:route', 'Crm/CurrentUser', '--path=/current-user'], destination, io),
+    ).toBe(0)
+
+    const feature = await readFile(
+      path.join(destination, 'src/features/crm/crm.feature.ts'),
+      'utf8',
+    )
+    expect(feature).toContain("import { CurrentUser } from './queries/current-user.js'")
+    expect(feature).toContain(
+      "import { CurrentUser as CurrentUserRoute } from './http/current-user.js'",
+    )
+    expect(feature).toContain('queries = [CurrentUser]')
+    expect(feature).toContain('routes = [CurrentUserRoute]')
+    expect(
+      await fileExists(path.join(destination, 'src/features/crm/querys/current-user.ts')),
+    ).toBe(false)
+
+    await symlink(path.join(workspace, 'node_modules'), path.join(destination, 'node_modules'))
+    expect(await runPraxis(['graph'], destination, io)).toBe(0)
+    expect(output).toContainEqual(expect.stringMatching(/^queries\s+1$/))
+    expect(errors).toEqual([])
+  })
+
+  it('removes a generated role file when Feature registration fails', async () => {
+    const root = await temporaryDirectory()
+    const featureDirectory = path.join(root, 'src/features/accounts')
+    await mkdir(featureDirectory, { recursive: true })
+    await writeFile(
+      path.join(featureDirectory, 'accounts.feature.ts'),
+      `import { Feature } from '@doxajs/core'\n\nimport { Contact } from './models/contact.js'\n\nexport class AccountsFeature extends Feature {\n  id = 'accounts'\n  models = [Contact]\n}\n`,
+    )
+    const errors: string[] = []
+
+    expect(
+      await runPraxis(['make:model', 'Accounts/Contact'], root, {
+        out: () => undefined,
+        error: (message) => errors.push(message),
+      }),
+    ).toBe(1)
+    expect(errors).toEqual(['Contact is already registered.'])
+    expect(await fileExists(path.join(featureDirectory, 'models/contact.ts'))).toBe(false)
+  })
+
   it('fails closed when an operation generator omits its authorization posture', async () => {
     const root = await temporaryDirectory()
     const errors: string[] = []
