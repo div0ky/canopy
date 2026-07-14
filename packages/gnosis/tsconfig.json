@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "../../.cache/tsbuildinfo/gnosis.tsbuildinfo"
+  },
+  "references": [{ "path": "../introspection" }, { "path": "../manifest" }],
+  "include": ["src/**/*.ts"]
+}

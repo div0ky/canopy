@@ -3,6 +3,8 @@
   "references": [
     { "path": "packages/core" },
     { "path": "packages/manifest" },
+    { "path": "packages/introspection" },
+    { "path": "packages/gnosis" },
     { "path": "packages/compiler" },
     { "path": "packages/praxis" },
     { "path": "packages/sendgrid" },

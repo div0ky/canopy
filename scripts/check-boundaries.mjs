@@ -34,6 +34,8 @@ const allowedDoxaDependencies = new Map(
   Object.entries({
     '@doxajs/core': [],
     '@doxajs/manifest': [],
+    '@doxajs/introspection': ['@doxajs/manifest'],
+    '@doxajs/gnosis': ['@doxajs/introspection', '@doxajs/manifest'],
     '@doxajs/compiler': ['@doxajs/manifest'],
     '@doxajs/runtime': ['@doxajs/core', '@doxajs/manifest'],
     '@doxajs/http-hono': ['@doxajs/core', '@doxajs/runtime'],
@@ -50,7 +52,9 @@ const allowedDoxaDependencies = new Map(
       '@doxajs/auth-postgres',
       '@doxajs/compiler',
       '@doxajs/core',
+      '@doxajs/gnosis',
       '@doxajs/http-hono',
+      '@doxajs/introspection',
       '@doxajs/postgres-drizzle',
       '@doxajs/queue-pg-boss',
       '@doxajs/runtime',

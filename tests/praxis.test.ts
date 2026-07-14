@@ -397,6 +397,37 @@ describe('Praxis command suite', () => {
     expect(await readFile(path.join(destination, 'pnpm-workspace.yaml'), 'utf8')).toBe(
       `packages:\n  - .\n\nallowBuilds:\n  esbuild: true\n`,
     )
+    expect(await readFile(path.join(destination, '.codex/config.toml'), 'utf8')).toBe(
+      `[mcp_servers.gnosis]\ncommand = "node"\nargs = ["./node_modules/@doxajs/praxis/dist/bin.js","mcp"]\ncwd = ".."\nstartup_timeout_sec = 120\n`,
+    )
+    expect(JSON.parse(await readFile(path.join(destination, '.mcp.json'), 'utf8'))).toEqual({
+      mcpServers: {
+        gnosis: {
+          command: 'node',
+          args: ['./node_modules/@doxajs/praxis/dist/bin.js', 'mcp'],
+          env: {},
+        },
+      },
+    })
+    expect(JSON.parse(await readFile(path.join(destination, '.cursor/mcp.json'), 'utf8'))).toEqual({
+      mcpServers: {
+        gnosis: {
+          command: 'node',
+          args: ['./node_modules/@doxajs/praxis/dist/bin.js', 'mcp'],
+          env: {},
+        },
+      },
+    })
+    expect(JSON.parse(await readFile(path.join(destination, '.vscode/mcp.json'), 'utf8'))).toEqual({
+      servers: {
+        gnosis: {
+          type: 'stdio',
+          command: 'node',
+          args: ['./node_modules/@doxajs/praxis/dist/bin.js', 'mcp'],
+          cwd: '${workspaceFolder}',
+        },
+      },
+    })
     const dockerfile = await readFile(path.join(destination, 'Dockerfile'), 'utf8')
     expect(dockerfile).toContain('FROM node:${NODE_VERSION}-bookworm-slim AS runtime')
     expect(dockerfile).toContain('RUN pnpm build')
@@ -518,6 +549,50 @@ describe('Praxis command suite', () => {
       await harness.shutdown()
     }
     expect(errors).toEqual([])
+  })
+
+  it('installs selected Gnosis clients idempotently without replacing unrelated configuration', async () => {
+    const root = await temporaryDirectory()
+    await mkdir(path.join(root, '.codex'), { recursive: true })
+    await writeFile(
+      path.join(root, '.codex/config.toml'),
+      `model = "gpt-example"\n\n[mcp_servers.existing]\ncommand = "existing-server"\n`,
+    )
+    await writeFile(
+      path.join(root, '.mcp.json'),
+      `${JSON.stringify({ mcpServers: { existing: { command: 'existing-server' } } }, null, 2)}\n`,
+    )
+    const output: string[] = []
+    const io = {
+      out: (message: string) => output.push(message),
+      error: (message: string) => {
+        throw new Error(message)
+      },
+    }
+
+    expect(await runPraxis(['gnosis:install', '--agent=codex,claude'], root, io)).toBe(0)
+    const codex = await readFile(path.join(root, '.codex/config.toml'), 'utf8')
+    const claude = await readFile(path.join(root, '.mcp.json'), 'utf8')
+    expect(codex).toContain('model = "gpt-example"')
+    expect(codex).toContain('[mcp_servers.existing]')
+    expect(codex.match(/\[mcp_servers\.gnosis\]/g)).toHaveLength(1)
+    expect(JSON.parse(claude)).toEqual({
+      mcpServers: {
+        existing: { command: 'existing-server' },
+        gnosis: {
+          command: 'node',
+          args: ['./node_modules/@doxajs/praxis/dist/bin.js', 'mcp'],
+          env: {},
+        },
+      },
+    })
+    expect(await fileExists(path.join(root, '.cursor/mcp.json'))).toBe(false)
+    expect(await fileExists(path.join(root, '.vscode/mcp.json'))).toBe(false)
+
+    expect(await runPraxis(['gnosis:install', '--agent=codex,claude'], root, io)).toBe(0)
+    expect(await readFile(path.join(root, '.codex/config.toml'), 'utf8')).toBe(codex)
+    expect(await readFile(path.join(root, '.mcp.json'), 'utf8')).toBe(claude)
+    expect(output.at(-1)).toContain('Your MCP client will start it on demand.')
   })
 
   it('installs and wires Theoria without manual package or Feature edits', async () => {
@@ -782,6 +857,10 @@ describe('Praxis command suite', () => {
       ['exec', 'doxa', 'migrate:status'],
       ['test'],
     ])
+    expect(await fileExists(path.join(root, '.codex/config.toml'))).toBe(true)
+    expect(await fileExists(path.join(root, '.mcp.json'))).toBe(true)
+    expect(await fileExists(path.join(root, '.cursor/mcp.json'))).toBe(true)
+    expect(await fileExists(path.join(root, '.vscode/mcp.json'))).toBe(true)
   })
 
   it('describes same-version continuation as validated alignment', async () => {

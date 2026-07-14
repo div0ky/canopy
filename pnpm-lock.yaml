@@ -27,9 +27,15 @@ importers:
       '@doxajs/core':
         specifier: workspace:*
         version: link:packages/core
+      '@doxajs/gnosis':
+        specifier: workspace:*
+        version: link:packages/gnosis
       '@doxajs/http-hono':
         specifier: workspace:*
         version: link:packages/http-hono
+      '@doxajs/introspection':
+        specifier: workspace:*
+        version: link:packages/introspection
       '@doxajs/keryx':
         specifier: workspace:*
         version: link:packages/keryx
@@ -63,6 +69,9 @@ importers:
       '@eslint/js':
         specifier: 10.0.1
         version: 10.0.1(eslint@10.6.0(jiti@2.7.0))
+      '@modelcontextprotocol/sdk':
+        specifier: 1.29.0
+        version: 1.29.0(zod@4.4.3)
       '@testcontainers/postgresql':
         specifier: 12.0.4
         version: 12.0.4
@@ -255,6 +264,21 @@ importers:
 
   packages/core: {}
 
+  packages/gnosis:
+    dependencies:
+      '@doxajs/introspection':
+        specifier: workspace:*
+        version: link:../introspection
+      '@doxajs/manifest':
+        specifier: workspace:*
+        version: link:../manifest
+      '@modelcontextprotocol/sdk':
+        specifier: 1.29.0
+        version: 1.29.0(zod@4.4.3)
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+
   packages/http-hono:
     dependencies:
       '@doxajs/core':
@@ -269,6 +293,12 @@ importers:
       hono:
         specifier: 4.12.29
         version: 4.12.29
+
+  packages/introspection:
+    dependencies:
+      '@doxajs/manifest':
+        specifier: workspace:*
+        version: link:../manifest
 
   packages/keryx:
     dependencies:
@@ -309,6 +339,9 @@ importers:
       '@doxajs/http-hono':
         specifier: workspace:*
         version: link:../http-hono
+      '@doxajs/introspection':
+        specifier: workspace:*
+        version: link:../introspection
       '@doxajs/queue-pg-boss':
         specifier: workspace:*
         version: link:../queue-pg-boss
@@ -326,9 +359,15 @@ importers:
       '@doxajs/compiler':
         specifier: workspace:*
         version: link:../compiler
+      '@doxajs/gnosis':
+        specifier: workspace:*
+        version: link:../gnosis
       '@doxajs/theoria':
         specifier: workspace:*
         version: link:../theoria
+      typescript:
+        specifier: 6.0.2
+        version: 6.0.2
 
   packages/queue-pg-boss:
     dependencies:
@@ -7037,6 +7076,28 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@modelcontextprotocol/sdk@1.29.0(zod@4.4.3)':
+    dependencies:
+      '@hono/node-server': 1.19.14(hono@4.12.29)
+      ajv: 8.20.0
+      ajv-formats: 3.0.1(ajv@8.20.0)
+      content-type: 1.0.5
+      cors: 2.8.6
+      cross-spawn: 7.0.6
+      eventsource: 3.0.7
+      eventsource-parser: 3.1.0
+      express: 5.2.1
+      express-rate-limit: 8.5.2(express@5.2.1)
+      hono: 4.12.29
+      jose: 6.2.3
+      json-schema-typed: 8.0.2
+      pkce-challenge: 5.0.1
+      raw-body: 3.0.2
+      zod: 4.4.3
+      zod-to-json-schema: 3.25.2(zod@4.4.3)
+    transitivePeerDependencies:
+      - supports-color
+
   '@napi-rs/wasm-runtime@1.1.6(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
     dependencies:
       '@emnapi/core': 1.10.0
@@ -12256,6 +12317,10 @@ snapshots:
   zod-to-json-schema@3.25.2(zod@3.25.76):
     dependencies:
       zod: 3.25.76
+
+  zod-to-json-schema@3.25.2(zod@4.4.3):
+    dependencies:
+      zod: 4.4.3
 
   zod-validation-error@4.0.2(zod@4.4.3):
     dependencies:

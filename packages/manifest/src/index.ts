@@ -1,4 +1,4 @@
-export const MANIFEST_FORMAT_VERSION = 2 as const
+export const MANIFEST_FORMAT_VERSION = 3 as const
 
 export type Scope = 'singleton' | 'execution' | 'transient'
 
@@ -111,7 +111,8 @@ export interface ModelManifestEntry {
   readonly name: string
   readonly exportName: string
   readonly entityType: string
-  readonly attributes?: readonly string[]
+  readonly attributes: readonly string[]
+  readonly relationships: readonly ModelRelationshipManifest[]
   readonly storage:
     | { readonly kind: 'entity-state' }
     | {
@@ -124,6 +125,32 @@ export interface ModelManifestEntry {
       }
   readonly source: SourceProvenance
 }
+
+export type ModelRelationshipManifest =
+  | {
+      readonly name: string
+      readonly kind: 'belongsTo'
+      readonly relatedModelId: string
+      readonly foreignKey: string
+      readonly ownerKey: string
+    }
+  | {
+      readonly name: string
+      readonly kind: 'hasOne' | 'hasMany'
+      readonly relatedModelId: string
+      readonly localKey: string
+      readonly foreignKey: string
+    }
+  | {
+      readonly name: string
+      readonly kind: 'belongsToMany'
+      readonly relatedModelId: string
+      readonly throughModelId: string
+      readonly localKey: string
+      readonly relatedKey: string
+      readonly foreignKey: string
+      readonly relatedForeignKey: string
+    }
 
 export type ModelObserverPhase =
   'retrieved' | 'saving' | 'creating' | 'updating' | 'created' | 'updated' | 'saved' | 'committed'
@@ -350,6 +377,94 @@ export function assertManifest(value: unknown): asserts value is DoxaManifest {
   ) {
     throw new ManifestCompatibilityError('Doxa manifest is missing required graph sections.')
   }
+
+  assertManifestEntry(value.application, 'application')
+  for (const [section, entries] of Object.entries({
+    plugins: value.plugins,
+    features: value.features,
+    configurations: value.configurations,
+    providers: value.providers,
+    actions: value.actions,
+    queries: value.queries,
+    models: value.models,
+    observers: value.observers,
+    routes: value.routes,
+    events: value.events,
+    listeners: value.listeners,
+    jobs: value.jobs,
+    schedules: value.schedules,
+    policies: value.policies,
+    signals: value.signals,
+    signalHandlers: value.signalHandlers,
+    commands: value.commands,
+  })) {
+    for (const entry of entries) assertManifestEntry(entry, section)
+  }
+  for (const model of value.models) {
+    if (!Array.isArray(model.attributes) || !model.attributes.every(nonEmptyString)) {
+      throw new ManifestCompatibilityError(
+        `Doxa manifest model ${model.id} has invalid attributes.`,
+      )
+    }
+    if (!Array.isArray(model.relationships)) {
+      throw new ManifestCompatibilityError(
+        `Doxa manifest model ${model.id} has invalid relationships.`,
+      )
+    }
+    for (const relationship of model.relationships) {
+      if (
+        !isRecord(relationship) ||
+        !nonEmptyString(relationship.name) ||
+        !nonEmptyString(relationship.kind) ||
+        !nonEmptyString(relationship.relatedModelId)
+      ) {
+        throw new ManifestCompatibilityError(
+          `Doxa manifest model ${model.id} has an invalid relationship.`,
+        )
+      }
+      assertModelRelationship(model.id, relationship)
+    }
+  }
+}
+
+function assertManifestEntry(
+  value: unknown,
+  section: string,
+): asserts value is Record<string, unknown> {
+  if (!isRecord(value) || !nonEmptyString(value.id)) {
+    throw new ManifestCompatibilityError(`Doxa manifest ${section} entry must have a stable ID.`)
+  }
+  const source = value.source
+  if (
+    !isRecord(source) ||
+    !nonEmptyString(source.file) ||
+    !Number.isInteger(source.line) ||
+    !Number.isInteger(source.column)
+  ) {
+    throw new ManifestCompatibilityError(
+      `Doxa manifest ${section} entry ${value.id} has invalid source provenance.`,
+    )
+  }
+}
+
+function assertModelRelationship(modelId: string, value: Record<string, unknown>): void {
+  const keys =
+    value.kind === 'belongsTo'
+      ? ['foreignKey', 'ownerKey']
+      : value.kind === 'hasOne' || value.kind === 'hasMany'
+        ? ['localKey', 'foreignKey']
+        : value.kind === 'belongsToMany'
+          ? ['throughModelId', 'localKey', 'relatedKey', 'foreignKey', 'relatedForeignKey']
+          : undefined
+  if (!keys || !keys.every((key) => nonEmptyString(value[key]))) {
+    throw new ManifestCompatibilityError(
+      `Doxa manifest model ${modelId} has an invalid ${String(value.kind)} relationship.`,
+    )
+  }
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

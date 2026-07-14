@@ -3,6 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { PraxisCommandError } from './errors.js'
+import { installGnosisRegistration } from './gnosis-registration.js'
 
 export interface CapturedProcess {
   readonly code: number
@@ -459,6 +460,11 @@ async function applyBuiltInRecipe(
 ): Promise<void> {
   if (recipe === 'framework-owned-application-core') {
     await migrateFrameworkOwnedApplicationCore(cwd, packageJson, io)
+    return
+  }
+  if (recipe === 'gnosis-agent-registration') {
+    const files = await installGnosisRegistration(cwd)
+    io.out(`Registered Gnosis project MCP clients in ${files.join(', ')}.`)
     return
   }
   throw new PraxisCommandError(

@@ -17,6 +17,7 @@ import {
   type ListenerManifestEntry,
   type JobManifestEntry,
   type ModelManifestEntry,
+  type ModelRelationshipManifest,
   type OperationManifestEntry,
   type ObserverManifestEntry,
   type ProviderManifestEntry,
@@ -39,8 +40,6 @@ import {
 
 export { DoxaCompilationError } from './errors.js'
 
-const FRAMEWORK_VERSION = '0.1.0'
-const COMPILER_VERSION = '0.1.0'
 const DECLARATION_FIELDS = new Set([
   'id',
   'features',
@@ -292,6 +291,14 @@ export async function compileApplication(
   for (const [model, root] of modelRoots) {
     registerModel(model, root.ownerId)
   }
+  for (const [declaration, entry] of modelByDeclaration) {
+    const updated = {
+      ...entry,
+      relationships: compileModelRelationships(declaration),
+    } satisfies ModelManifestEntry
+    modelByDeclaration.set(declaration, updated)
+    models[models.indexOf(entry)] = updated
+  }
   for (const [observer, root] of observerRoots) registerObserver(observer, root.ownerId)
   for (const [event, root] of eventRoots) {
     registerEvent(event, root.ownerId)
@@ -427,11 +434,12 @@ export async function compileApplication(
     source: sourceOf(applicationDeclaration, normalized.projectRoot),
   }
 
+  const compilerVersion = await installedCompilerVersion()
   const semanticManifest = {
     formatVersion: MANIFEST_FORMAT_VERSION,
     applicationId,
-    frameworkVersion: FRAMEWORK_VERSION,
-    compilerVersion: COMPILER_VERSION,
+    frameworkVersion: compilerVersion,
+    compilerVersion,
     application,
     plugins: [...plugins].sort(byId),
     features: [...features].sort(byId),
@@ -908,12 +916,130 @@ export async function compileApplication(
       exportName: name,
       entityType: `model:${ownerId}/${localId}`,
       attributes: compileModelAttributes(declaration),
+      relationships: [],
       storage: compileModelStorage(declaration),
       source: sourceOf(declaration, normalized.projectRoot),
     }
     modelByDeclaration.set(declaration, entry)
     models.push(entry)
     return entry
+  }
+
+  function compileModelRelationships(
+    declaration: ts.ClassDeclaration,
+  ): readonly ModelRelationshipManifest[] {
+    const property = staticProperty(declaration, 'relationships')
+    if (!property) return []
+    const initializer = property.initializer
+      ? unwrapLiteralExpression(property.initializer)
+      : undefined
+    if (!initializer || !ts.isObjectLiteralExpression(initializer)) {
+      fail(property, `${requiredClassName(declaration)}.relationships must be a literal object.`)
+    }
+    return initializer.properties
+      .map((member): ModelRelationshipManifest => {
+        if (!ts.isPropertyAssignment(member)) {
+          fail(member, 'Model relationships must use explicit property assignments.')
+        }
+        const name = propertyName(member.name)
+        const call = unwrapLiteralExpression(member.initializer)
+        if (!name || !ts.isCallExpression(call) || !ts.isIdentifier(call.expression)) {
+          fail(member, 'Model relationships must call a Doxa relationship helper directly.')
+        }
+        const kind = call.expression.text
+        if (!['belongsTo', 'hasOne', 'hasMany', 'belongsToMany'].includes(kind)) {
+          fail(call, `Unsupported model relationship helper ${kind}.`)
+        }
+        const related = resolveModelReference(call.arguments[0], checker)
+        const relatedEntry = related ? modelByDeclaration.get(related) : undefined
+        if (!relatedEntry) {
+          fail(call, `${name} must reference a model selected by an application Feature.`)
+        }
+        const options = relationshipOptions(call.arguments[1], name, call)
+        if (kind === 'belongsTo') {
+          return {
+            name,
+            kind,
+            relatedModelId: relatedEntry.id,
+            foreignKey: relationshipString(options, 'foreignKey', name),
+            ownerKey: relationshipString(options, 'ownerKey', name, 'id'),
+          }
+        }
+        if (kind === 'hasOne' || kind === 'hasMany') {
+          return {
+            name,
+            kind,
+            relatedModelId: relatedEntry.id,
+            localKey: relationshipString(options, 'localKey', name, 'id'),
+            foreignKey: relationshipString(options, 'foreignKey', name),
+          }
+        }
+        const through = resolveModelReference(
+          relationshipProperty(options, 'through', name).initializer,
+          checker,
+        )
+        const throughEntry = through ? modelByDeclaration.get(through) : undefined
+        if (!throughEntry) {
+          fail(call, `${name}.through must reference a model selected by an application Feature.`)
+        }
+        return {
+          name,
+          kind: 'belongsToMany',
+          relatedModelId: relatedEntry.id,
+          throughModelId: throughEntry.id,
+          localKey: relationshipString(options, 'localKey', name, 'id'),
+          relatedKey: relationshipString(options, 'relatedKey', name, 'id'),
+          foreignKey: relationshipString(options, 'foreignKey', name),
+          relatedForeignKey: relationshipString(options, 'relatedForeignKey', name),
+        }
+      })
+      .sort((left, right) => left.name.localeCompare(right.name))
+  }
+
+  function relationshipOptions(
+    node: ts.Expression | undefined,
+    name: string,
+    source: ts.Node,
+  ): ts.ObjectLiteralExpression {
+    const unwrapped = node ? unwrapLiteralExpression(node) : undefined
+    if (!unwrapped || !ts.isObjectLiteralExpression(unwrapped)) {
+      fail(node ?? source, `${name} relationship options must be a literal object.`)
+    }
+    return unwrapped
+  }
+
+  function relationshipProperty(
+    options: ts.ObjectLiteralExpression,
+    key: string,
+    relationship: string,
+  ): ts.PropertyAssignment {
+    const property = options.properties.find(
+      (entry): entry is ts.PropertyAssignment =>
+        ts.isPropertyAssignment(entry) && propertyName(entry.name) === key,
+    )
+    if (!property) fail(options, `${relationship}.${key} is required.`)
+    return property
+  }
+
+  function relationshipString(
+    options: ts.ObjectLiteralExpression,
+    key: string,
+    relationship: string,
+    fallback?: string,
+  ): string {
+    const property = options.properties.find(
+      (entry): entry is ts.PropertyAssignment =>
+        ts.isPropertyAssignment(entry) && propertyName(entry.name) === key,
+    )
+    if (!property) {
+      if (fallback !== undefined) return fallback
+      fail(options, `${relationship}.${key} is required.`)
+    }
+    const value = unwrapLiteralExpression(property.initializer)
+    if (!ts.isStringLiteral(value) || value.text.length === 0) {
+      fail(property, `${relationship}.${key} must be a non-empty string literal.`)
+    }
+    return value.text
   }
 
   function compileModelAttributes(declaration: ts.ClassDeclaration): readonly string[] {
@@ -1573,6 +1699,16 @@ function normalizeOptions(options: CompileApplicationOptions): NormalizedOptions
   }
 }
 
+async function installedCompilerVersion(): Promise<string> {
+  const packageJson = JSON.parse(
+    await readFile(new URL('../package.json', import.meta.url), 'utf8'),
+  ) as { version?: unknown }
+  if (typeof packageJson.version !== 'string' || packageJson.version.length === 0) {
+    throw new DoxaCompilationError('The installed Doxa compiler package has no valid version.')
+  }
+  return packageJson.version
+}
+
 function createProgram(tsconfigPath: string): ts.Program {
   const configFile = ts.readConfigFile(tsconfigPath, ts.sys.readFile)
   if (configFile.error) {
@@ -1710,6 +1846,19 @@ function resolveClassReference(
   }
   const declaration = symbol?.valueDeclaration ?? symbol?.declarations?.[0]
   return declaration && ts.isClassDeclaration(declaration) ? declaration : undefined
+}
+
+function resolveModelReference(
+  node: ts.Expression | undefined,
+  checker: ts.TypeChecker,
+): ts.ClassDeclaration | undefined {
+  if (!node) return undefined
+  const reference = unwrapLiteralExpression(node)
+  if (!ts.isArrowFunction(reference) && !ts.isFunctionExpression(reference)) return undefined
+  const returned = ts.isBlock(reference.body)
+    ? reference.body.statements.find(ts.isReturnStatement)?.expression
+    : reference.body
+  return returned ? resolveClassReference(unwrapLiteralExpression(returned), checker) : undefined
 }
 
 function classDeclarationForType(

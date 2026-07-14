@@ -1,0 +1,46 @@
+{
+  "name": "@doxajs/introspection",
+  "version": "0.1.0-alpha.11",
+  "description": "Typed, bounded, protocol-independent inspection of Doxa application manifests.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/div0ky/doxajs.git",
+    "directory": "packages/introspection"
+  },
+  "homepage": "https://github.com/div0ky/doxajs#readme",
+  "bugs": {
+    "url": "https://github.com/div0ky/doxajs/issues"
+  },
+  "keywords": [
+    "doxa",
+    "framework",
+    "introspection",
+    "diagnostics"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "NOTICE"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/prepare-package.mjs",
+    "postpack": "node ../../scripts/prepare-package.mjs --clean"
+  },
+  "dependencies": {
+    "@doxajs/manifest": "workspace:*"
+  }
+}

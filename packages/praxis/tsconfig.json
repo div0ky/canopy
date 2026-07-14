@@ -8,7 +8,9 @@
   "references": [
     { "path": "../compiler" },
     { "path": "../core" },
+    { "path": "../gnosis" },
     { "path": "../http-hono" },
+    { "path": "../introspection" },
     { "path": "../queue-pg-boss" },
     { "path": "../runtime" },
     { "path": "../theoria" }

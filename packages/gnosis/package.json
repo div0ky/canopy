@@ -1,0 +1,50 @@
+{
+  "name": "@doxajs/gnosis",
+  "version": "0.1.0-alpha.11",
+  "description": "The first-party local AI engineering server for Doxa applications.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/div0ky/doxajs.git",
+    "directory": "packages/gnosis"
+  },
+  "homepage": "https://github.com/div0ky/doxajs#readme",
+  "bugs": {
+    "url": "https://github.com/div0ky/doxajs/issues"
+  },
+  "keywords": [
+    "doxa",
+    "framework",
+    "mcp",
+    "ai",
+    "developer-tools"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "NOTICE"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/prepare-package.mjs",
+    "postpack": "node ../../scripts/prepare-package.mjs --clean"
+  },
+  "dependencies": {
+    "@doxajs/introspection": "workspace:*",
+    "@doxajs/manifest": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "zod": "4.4.3"
+  }
+}

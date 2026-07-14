@@ -134,7 +134,14 @@ try {
     maxBuffer: 20 * 1024 * 1024,
   })
   const productionStoreEntries = await readdir(path.join(runtimeConsumer, 'node_modules/.pnpm'))
-  for (const forbidden of ['@doxajs/compiler', '@doxajs/theoria', 'drizzle-kit', 'typescript']) {
+  for (const forbidden of [
+    '@doxajs/compiler',
+    '@doxajs/gnosis',
+    '@doxajs/theoria',
+    '@modelcontextprotocol/sdk',
+    'drizzle-kit',
+    'typescript',
+  ]) {
     const storePrefix = `${forbidden.replace('/', '+')}@`
     if (
       (await exists(path.join(runtimeConsumer, 'node_modules', ...forbidden.split('/')))) ||

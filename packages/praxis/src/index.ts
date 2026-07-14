@@ -6,6 +6,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { HonoHttpHost } from '@doxajs/http-hono'
 import {
+  createGnosisKnowledge,
+  inspectGraph,
+  inspectSurface,
+  type InspectionSurface,
+} from '@doxajs/introspection'
+import {
   cancelQueueJob,
   installQueueSchema,
   listQueueJobs,
@@ -26,6 +32,7 @@ import {
   required,
 } from './command-values.js'
 import { PraxisCommandError } from './errors.js'
+import { installGnosisRegistration, parseGnosisAgents } from './gnosis-registration.js'
 
 export { PraxisCommandError } from './errors.js'
 
@@ -56,6 +63,8 @@ Build and inspect:
   model:list            List models and physical storage ownership
   graph                 Summarize the compiled application graph
   gnosis                Generate Gnosis-readable application knowledge
+  gnosis:install        Register Gnosis with project MCP clients [--agent=codex,claude,cursor,vscode|all]
+  mcp                   Gnosis stdio entrypoint (normally launched by an MCP client)
   add <plugin>          Install sendgrid, twilio-sms, or theoria
   delivery:list         List durable mail and SMS deliveries
   delivery:retry <id>   Redrive a failed or undelivered delivery
@@ -153,6 +162,18 @@ export async function runPraxis(
       io.out(`Generated Gnosis knowledge for ${result.manifest.applicationId} at .doxa/gnosis.json`)
       return 0
     }
+    if (command === 'gnosis:install') {
+      const files = await installGnosisRegistration(cwd, parseGnosisAgents(args))
+      io.out(`Registered Gnosis in ${files.join(', ')}. Your MCP client will start it on demand.`)
+      return 0
+    }
+    if (command === 'mcp') {
+      if (args.length > 0) throw new PraxisCommandError(`Unknown mcp option ${args[0]}.`)
+      const result = await buildApplication(cwd)
+      const { startGnosisServer } = await loadGnosisTools()
+      await startGnosisServer(result.manifest)
+      return 0
+    }
     if (command === 'serve' || command === 'work' || command === 'schedule' || command === 'dev') {
       await runRuntimeCommand(command, cwd, args, io)
       return 0
@@ -192,61 +213,46 @@ export async function runPraxis(
       )
     }
     if (command === 'route:list' || command === 'model:list' || command === 'graph') {
-      const manifest = (await buildApplication(cwd)).manifest as unknown as Record<string, unknown>
+      const json = jsonOutput(args, command)
+      const manifest = (await buildApplication(cwd)).manifest
       if (command === 'route:list') {
-        const routes = manifest.routes as Array<{
-          method: string
-          path: string
-          id: string
-          access: string
-        }>
-        for (const route of routes)
-          io.out(
-            `${route.method.padEnd(7)} ${route.path.padEnd(32)} ${route.access.padEnd(24)} ${route.id}`,
-          )
+        const routes = inspectSurface(manifest, 'routes')
+        if (json) io.out(JSON.stringify(routes, null, 2))
+        else
+          for (const route of routes.items)
+            io.out(
+              `${String(route.method).padEnd(7)} ${String(route.path).padEnd(32)} ${String(route.access).padEnd(24)} ${String(route.id)}`,
+            )
       } else if (command === 'model:list') {
-        const models = manifest.models as Array<{
-          id: string
-          storage:
-            | { kind: 'entity-state' }
-            | { kind: 'table'; table: string; primaryKey: string; versionColumn?: string }
-        }>
-        for (const model of models) {
-          const storage =
-            model.storage.kind === 'entity-state'
-              ? 'doxa doxa_entity_states'
-              : `external ${model.storage.table} key=${model.storage.primaryKey} version=${model.storage.versionColumn ?? 'xmin'}`
-          io.out(`${model.id} ${storage}`)
-        }
+        const models = inspectSurface(manifest, 'models')
+        if (json) io.out(JSON.stringify(models, null, 2))
+        else
+          for (const model of models.items) {
+            const storage = model.storage as
+              | { kind: 'entity-state' }
+              | { kind: 'table'; table: string; primaryKey: string; versionColumn?: string }
+            const storageDescription =
+              storage.kind === 'entity-state'
+                ? 'doxa doxa_entity_states'
+                : `external ${storage.table} key=${storage.primaryKey} version=${storage.versionColumn ?? 'xmin'}`
+            io.out(`${String(model.id)} ${storageDescription}`)
+          }
       } else {
-        for (const field of [
-          'features',
-          'providers',
-          'models',
-          'observers',
-          'actions',
-          'queries',
-          'routes',
-          'events',
-          'listeners',
-          'signals',
-          'signalHandlers',
-          'jobs',
-          'schedules',
-          'policies',
-        ]) {
-          io.out(
-            `${field.padEnd(16)} ${Array.isArray(manifest[field]) ? manifest[field].length : 0}`,
-          )
-        }
+        const graph = inspectGraph(manifest)
+        if (json) io.out(JSON.stringify(graph, null, 2))
+        else
+          for (const [field, count] of Object.entries(graph.counts))
+            io.out(`${field.padEnd(16)} ${count}`)
       }
       return 0
     }
     const inspection = inspectionField(command)
     if (inspection) {
-      const manifest = (await buildApplication(cwd)).manifest as unknown as Record<string, unknown>
-      for (const entry of manifest[inspection] as Array<Record<string, unknown>>)
-        io.out(formatInspection(inspection, entry))
+      const json = jsonOutput(args, command)
+      const manifest = (await buildApplication(cwd)).manifest
+      const result = inspectSurface(manifest, inspection)
+      if (json) io.out(JSON.stringify(result, null, 2))
+      else for (const entry of result.items) io.out(formatInspection(inspection, entry))
       return 0
     }
     if (command === 'delivery:list') {
@@ -1082,12 +1088,34 @@ async function loadCompiler(): Promise<typeof import('@doxajs/compiler')> {
   }
 }
 
+function typescriptCli(): string {
+  try {
+    return fileURLToPath(import.meta.resolve('typescript/bin/tsc'))
+  } catch (error) {
+    throw new PraxisCommandError(
+      'Doxa TypeScript tooling is not installed. Reinstall development dependencies before running build or development commands.',
+      { cause: error },
+    )
+  }
+}
+
 async function loadTheoriaTools(): Promise<typeof import('@doxajs/theoria')> {
   try {
     return await import('@doxajs/theoria')
   } catch (error) {
     throw new PraxisCommandError(
       'Theoria tooling is not installed. Install @doxajs/theoria before running this command.',
+      { cause: error },
+    )
+  }
+}
+
+async function loadGnosisTools(): Promise<typeof import('@doxajs/gnosis')> {
+  try {
+    return await import('@doxajs/gnosis')
+  } catch (error) {
+    throw new PraxisCommandError(
+      'Gnosis tooling is not installed. Reinstall development dependencies before running doxa mcp.',
       { cause: error },
     )
   }
@@ -1307,6 +1335,7 @@ services:
     await mkdir(path.dirname(file), { recursive: true })
     await writeNew(file, content)
   }
+  await installGnosisRegistration(directory)
 }
 
 async function buildApplication(cwd: string) {
@@ -1317,14 +1346,10 @@ async function buildApplication(cwd: string) {
       frameworkFile: path.join(cwd, '.doxa/framework.ts'),
     })
   }
-  const code = await runProcess(
-    process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
-    ['exec', 'tsc', '-p', 'tsconfig.json'],
-    cwd,
-  )
+  const code = await runProcess(process.execPath, [typescriptCli(), '-p', 'tsconfig.json'], cwd)
   if (code !== 0) throw new PraxisCommandError(`TypeScript build failed with exit code ${code}.`)
   const result = await compile(cwd)
-  await writeGnosisKnowledge(cwd, result.manifest as unknown as Record<string, unknown>)
+  await writeGnosisKnowledge(cwd, result.manifest)
   return result
 }
 
@@ -1389,179 +1414,11 @@ async function loadPrebuiltApplication(cwd: string): Promise<PrebuiltApplication
   return { Application, manifest }
 }
 
-async function writeGnosisKnowledge(cwd: string, manifest: Record<string, unknown>): Promise<void> {
-  const roles = [
-    'features',
-    'configurations',
-    'providers',
-    'models',
-    'observers',
-    'actions',
-    'queries',
-    'routes',
-    'events',
-    'listeners',
-    'signals',
-    'signalHandlers',
-    'jobs',
-    'schedules',
-    'policies',
-    'commands',
-  ]
-  const providers = manifest.providers as Array<{ capabilities?: readonly string[] }> | undefined
-  const hasTheoria =
-    providers?.some((provider) => provider.capabilities?.includes('observations')) ?? false
-  const knowledge = {
-    schemaVersion: 1,
-    framework: 'Doxa',
-    applicationId: manifest.applicationId,
-    buildHash: manifest.buildHash,
-    principles: [
-      'Opinionated and magical where safety permits.',
-      'Prefer the better developer experience between equally viable choices.',
-      'Folder names have no runtime meaning.',
-      'Framework roles are explicitly declared by Features and compiled before boot.',
-      'Entry points fail closed unless public or owned by a declared policy ability.',
-      'Constructors are side-effect free; lifecycle owns I/O and background behavior.',
-    ],
-    conventions: {
-      files: 'kebab-case',
-      classes: 'PascalCase',
-      featureRegistration: 'role arrays',
-      concreteDependencies: 'constructor autowiring',
-      applicationCommands: 'doxa <colon-delimited-name>',
-      developmentReload: 'compile a new graph and replace the runtime in a fresh process',
-      httpResponses: 'return payloads; Doxa owns the success and failure envelope',
-      deployment: 'one precompiled immutable image with role-specific commands',
-    },
-    safeMutations: {
-      createRole: 'Use doxa make:* so the Feature declaration remains explicit.',
-      migrations: 'Create a new forward migration; never edit an applied migration.',
-      authorization:
-        'Routes default to explicit public access; protect them with --ability. Choose --public or --ability for other generated entry roles.',
-    },
-    roles: Object.fromEntries(roles.map((role) => [role, manifest[role] ?? []])),
-    theoria: {
-      installed: hasTheoria,
-      purpose: 'Read-only correlation and causation debugger for framework executions.',
-      observationKinds: [
-        'execution',
-        'http',
-        'action',
-        'query',
-        'transaction',
-        'model',
-        'event',
-        'listener',
-        'signal',
-        'job',
-        'schedule',
-        'authorization',
-        'cache',
-        'mail',
-        'sms',
-        'log',
-        'exception',
-      ],
-      safety: [
-        'recursive secret redaction',
-        'bounded PostgreSQL retention',
-        'loopback-only host',
-        'recording failure isolation',
-      ],
-    },
-    deployment: {
-      strategy: 'one-immutable-image',
-      artifacts: ['Dockerfile', '.dockerignore', 'compose.production.yaml'],
-      build: {
-        command: 'doxa build',
-        phase: 'image-build',
-        outputs: ['dist/', '.doxa/'],
-        runtimeCompilation: false,
-      },
-      roles: {
-        web: {
-          command: 'doxa serve',
-          scalesHorizontally: true,
-          health: 'framework-owned HTTP health route',
-        },
-        background: {
-          command: 'doxa work',
-          scalesHorizontally: true,
-          consumesQueues: true,
-          admitsSchedules: true,
-        },
-        migration: { command: 'doxa migrate', releaseJob: true, automaticOnBoot: false },
-      },
-      advancedIsolation: {
-        workerCommand: 'doxa work --without-scheduler',
-        schedulerCommand: 'doxa schedule',
-        useWhen: 'schedule admission requires independent resources or fault isolation',
-      },
-      schedulerSafety: [
-        'cron declarations converge on stable pg-boss schedule keys',
-        'interval slots use deterministic UUIDs and PostgreSQL admits one transport record',
-      ],
-      invariants: [
-        'the same image digest runs every role in one release',
-        'migrations run once before web and background promotion',
-        'runtime roles consume prebuilt artifacts and never compile source',
-        'secrets enter through runtime environment and never image layers',
-        'runtime processes are non-root and receive SIGTERM for graceful drain',
-        'Theoria is disabled in production unless explicitly overridden',
-      ],
-    },
-    praxis: {
-      generate: [
-        'new',
-        'make:feature',
-        'make:config',
-        'make:provider',
-        'make:service',
-        'make:model',
-        'make:observer',
-        'make:action',
-        'make:query',
-        'make:route',
-        'make:policy',
-        'make:event',
-        'make:listener',
-        'make:signal',
-        'make:signal-handler',
-        'make:job',
-        'make:schedule',
-        'make:command',
-        'make:migration',
-        'make:test',
-      ],
-      runtime: ['dev', 'serve', 'work', 'work --without-scheduler', 'schedule'],
-      operations: [
-        'migrate',
-        'migrate:status',
-        'db:studio',
-        'queue:list',
-        'queue:failed',
-        'queue:retry',
-        'queue:cancel',
-        'delivery:list',
-        'delivery:retry',
-      ],
-      developmentDebugger: ['add theoria', 'theoria', 'theoria:prune'],
-      inspect: [
-        'graph',
-        'route:list',
-        'model:list',
-        'auth:storage',
-        'event:list',
-        'listener:list',
-        'observer:list',
-        'job:list',
-        'schedule:list',
-        'policy:list',
-        'command:list',
-      ],
-    },
-  }
+async function writeGnosisKnowledge(
+  cwd: string,
+  manifest: Parameters<typeof createGnosisKnowledge>[0],
+): Promise<void> {
+  const knowledge = createGnosisKnowledge(manifest)
   await mkdir(path.join(cwd, '.doxa'), { recursive: true })
   await writeFile(
     path.join(cwd, '.doxa/gnosis.json'),
@@ -2232,7 +2089,7 @@ function generatorRole(command: string): GeneratorRole | undefined {
     : undefined
 }
 
-function inspectionField(command: string): string | undefined {
+function inspectionField(command: string): InspectionSurface | undefined {
   return (
     {
       'event:list': 'events',
@@ -2242,8 +2099,16 @@ function inspectionField(command: string): string | undefined {
       'schedule:list': 'schedules',
       'policy:list': 'policies',
       'command:list': 'commands',
-    } as Record<string, string>
+    } as Record<string, InspectionSurface>
   )[command]
+}
+
+function jsonOutput(args: readonly string[], command: string): boolean {
+  for (const argument of args) {
+    if (argument !== '--json')
+      throw new PraxisCommandError(`Unknown ${command} option ${argument}.`)
+  }
+  return args.includes('--json')
 }
 
 function formatInspection(field: string, entry: Record<string, unknown>): string {

@@ -51,7 +51,9 @@
       "@doxajs/auth-postgres",
       "@doxajs/compiler",
       "@doxajs/core",
+      "@doxajs/gnosis",
       "@doxajs/http-hono",
+      "@doxajs/introspection",
       "@doxajs/keryx",
       "@doxajs/manifest",
       "@doxajs/postgres-drizzle",
@@ -74,7 +76,8 @@
       }
     },
     "upgradeRecipes": [
-      "framework-owned-application-core"
+      "framework-owned-application-core",
+      "gnosis-agent-registration"
     ]
   },
   "scripts": {
@@ -84,13 +87,16 @@
   "dependencies": {
     "@doxajs/core": "workspace:*",
     "@doxajs/http-hono": "workspace:*",
+    "@doxajs/introspection": "workspace:*",
     "@doxajs/queue-pg-boss": "workspace:*",
     "@doxajs/runtime": "workspace:*",
     "pg": "8.22.0"
   },
   "optionalDependencies": {
     "@doxajs/compiler": "workspace:*",
-    "@doxajs/theoria": "workspace:*"
+    "@doxajs/gnosis": "workspace:*",
+    "@doxajs/theoria": "workspace:*",
+    "typescript": "6.0.2"
   },
   "devDependencies": {
     "@types/pg": "8.20.0"
