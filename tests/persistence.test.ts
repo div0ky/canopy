@@ -2371,6 +2371,40 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     })
   })
 
+  it('queries declared models through bounded logical read-only records', async () => {
+    const runtime = await bootPersistenceRuntime()
+    await runAction(runtime, SaveCounter, { id: 'gnosis-low', amount: 1 })
+    await runAction(runtime, SaveCounter, { id: 'gnosis-high', amount: 3 })
+    executionSequence += 1
+    const result = await runtime.admit(
+      {
+        actor: { kind: 'system', id: 'doxa:gnosis' },
+        authentication: {
+          state: 'authenticated',
+          identityId: 'doxa:gnosis',
+          method: 'console',
+        },
+        transport: { kind: 'console', name: 'gnosis:query-models' },
+      },
+      () =>
+        runtime.queryModelRecords({
+          modelId: 'model:counters/counter',
+          fields: ['id', 'value'],
+          filters: [{ attribute: 'value', operator: '>=', value: 1 }],
+          orderBy: [{ attribute: 'value', direction: 'desc' }],
+          limit: 1,
+        }),
+    )
+    expect(result).toEqual({
+      modelId: 'model:counters/counter',
+      fields: ['id', 'value'],
+      rows: [{ id: 'gnosis-high', value: 3 }],
+      returned: 1,
+      truncated: true,
+      executionId: expect.any(String),
+    })
+  })
+
   it('maps Eloquent-style models onto existing tables without losing durability or concurrency', async () => {
     const runtime = await bootPersistenceRuntime()
     await pool.query(`

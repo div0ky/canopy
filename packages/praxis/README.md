@@ -14,9 +14,11 @@ pnpm dev
 Run `doxa --help` for the complete command surface.
 
 Praxis registers the local read-only Gnosis MCP server with Codex, Claude Code, Cursor, and VS Code
-when it creates or upgrades an application. Open the installed application in a supported client;
-the client starts and stops Gnosis on demand. Some clients ask you to trust a project MCP server the
-first time they use it.
+when it creates or upgrades an application and maintains a Doxa guidance block in the root
+`AGENTS.md`. Open the installed application in a supported client; the client starts and stops
+Gnosis on demand. Along with compiled application inspection and documentation, Gnosis can perform
+bounded non-production model reads through Doxa's read-only persistence path. Some clients ask you
+to trust a project MCP server the first time they use it.
 
 Regenerate one or more project registrations after removing or customizing them:
 

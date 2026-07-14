@@ -44,7 +44,13 @@ import {
   type MailMessage,
   MailTransport,
   type Model,
+  type ModelAttributes,
+  type ModelConstructor,
+  type ModelQueryConstraint,
   type ModelQueryDiagnostic,
+  type ModelQueryOperator,
+  type ModelQueryOrder,
+  type ModelQueryValue,
   type ModelObserverDispatcher,
   type ModelObserverPhase,
   type Query,
@@ -183,6 +189,27 @@ export interface EventTestHook {
   }): boolean
 }
 
+export interface ModelRecordQuery {
+  readonly modelId: string
+  readonly fields: readonly string[]
+  readonly filters?: readonly {
+    readonly attribute: string
+    readonly operator: ModelQueryOperator
+    readonly value: ModelQueryValue
+  }[]
+  readonly orderBy?: readonly ModelQueryOrder[]
+  readonly limit?: number
+}
+
+export interface ModelRecordQueryResult {
+  readonly modelId: string
+  readonly fields: readonly string[]
+  readonly rows: readonly Readonly<Record<string, unknown>>[]
+  readonly returned: number
+  readonly truncated: boolean
+  readonly executionId: string
+}
+
 const DEFAULT_DEADLINES: LifecycleDeadlines = {
   start: 10_000,
   drain: 10_000,
@@ -220,6 +247,13 @@ export class DoxaRuntime {
       readonly entityType: string
       readonly storage: import('@doxajs/core').ModelStorage
       readonly attributes?: ReadonlySet<string>
+    }
+  >()
+  readonly #modelsById = new Map<
+    string,
+    {
+      readonly Constructor: ModelConstructor<Model, ModelAttributes>
+      readonly attributes: ReadonlySet<string>
     }
   >()
   readonly #observersByModel = new Map<string, readonly ObserverManifestEntry[]>()
@@ -291,12 +325,17 @@ export class DoxaRuntime {
     }
     for (const model of manifest.models) {
       const Constructor = artifacts.registry.constructors[model.id]
-      if (Constructor)
+      if (Constructor) {
         this.#modelsByConstructor.set(Constructor, {
           entityType: model.entityType,
           storage: model.storage,
           ...(model.attributes ? { attributes: new Set(model.attributes) } : {}),
         })
+        this.#modelsById.set(model.id, {
+          Constructor: Constructor as ModelConstructor<Model, ModelAttributes>,
+          attributes: new Set(model.attributes),
+        })
+      }
       this.#observersByModel.set(
         model.id,
         manifest.observers.filter((observer) => observer.modelId === model.id),
@@ -991,6 +1030,107 @@ export class DoxaRuntime {
           ),
         operation.id,
       )) as Awaited<Output>
+    } finally {
+      store.operationStack.pop()
+    }
+  }
+
+  async queryModelRecords(input: ModelRecordQuery): Promise<ModelRecordQueryResult> {
+    const store = this.requireExecution('query')
+    const definition = this.#modelsById.get(input.modelId)
+    if (!definition) {
+      throw new OperationDispatchError(`${input.modelId} is not a declared model.`)
+    }
+    const fields = [...new Set(input.fields)]
+    const filters = input.filters ?? []
+    const orderBy = input.orderBy ?? []
+    const limit = input.limit ?? 20
+    if (fields.length === 0 || fields.length > 50) {
+      throw new OperationDispatchError('Model record queries require 1 through 50 fields.')
+    }
+    if (filters.length > 20) {
+      throw new OperationDispatchError('Model record queries accept at most 20 filters.')
+    }
+    if (orderBy.length > 5) {
+      throw new OperationDispatchError('Model record queries accept at most 5 ordering entries.')
+    }
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new OperationDispatchError('Model record query limit must be from 1 through 100.')
+    }
+    const requestedAttributes = [
+      ...fields,
+      ...filters.map((filter) => filter.attribute),
+      ...orderBy.map((order) => order.attribute),
+    ]
+    const unknown = requestedAttributes.find((attribute) => !definition.attributes.has(attribute))
+    if (unknown) {
+      throw new OperationDispatchError(
+        `${input.modelId} does not declare logical attribute ${unknown}.`,
+      )
+    }
+    if (!this.transactions) {
+      throw new OperationDispatchError('No persistence manager is available for model queries.')
+    }
+    const constraints: readonly ModelQueryConstraint[] = filters.map((filter) => ({
+      boolean: 'and',
+      predicate: {
+        kind: 'comparison',
+        attribute: filter.attribute,
+        operator: filter.operator,
+        value: filter.value,
+      },
+    }))
+    store.operationStack.push('query')
+    try {
+      const rows = await this.observeObservation(
+        'query',
+        input.modelId,
+        { operation: 'model-record-query', limit },
+        () =>
+          this.transactions!.read(store.context, async (reader) => {
+            const models = new ModelSession(
+              reader,
+              this.#modelsByConstructor,
+              this.modelObserverDispatcher(store),
+              false,
+              this.modelQueryDiagnosticRecorder(),
+            )
+            return runWithModelSession(models, async () => {
+              try {
+                const records = await models.query(definition.Constructor, {
+                  constraints,
+                  orders: orderBy,
+                  eagerLoads: [],
+                  relationshipConstraints: [],
+                  limit: limit + 1,
+                  diagnostic: { terminal: 'get' },
+                })
+                return records.map((model) =>
+                  Object.freeze(
+                    Object.fromEntries(
+                      fields.map((field) => [
+                        field,
+                        serializeModelRecordValue(model.getAttribute(field)),
+                      ]),
+                    ),
+                  ),
+                )
+              } finally {
+                models.close()
+              }
+            })
+          }),
+      )
+      const truncated = rows.length > limit
+      const bounded = Object.freeze(rows.slice(0, limit))
+      return Object.freeze({
+        modelId: input.modelId,
+        fields: Object.freeze(fields),
+        rows: bounded,
+        returned: bounded.length,
+        truncated,
+        executionId: store.context.executionId,
+      })
     } finally {
       store.operationStack.pop()
     }
@@ -2970,6 +3110,13 @@ function serializeQueuePayload(value: unknown): import('@doxajs/core').JsonValue
   } catch (cause) {
     throw new OperationDispatchError('Queued payloads must be JSON serializable.', { cause })
   }
+}
+
+function serializeModelRecordValue(value: unknown): unknown {
+  if (value === undefined) return null
+  const serialized = JSON.stringify(value)
+  if (serialized === undefined) return null
+  return JSON.parse(serialized) as unknown
 }
 
 function serializeEventPayload(

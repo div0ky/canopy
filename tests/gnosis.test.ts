@@ -149,7 +149,20 @@ describe('Gnosis read-only local engineering server', () => {
   })
 
   it('serves the real MCP protocol with parity, structured errors, and exact-version docs', async () => {
-    const server = createGnosisServer(manifest)
+    const modelQueries: unknown[] = []
+    const server = createGnosisServer(manifest, {
+      queryModels: async (request) => {
+        modelQueries.push(request)
+        return {
+          modelId: request.modelId,
+          fields: request.fields,
+          rows: [{ id: 'counter-1', value: 2, password: 'not-for-agents' }],
+          returned: 1,
+          truncated: false,
+          executionId: 'execution-1',
+        }
+      },
+    })
     const client = new Client({ name: 'gnosis-test', version: '1.0.0' })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await server.connect(serverTransport)
@@ -163,6 +176,7 @@ describe('Gnosis read-only local engineering server', () => {
           'inspect_graph',
           'list_routes',
           'describe_model',
+          'query_models',
           'search_docs',
         ]),
       )
@@ -185,6 +199,44 @@ describe('Gnosis read-only local engineering server', () => {
           ]),
         }),
       )
+
+      const queried = await client.callTool({
+        name: 'query_models',
+        arguments: {
+          modelId: 'model:counters/counter',
+          fields: ['id', 'value'],
+          filters: [{ attribute: 'value', operator: '>=', value: 2 }],
+          orderBy: [{ attribute: 'value', direction: 'desc' }],
+          limit: 5,
+        },
+      })
+      expect(modelQueries).toEqual([
+        {
+          modelId: 'model:counters/counter',
+          fields: ['id', 'value'],
+          filters: [{ attribute: 'value', operator: '>=', value: 2 }],
+          orderBy: [{ attribute: 'value', direction: 'desc' }],
+          limit: 5,
+        },
+      ])
+      expect(queried.structuredContent).toEqual({
+        modelId: 'model:counters/counter',
+        fields: ['id', 'value'],
+        rows: [{ id: 'counter-1', value: 2, password: '[REDACTED]' }],
+        returned: 1,
+        truncated: false,
+        executionId: 'execution-1',
+      })
+
+      const unknownAttribute = await client.callTool({
+        name: 'query_models',
+        arguments: {
+          modelId: 'model:counters/counter',
+          fields: ['missing'],
+        },
+      })
+      expect(unknownAttribute.isError).toBe(true)
+      expect(modelQueries).toHaveLength(1)
 
       const missing = await client.callTool({
         name: 'describe_model',

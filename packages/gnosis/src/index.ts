@@ -28,6 +28,34 @@ export { documentationIndex, searchDocumentation, type DocumentationSection }
 export const GNOSIS_PROTOCOL_ADAPTER_VERSION = 1 as const
 export const GNOSIS_VERSION = packageVersion()
 
+export interface GnosisModelQueryRequest {
+  readonly modelId: string
+  readonly fields: readonly string[]
+  readonly filters: readonly {
+    readonly attribute: string
+    readonly operator: '=' | '!=' | '<' | '<=' | '>' | '>=' | 'like' | 'ilike'
+    readonly value: string | number | boolean | null
+  }[]
+  readonly orderBy: readonly {
+    readonly attribute: string
+    readonly direction: 'asc' | 'desc'
+  }[]
+  readonly limit: number
+}
+
+export interface GnosisModelQueryResult {
+  readonly modelId: string
+  readonly fields: readonly string[]
+  readonly rows: readonly Readonly<Record<string, unknown>>[]
+  readonly returned: number
+  readonly truncated: boolean
+  readonly executionId: string
+}
+
+export interface GnosisServerOptions {
+  readonly queryModels?: (request: GnosisModelQueryRequest) => Promise<GnosisModelQueryResult>
+}
+
 const readOnlyAnnotations = Object.freeze({
   readOnlyHint: true,
   destructiveHint: false,
@@ -87,6 +115,39 @@ const documentationSearchSchema = z.object({
     )
     .max(20),
 })
+const modelQueryValueSchema = z.union([z.string(), z.number().finite(), z.boolean(), z.null()])
+const modelQueryInputSchema = {
+  modelId: z.string().min(1).max(256),
+  fields: z.array(z.string().min(1).max(128)).min(1).max(50),
+  filters: z
+    .array(
+      z.object({
+        attribute: z.string().min(1).max(128),
+        operator: z.enum(['=', '!=', '<', '<=', '>', '>=', 'like', 'ilike']),
+        value: modelQueryValueSchema,
+      }),
+    )
+    .max(20)
+    .optional(),
+  orderBy: z
+    .array(
+      z.object({
+        attribute: z.string().min(1).max(128),
+        direction: z.enum(['asc', 'desc']),
+      }),
+    )
+    .max(5)
+    .optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+}
+const modelQueryOutputSchema = z.object({
+  modelId: z.string(),
+  fields: z.array(z.string()).max(50),
+  rows: z.array(z.record(z.string(), z.unknown())).max(100),
+  returned: z.number().int().min(0).max(100),
+  truncated: z.boolean(),
+  executionId: z.string(),
+})
 
 const surfaceTools: Readonly<Record<string, InspectionSurface>> = {
   list_actions: 'actions',
@@ -100,7 +161,10 @@ const surfaceTools: Readonly<Record<string, InspectionSurface>> = {
   list_commands: 'commands',
 }
 
-export function createGnosisServer(manifest: DoxaManifest): McpServer {
+export function createGnosisServer(
+  manifest: DoxaManifest,
+  options: GnosisServerOptions = {},
+): McpServer {
   assertCurrentManifest(manifest)
   const docs = documentationIndex(manifest.frameworkVersion)
   const server = new McpServer({ name: 'doxa-gnosis', version: GNOSIS_VERSION })
@@ -165,6 +229,47 @@ export function createGnosisServer(manifest: DoxaManifest): McpServer {
     async ({ id }) => toolResult(() => describeModel(manifest, id)),
   )
 
+  if (options.queryModels) {
+    server.registerTool(
+      'query_models',
+      {
+        description:
+          'Query one declared Doxa model through a bounded read-only ModelSession. Call describe_model first and request only the logical fields needed for the task.',
+        inputSchema: modelQueryInputSchema,
+        outputSchema: modelQueryOutputSchema,
+        annotations: readOnlyAnnotations,
+      },
+      async ({ modelId, fields, filters, orderBy, limit }) =>
+        toolResult(async () => {
+          const model = describeModel(manifest, modelId)
+          const uniqueFields = [...new Set(fields)]
+          const requestedAttributes = [
+            ...uniqueFields,
+            ...(filters ?? []).map((filter) => filter.attribute),
+            ...(orderBy ?? []).map((order) => order.attribute),
+          ]
+          const unknown = requestedAttributes.find(
+            (attribute) => !model.attributes.includes(attribute),
+          )
+          if (unknown) {
+            throw new IntrospectionError(
+              'invalid_input',
+              `${modelId} does not declare logical attribute ${unknown}.`,
+            )
+          }
+          return sanitizeInspectionValue(
+            await options.queryModels!({
+              modelId,
+              fields: uniqueFields,
+              filters: filters ?? [],
+              orderBy: orderBy ?? [],
+              limit: limit ?? 20,
+            }),
+          )
+        }),
+    )
+  }
+
   for (const [name, surface] of Object.entries(surfaceTools)) {
     server.registerTool(
       name,
@@ -195,9 +300,27 @@ export function createGnosisServer(manifest: DoxaManifest): McpServer {
   return server
 }
 
-export async function startGnosisServer(manifest: DoxaManifest): Promise<void> {
-  const server = createGnosisServer(manifest)
+export async function startGnosisServer(
+  manifest: DoxaManifest,
+  options: GnosisServerOptions = {},
+): Promise<void> {
+  const server = createGnosisServer(manifest, options)
   await server.connect(new StdioServerTransport())
+}
+
+export function renderGnosisGuidelines(): string {
+  return `## Doxa application guidance
+
+- Use Gnosis MCP tools before inferring Doxa application structure from folder names or private implementation details.
+- Call \`application_info\` when beginning substantial Doxa work and use \`search_docs\` for guidance matching the installed framework version.
+- Inspect declared roles with \`inspect_graph\`, \`list_routes\`, the relevant \`list_*\` tool, and \`describe_model\`.
+- Use \`query_models\` instead of raw SQL when application data is needed. Call \`describe_model\` first, request only necessary logical fields, and keep the result limit small.
+- Treat model records as sensitive. Never expose credentials, tokens, password hashes, or unnecessary personal data.
+- Framework-facing roles extend their Doxa role and use \`this.inject()\`. Ordinary services are plain classes with constructor injection.
+- Feature declarations and imports determine ownership. Folder names never activate runtime behavior.
+- Writes belong in declared actions and Doxa's unit of work. The Gnosis model query tool is read-only.
+- Prefer Praxis generators for new framework roles. Do not edit \`.doxa\`, \`dist\`, coverage output, local environment files, or package archives.
+- Run \`pnpm test\` before claiming completion.`
 }
 
 function registerJsonResource(
@@ -216,9 +339,9 @@ function registerJsonResource(
   )
 }
 
-async function toolResult(read: () => unknown) {
+async function toolResult(read: () => unknown | Promise<unknown>) {
   try {
-    const structuredContent = read() as Record<string, unknown>
+    const structuredContent = (await read()) as Record<string, unknown>
     return {
       content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
       structuredContent,
