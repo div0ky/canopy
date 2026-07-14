@@ -84,7 +84,7 @@ export async function runUpgrade(
 
   printPlan(io, currentVersion, target, changes, options)
   if (changes.length === 0) {
-    io.out(`Doxa is already aligned at ${target.version}.`)
+    io.out('Package and toolchain declarations are already aligned.')
     return 0
   }
   if (options.dryRun) return 0
@@ -93,7 +93,11 @@ export async function runUpgrade(
   const upgraded = applyTarget(packageJson, target)
   await writeFile(packagePath, `${JSON.stringify(upgraded, null, 2)}\n`)
 
-  io.out('Installing the aligned Doxa release with pnpm...')
+  io.out(
+    currentVersion === target.version
+      ? 'Aligning Doxa package and toolchain declarations with pnpm...'
+      : 'Installing the aligned Doxa release with pnpm...',
+  )
   const installCode = await io.run(pnpm, ['install'], cwd, process.env)
   if (installCode !== 0) {
     await writeFile(packagePath, original)
@@ -115,7 +119,11 @@ export async function runUpgrade(
   ]
   if (options.verify) continuation.push('--verify')
   if (options.skipMigrationStatus) continuation.push('--skip-migration-status')
-  io.out('Continuing with the newly installed Praxis...')
+  io.out(
+    currentVersion === target.version
+      ? 'Validating the alignment with the installed Praxis...'
+      : 'Continuing with the newly installed Praxis...',
+  )
   return await io.run(pnpm, continuation, cwd, process.env)
 }
 
@@ -186,7 +194,7 @@ async function continueUpgrade(
   if (code !== 0) return validationFailure('doxa build', code, io)
 
   if (!options.skipMigrationStatus) {
-    io.out('Checking forward migration status (no migrations will be applied)...')
+    io.out('Checking forward migration status (read-only; "applied" means already recorded)...')
     code = await io.run(pnpm, ['exec', 'doxa', 'migrate:status'], cwd, process.env)
     if (code !== 0) return validationFailure('doxa migrate:status', code, io)
   }
@@ -196,7 +204,9 @@ async function continueUpgrade(
     if (code !== 0) return validationFailure('pnpm test', code, io)
   }
   io.out(
-    `Upgraded Doxa from ${options.from} to ${options.to}. Review and commit the package and lockfile changes.`,
+    options.from === options.to
+      ? `Doxa was already on ${options.to}. Package and toolchain declarations are aligned and the application passed validation. Review and commit the package and lockfile changes.`
+      : `Upgraded Doxa from ${options.from} to ${options.to}. Review and commit the package and lockfile changes.`,
   )
   return 0
 }
@@ -364,8 +374,20 @@ function printPlan(
   changes: readonly string[],
   options: UpgradeOptions,
 ): void {
-  io.out(`Doxa upgrade plan: ${current} -> ${target.version}`)
+  if (current === target.version) {
+    const release = options.to
+      ? 'the requested release'
+      : `the latest${prereleaseChannel(current) ? ` ${prereleaseChannel(current)}` : ''} release`
+    io.out(`Doxa is already on ${release}: ${target.version}.`)
+    if (changes.length > 0) io.out('Doxa package and toolchain alignment plan:')
+  } else {
+    io.out(`Doxa upgrade plan: ${current} -> ${target.version}`)
+  }
   for (const change of changes) io.out(`  ${change}`)
+  if (changes.length === 0) {
+    if (options.dryRun) io.out('Dry run only; no files were changed.')
+    return
+  }
   for (const recipe of target.compatibility.upgradeRecipes) io.out(`  recipe: ${recipe}`)
   io.out('  validate: doxa build')
   if (!options.skipMigrationStatus) io.out('  validate: doxa migrate:status (read-only)')

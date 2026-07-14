@@ -600,6 +600,52 @@ describe('Praxis command suite', () => {
     expect(output).toContain('Dry run only; no files were changed.')
   })
 
+  it('reports same-version dependency normalization as alignment instead of an upgrade', async () => {
+    const root = await temporaryDirectory()
+    const packageJson = upgradeFixturePackage('0.1.0-alpha.5') as {
+      packageManager: string
+      engines: { node: string }
+      dependencies: Record<string, string>
+      devDependencies: Record<string, string>
+    }
+    packageJson.packageManager = 'pnpm@11.10.0'
+    packageJson.engines.node = '>=24 <25'
+    packageJson.dependencies['@doxajs/core'] = '0.1.0-alpha.5'
+    packageJson.devDependencies.typescript = '^6.0.0'
+    await writeFile(path.join(root, 'package.json'), `${JSON.stringify(packageJson, null, 2)}\n`)
+    const output: string[] = []
+    const invocations: string[][] = []
+
+    expect(
+      await runPraxis(['upgrade'], root, {
+        out: (message) => output.push(message),
+        error: (message) => {
+          throw new Error(message)
+        },
+        run: (_command, args) => {
+          invocations.push([...args])
+          return Promise.resolve(0)
+        },
+        capture: (_command, args) =>
+          Promise.resolve(
+            args[0] === 'view'
+              ? registryUpgradeTarget('0.1.0-alpha.5')
+              : { code: 0, stdout: '', stderr: '' },
+          ),
+      }),
+    ).toBe(0)
+
+    expect(output).toContain('Doxa is already on the latest alpha release: 0.1.0-alpha.5.')
+    expect(output).toContain('Doxa package and toolchain alignment plan:')
+    expect(output).not.toContain('Doxa upgrade plan: 0.1.0-alpha.5 -> 0.1.0-alpha.5')
+    expect(output).toContain('Aligning Doxa package and toolchain declarations with pnpm...')
+    expect(output).toContain('Validating the alignment with the installed Praxis...')
+    expect(invocations).toEqual([
+      ['install'],
+      ['exec', 'doxa', 'upgrade', '--continue', '--from=0.1.0-alpha.5', '--to=0.1.0-alpha.5'],
+    ])
+  })
+
   it('refuses a mutating upgrade in a dirty Git worktree', async () => {
     const root = await temporaryDirectory()
     await writeFile(
@@ -736,6 +782,44 @@ describe('Praxis command suite', () => {
       ['exec', 'doxa', 'migrate:status'],
       ['test'],
     ])
+  })
+
+  it('describes same-version continuation as validated alignment', async () => {
+    const root = await temporaryDirectory()
+    const currentPraxis = JSON.parse(
+      await readFile(path.join(workspace, 'packages/praxis/package.json'), 'utf8'),
+    ) as { version: string }
+    await writeFile(
+      path.join(root, 'package.json'),
+      `${JSON.stringify(upgradeFixturePackage(currentPraxis.version), null, 2)}\n`,
+    )
+    const output: string[] = []
+
+    expect(
+      await runPraxis(
+        [
+          'upgrade',
+          '--continue',
+          `--from=${currentPraxis.version}`,
+          `--to=${currentPraxis.version}`,
+        ],
+        root,
+        {
+          out: (message) => output.push(message),
+          error: (message) => {
+            throw new Error(message)
+          },
+          run: () => Promise.resolve(0),
+        },
+      ),
+    ).toBe(0)
+
+    expect(output).toContain(
+      'Checking forward migration status (read-only; "applied" means already recorded)...',
+    )
+    expect(output.at(-1)).toBe(
+      `Doxa was already on ${currentPraxis.version}. Package and toolchain declarations are aligned and the application passed validation. Review and commit the package and lockfile changes.`,
+    )
   })
 
   it('migrates a pre-alpha.7 scaffold to the framework-owned application core before validation', async () => {
