@@ -1,3 +1,5 @@
+import { Model } from '@doxajs/core'
+
 import { Counter, CounterNote } from '../examples/persistence-app/dist/counters/models/counter.js'
 
 function modelQueryTypeProofs(): void {
@@ -7,6 +9,9 @@ function modelQueryTypeProofs(): void {
   Counter.with({ notes: (query) => query.where('rank', '>=', 1).orderBy('body') })
   CounterNote.query().whereBelongsTo(new Counter({ id: 'counter', value: 1 }), 'counter')
   Counter.query().whereHas('notes', (query) => query.where('rank', '>=', 1))
+  Counter.prototype.setAttribute('value', 2)
+  Counter.prototype.setAttribute('label', undefined)
+  Counter.prototype.fill({ value: 2, label: undefined })
 
   // @ts-expect-error Unknown model attributes fail at compilation.
   Counter.where({ unknown: true })
@@ -24,6 +29,39 @@ function modelQueryTypeProofs(): void {
   Counter.where({ label: undefined })
   // @ts-expect-error Numeric aggregates require numeric attributes.
   Counter.query().sum('label')
+  // @ts-expect-error Model identity is immutable after construction.
+  Counter.prototype.setAttribute('id', 'other')
+  // @ts-expect-error Model identity cannot be mass assigned.
+  Counter.prototype.fill({ id: 'other' })
+  // @ts-expect-error Unknown model attributes fail at compilation.
+  Counter.prototype.setAttribute('unknown', true)
+  // @ts-expect-error Attribute values retain their declared types.
+  Counter.prototype.fill({ value: 'two' })
+  // @ts-expect-error Required attributes cannot be removed.
+  Counter.prototype.fill({ value: undefined })
 }
 
+class ModelIdentityTypeProof extends Counter {
+  attemptIdentityMutation(): void {
+    // @ts-expect-error Model identity is readonly inside model behavior too.
+    this.attributes.id = 'other'
+    // @ts-expect-error The protected attribute bag cannot be replaced.
+    this.attributes = { id: 'other', value: 1 }
+  }
+}
+
+class RequiredUndefinedTypeProof extends Model<{
+  id: string
+  required: string | undefined
+  optional?: string
+}> {}
+
+RequiredUndefinedTypeProof.prototype.setAttribute('required', 'value')
+RequiredUndefinedTypeProof.prototype.setAttribute('optional', undefined)
+// @ts-expect-error Only optional attributes can be removed.
+RequiredUndefinedTypeProof.prototype.setAttribute('required', undefined)
+// @ts-expect-error Required attributes cannot be removed through fill.
+RequiredUndefinedTypeProof.prototype.fill({ required: undefined })
+
 void modelQueryTypeProofs
+void ModelIdentityTypeProof

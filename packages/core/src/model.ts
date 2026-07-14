@@ -59,6 +59,35 @@ export type ModelChanges<Attributes extends ModelAttributes> = {
   [Key in keyof Attributes]?: Attributes[Key] | undefined
 }
 
+type MutableModelAttributeKey<Attributes extends ModelAttributes> = Exclude<
+  Extract<keyof Attributes, string>,
+  'id'
+>
+
+type OptionalModelAttributeKey<Attributes extends ModelAttributes> = {
+  [Key in MutableModelAttributeKey<Attributes>]-?: {} extends Pick<Attributes, Key> ? Key : never
+}[MutableModelAttributeKey<Attributes>]
+
+type ModelAttributeState<Attributes extends ModelAttributes> = Omit<Attributes, 'id'> & {
+  readonly id: Attributes['id']
+}
+
+type ModelAttributeValue<
+  Attributes extends ModelAttributes,
+  Key extends MutableModelAttributeKey<Attributes>,
+> =
+  Key extends OptionalModelAttributeKey<Attributes>
+    ? Attributes[Key] | undefined
+    : Exclude<Attributes[Key], undefined>
+
+export type ModelAttributePatch<Attributes extends ModelAttributes> = {
+  [
+    Key in Exclude<MutableModelAttributeKey<Attributes>, OptionalModelAttributeKey<Attributes>>
+  ]?: Exclude<Attributes[Key], undefined>
+} & {
+  [Key in OptionalModelAttributeKey<Attributes>]?: Attributes[Key] | undefined
+}
+
 export interface ModelJournalFact<Payload extends JsonValue = JsonValue> {
   readonly type: string
   readonly payload: Payload
@@ -113,6 +142,14 @@ export class StaleModelError extends Error {
   override readonly name = 'StaleModelError'
 }
 
+export class ModelIdentityMutationError extends Error {
+  override readonly name = 'ModelIdentityMutationError'
+
+  constructor() {
+    super('Model identity attribute id cannot be changed after construction.')
+  }
+}
+
 const MODEL_INTERNALS = Symbol('doxa.model.internals')
 
 interface PendingJournalFact {
@@ -158,7 +195,7 @@ export abstract class Model<
   static readonly timestamps?: boolean | { readonly createdAt: string; readonly updatedAt: string }
   static readonly relationships?: Readonly<Record<string, ModelRelationship>>
 
-  protected attributes: Attributes
+  #attributes: ModelAttributeState<Attributes>
   #original: Partial<Attributes> = {}
   #lastChanges: ModelChanges<Attributes> = {}
   #pendingJournal: PendingJournalFact[] = []
@@ -171,7 +208,11 @@ export abstract class Model<
   declare protected readonly __doxaRelations: Relations
 
   constructor(attributes: Attributes) {
-    this.attributes = clone(attributes)
+    this.#attributes = modelAttributeState(attributes)
+  }
+
+  protected get attributes(): ModelAttributeState<Attributes> {
+    return this.#attributes
   }
 
   static find<Attributes extends ModelAttributes, Instance extends Model<Attributes>>(
@@ -190,14 +231,14 @@ export abstract class Model<
 
   static make<Attributes extends ModelAttributes, Instance extends Model<Attributes>>(
     this: ModelConstructor<Instance, Attributes>,
-    attributes: Attributes,
+    attributes: NoInfer<Attributes>,
   ): Instance {
     return requireCurrentSession().make(this, attributes)
   }
 
   static async create<Attributes extends ModelAttributes, Instance extends Model<Attributes>>(
     this: ModelConstructor<Instance, Attributes>,
-    attributes: Attributes,
+    attributes: NoInfer<Attributes>,
   ): Promise<Instance> {
     const model = requireCurrentSession().make(this, attributes)
     await model.save()
@@ -301,8 +342,27 @@ export abstract class Model<
     return clone((this.attributes as Record<string, unknown>)[key])
   }
 
+  setAttribute<Key extends MutableModelAttributeKey<Attributes>>(
+    key: Key,
+    value: ModelAttributeValue<Attributes, Key>,
+  ): this {
+    if (key === ('id' as Key)) throw new ModelIdentityMutationError()
+    const attributes = this.attributes as Record<string, unknown>
+    if (value === undefined) delete attributes[key]
+    else attributes[key] = clone(value)
+    return this
+  }
+
+  fill(attributes: ModelAttributePatch<Attributes>): this {
+    if (Object.hasOwn(attributes, 'id')) throw new ModelIdentityMutationError()
+    for (const [key, value] of Object.entries(attributes)) {
+      this.setAttribute(key as MutableModelAttributeKey<Attributes>, value as never)
+    }
+    return this
+  }
+
   isDirty(key?: keyof Attributes): boolean {
-    if (key) return !isDeepStrictEqual(this.attributes[key], this.#original[key])
+    if (key) return !isDeepStrictEqual((this.attributes as Attributes)[key], this.#original[key])
     return Object.keys(this.currentChanges()).length > 0
   }
 
@@ -335,7 +395,7 @@ export abstract class Model<
   }
 
   refresh(): Promise<this> {
-    return this.attachedSession().refresh(this)
+    return this.attachedSession().refresh<Attributes, this>(this)
   }
 
   protected related<Key extends keyof Relations>(key: Key): Relations[Key] {
@@ -365,7 +425,7 @@ export abstract class Model<
 
   [MODEL_INTERNALS](): ModelInternals<Attributes> {
     return {
-      attributes: this.attributes,
+      attributes: this.attributes as Attributes,
       original: this.#original,
       lastChanges: this.#lastChanges,
       pendingJournal: this.#pendingJournal,
@@ -377,7 +437,7 @@ export abstract class Model<
       relations: this.#relations,
       changes: () => this.currentChanges(),
       replace: (attributes, version, exists) => {
-        this.attributes = clone(attributes)
+        this.#attributes = modelAttributeState(attributes)
         this.#original = clone(attributes)
         this.#lastChanges = {}
         this.#version = version
@@ -397,7 +457,7 @@ export abstract class Model<
         this.#exists = true
         this.#recentlyCreated = created
         this.#lastChanges = clone(changes)
-        this.#original = clone(this.attributes)
+        this.#original = clone(this.attributes as Attributes)
       },
       deleted: () => {
         this.#exists = false
@@ -418,9 +478,10 @@ export abstract class Model<
     const keys = new Set([...Object.keys(this.#original), ...Object.keys(this.attributes)]) as Set<
       keyof Attributes
     >
+    const attributes = this.attributes as Attributes
     for (const key of keys) {
-      if (!isDeepStrictEqual(this.attributes[key], this.#original[key])) {
-        changes[key] = clone(this.attributes[key])
+      if (!isDeepStrictEqual(attributes[key], this.#original[key])) {
+        changes[key] = clone(attributes[key])
       }
     }
     return changes
@@ -519,11 +580,15 @@ export class ModelSession {
     changes = model.isDirty() ? internals.changes() : {}
     const definition = this.definitionFor(model.constructor as Function)
     const type = definition.entityType
+    const removedAttributes = Object.keys(changes).filter(
+      (attribute) => !Object.hasOwn(internals.attributes, attribute),
+    )
     const version = await this.writer().saveEntity({
       type,
       id: model.id,
       ...(internals.version !== undefined ? { expectedVersion: internals.version } : {}),
       state: clone(internals.attributes) as unknown as JsonValue,
+      ...(removedAttributes.length > 0 ? { removedAttributes } : {}),
       storage: definition.storage,
     })
     for (const fact of internals.pendingJournal) {
@@ -1056,6 +1121,19 @@ function requireCurrentSession(): ModelSession {
 
 function clone<Value>(value: Value): Value {
   return structuredClone(value)
+}
+
+function modelAttributeState<Attributes extends ModelAttributes>(
+  attributes: Attributes,
+): ModelAttributeState<Attributes> {
+  const state = clone(attributes) as ModelAttributeState<Attributes>
+  Object.defineProperty(state, 'id', {
+    value: state.id,
+    enumerable: true,
+    writable: false,
+    configurable: false,
+  })
+  return state
 }
 
 function attribute(model: Model, name: string): unknown {

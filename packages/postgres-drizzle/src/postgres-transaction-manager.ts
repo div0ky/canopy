@@ -345,6 +345,11 @@ class PostgresUnitOfWork extends UnitOfWork {
       throw new PersistenceError(`Mapped model ${entity.type} state must be a JSON object.`)
     }
     const values = dehydrateMappedState(entity.state as Record<string, JsonValue>, storage)
+    if (entity.expectedVersion !== undefined) {
+      for (const attribute of entity.removedAttributes ?? []) {
+        values.set(mappedColumn(attribute, storage), null)
+      }
+    }
     const now = new Date()
     if (storage.timestamps) {
       if (entity.expectedVersion === undefined && !values.has(storage.timestamps.createdAt))
@@ -726,6 +731,7 @@ function hydrateMappedState(
     Object.entries(storage.columns).map(([attribute, column]) => [column, attribute]),
   )
   const explicitlyMapped = new Set(Object.values(storage.columns))
+  const optionalAttributes = new Set(storage.optionalAttributes ?? [])
   const infrastructure = new Set<string>([
     '__doxa_version',
     ...(storage.versionColumn && !explicitlyMapped.has(storage.versionColumn)
@@ -740,7 +746,9 @@ function hydrateMappedState(
   const state: Record<string, JsonValue> = {}
   for (const [column, value] of Object.entries(row)) {
     if (infrastructure.has(column)) continue
-    state[inverse.get(column) ?? column] = databaseJsonValue(value)
+    const attribute = inverse.get(column) ?? column
+    if (value === null && optionalAttributes.has(attribute)) continue
+    state[attribute] = databaseJsonValue(value)
   }
   state.id = String(row[storage.primaryKey])
   return state
@@ -752,11 +760,16 @@ function dehydrateMappedState(
 ): Map<string, unknown> {
   const values = new Map<string, unknown>()
   for (const [attribute, value] of Object.entries(state)) {
-    const column =
-      attribute === 'id' ? storage.primaryKey : (storage.columns[attribute] ?? attribute)
-    values.set(column, value)
+    values.set(mappedColumn(attribute, storage), value)
   }
   return values
+}
+
+function mappedColumn(
+  attribute: string,
+  storage: Extract<ModelStorage, { readonly kind: 'table' }>,
+): string {
+  return attribute === 'id' ? storage.primaryKey : (storage.columns[attribute] ?? attribute)
 }
 
 function databaseJsonValue(value: unknown): JsonValue {

@@ -29,5 +29,6 @@ queued listeners, not observers.
 The reference application proves declaration, type-inferred signal/model association, generated
 metadata, execution-context propagation, create/update ordering, and rollback behavior.
 
-Remaining MVP work is first-party signal/observer testing assertions, fake-persistence conformance,
-bulk-operation diagnostics, and parity through the future Praxis console execution host.
+Later testing, query, worker, scheduling, and Praxis slices complete first-party assertions,
+fake-persistence conformance, and operation-boundary entrypoint parity. Bulk mutation remains
+explicitly unavailable pending its own accepted lifecycle contract.

@@ -19,5 +19,6 @@ only after commit. Tests prove Eloquent-style persistence, rollback, authenticat
 mail/SMS worker execution, durable delivery transitions, and telemetry without PostgreSQL or
 provider APIs.
 
-Remaining testing work is ergonomic event, signal, observer, schedule, revocation, and security
-assertion helpers plus reusable adapter conformance suites.
+Later slices complete event fakes, direct signal/job/schedule APIs, auth and revocation helpers,
+observer evidence, and matching model behavior across the memory and PostgreSQL adapters. Reusable
+third-party adapter certification remains a post-MVP tooling improvement.

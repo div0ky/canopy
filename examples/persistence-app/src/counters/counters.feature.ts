@@ -19,9 +19,11 @@ import { RequestCounterNotification } from './actions/request-counter-notificati
 import { SaveCounter } from './actions/save-counter.js'
 import { SecureIncrementCounter } from './actions/secure-increment-counter.js'
 import { SaveLegacyCustomer } from './actions/save-legacy-customer.js'
+import { ClearLegacyCustomerNickname } from './actions/clear-legacy-customer-nickname.js'
 import { DeleteLegacyCustomer } from './actions/delete-legacy-customer.js'
 import { SaveLegacyNote } from './actions/save-legacy-note.js'
 import { SaveDetachedCounter } from './actions/save-detached-counter.js'
+import { MarkCounterCommand } from './commands/mark-counter.command.js'
 import { CounterIncremented } from './events/counter-incremented.js'
 import { CounterCreated } from './events/counter-created.js'
 import { CounterNotificationRequested } from './events/counter-notification-requested.js'
@@ -75,10 +77,12 @@ export class CountersFeature extends Feature {
     RequestCounterNotification,
     SecureIncrementCounter,
     SaveLegacyCustomer,
+    ClearLegacyCustomerNickname,
     DeleteLegacyCustomer,
     SaveLegacyNote,
   ]
   queries = [AttemptCounterWrite, InspectCounterQueries]
+  commands = [MarkCounterCommand]
   routes = [IncrementCounterRoute, DeleteCounterRoute, SecureIncrementCounterRoute]
   events = [
     CounterIncremented,

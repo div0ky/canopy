@@ -110,7 +110,7 @@ export class InspectCounterQueries extends Query<
     let readOnlyError: string | undefined
     const readOnlyErrors: string[] = []
     if (first) {
-      first.rename('query-mutation-must-not-persist')
+      first.setAttribute('label', 'query-mutation-must-not-persist')
       try {
         await first.save()
       } catch (error) {

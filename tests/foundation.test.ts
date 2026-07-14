@@ -6,6 +6,7 @@ import { compileApplication } from '@doxajs/compiler'
 import {
   MemoryCache,
   Model,
+  ModelIdentityMutationError,
   type ModelQuery,
   RoleInjectionError,
   SecretString,
@@ -35,6 +36,7 @@ import { MutateCounterQuery } from '../examples/reference-app/dist/mutate-counte
 import { operationLog, resetOperationLog } from '../examples/reference-app/dist/operation-log.js'
 import { ReadCounter } from '../examples/reference-app/dist/read-counter.js'
 import { runWithModelSession } from '../packages/core/dist/model-session-context.js'
+import { assertManifest } from '../packages/manifest/dist/index.js'
 
 const workspace = path.resolve(import.meta.dirname, '..')
 const referenceApplication = path.join(workspace, 'examples/reference-app')
@@ -147,6 +149,48 @@ describe('foundational compile-to-boot slice', () => {
     expect(() =>
       QueryProofModel.query().where(() => OtherQueryProofModel.query() as never),
     ).toThrow('Grouped model constraints must return the same model query')
+  })
+
+  it('clones public model writes and rejects identity mutation atomically', () => {
+    class MutationProofModel extends Model<{
+      id: string
+      profile: { labels: string[] }
+      nickname?: string
+    }> {
+      tryToReplaceIdentity(): void {
+        ;(this.attributes as { id: string }).id = 'changed-in-model'
+      }
+    }
+    const model = new MutationProofModel({
+      id: 'mutation-proof',
+      profile: { labels: ['original'] },
+      nickname: 'before',
+    })
+    const profile = { labels: ['assigned'] }
+
+    expect(model.setAttribute('profile', profile)).toBe(model)
+    profile.labels.push('external')
+    expect(model.getAttribute('profile')).toEqual({ labels: ['assigned'] })
+    const readProfile = model.getAttribute('profile')
+    readProfile.labels.push('read-mutation')
+    expect(model.getAttribute('profile')).toEqual({ labels: ['assigned'] })
+    const patch = { profile: { labels: ['filled'] } }
+    expect(model.fill(patch)).toBe(model)
+    patch.profile.labels.push('external-fill')
+    expect(model.getAttribute('profile')).toEqual({ labels: ['filled'] })
+    expect(model.fill({ nickname: undefined })).toBe(model)
+    expect(model.getAttribute('nickname')).toBeUndefined()
+
+    expect(() => model.setAttribute('id' as never, 'changed' as never)).toThrow(
+      ModelIdentityMutationError,
+    )
+    expect(() =>
+      model.fill({ profile: { labels: ['not-applied'] }, id: 'changed' } as never),
+    ).toThrow(ModelIdentityMutationError)
+    expect(model.id).toBe('mutation-proof')
+    expect(model.getAttribute('profile')).toEqual({ labels: ['filled'] })
+    expect(() => model.tryToReplaceIdentity()).toThrow(TypeError)
+    expect(model.id).toBe('mutation-proof')
   })
 
   it('rejects model queries and cursors after their execution session ends', async () => {
@@ -493,6 +537,23 @@ describe('foundational compile-to-boot slice', () => {
     ).rejects.toThrow(
       `Unsupported Doxa manifest format ${expectedFormatVersion - 1}; expected ${expectedFormatVersion}`,
     )
+  })
+
+  it('rejects invalid optional model attributes before runtime boot', async () => {
+    const artifactsDirectory = await temporaryDirectory()
+    const result = await compile(artifactsDirectory)
+    const manifest = JSON.parse(await readFile(result.manifestPath, 'utf8')) as {
+      models: unknown[]
+    }
+    manifest.models.push({
+      id: 'model:test/item',
+      attributes: ['id'],
+      relationships: [],
+      storage: { kind: 'table', optionalAttributes: ['not-declared'] },
+      source: { file: 'test.ts', line: 1, column: 1 },
+    })
+
+    expect(() => assertManifest(manifest)).toThrow('invalid optional attributes')
   })
 
   it('rejects an Application constructor that does not match the generated registry', async () => {

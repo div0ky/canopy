@@ -2,7 +2,7 @@
 
 - **Status:** Implemented proof
 - **Implemented:** 2026-07-10
-- **MVP status:** Incomplete
+- **MVP completed:** 2026-07-14
 - **Depends on:** [PostgreSQL durability vertical slice](postgresql-durability-vertical-slice.md)
 
 ## Outcome
@@ -84,6 +84,7 @@ The proof implements:
 - `Model.find(id)` and `Model.findOrFail(id)`.
 - `Model.make(attributes)` and `Model.create(attributes)`.
 - `model.save()`, `model.delete()`, and `model.refresh()`.
+- Typed cloned `getAttribute`, `setAttribute`, and `fill` access with immutable model identity.
 - `isDirty`, `isClean`, `wasChanged`, `getChanges`, and `getOriginal`.
 - `exists`, `version`, and `wasRecentlyCreated` lifecycle state.
 - Automatic expected-version writes and stable optimistic-concurrency failures.
@@ -124,21 +125,21 @@ The complete suite contains twenty-eight passing tests. The model-specific Postg
 
 Run the proof with `pnpm test`. Docker must be available for the PostgreSQL conformance suite.
 
-## Still required for the MVP model runtime
+## MVP completion
 
-This slice does not yet claim the complete accepted model runtime. Remaining work includes:
+Later slices complete the original proof with existing-table mapping, observer phases, journaled
+Domain Events, writable job and scheduled execution, read-only model queries, first-party memory
+fakes, and explicit operation-boundary parity through HTTP, console, and listeners. The reference
+application exercises the same Action-owned model lifecycle through each entrypoint, and both the
+PostgreSQL and memory suites exercise public attribute mutation and optional-attribute removal.
 
-- Registered domain-table and multi-record mapper composition.
-- Model observer phases before persistence, after persistence, and after commit.
-- Explicit model domain-event integration with the class event system.
-- Equivalent session semantics for jobs, schedules, listeners, console commands, and HTTP actions.
-- Model-aware testing fakes with the same lifecycle and Unit of Work behavior.
-- Specified bulk update and delete behavior when hydration is bypassed.
-- Relationship aggregates beyond existence counts and public flat-row join projections, whose
-  contracts remain intentionally deferred by Decision 0029.
+Advanced multi-record mappers remain an explicit post-MVP extension point under Decision 0023.
+Non-hydrating bulk mutation and public flat-row joins remain deliberately unavailable under Decision
+0029; those absent APIs do not weaken the completed hydrated-model contract.
 
 ## Next slice
 
 Completed: [Class events vertical slice](class-events-vertical-slice.md).
 
-Queued event execution remains part of the future queue and worker slice.
+Completed later: queued events, workers, schedules, model queries, testing fakes, and existing-table
+mapping.

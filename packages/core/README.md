@@ -30,6 +30,24 @@ export class AppFeature extends Feature {
 Doxa contributes mandatory infrastructure, authentication routes, and `GET /health` from
 framework-owned generated declarations. Application Features do not re-declare them.
 
+## Models
+
+Persistent models expose typed cloned reads and writes while keeping their raw attribute bag
+protected:
+
+```ts
+const customer = await Customer.findOrFail(input.id)
+
+customer.setAttribute('email', input.email)
+customer.fill({ displayName: input.displayName, phone: input.phone })
+
+if (customer.isDirty()) await customer.save()
+```
+
+`setAttribute` and `fill` clone incoming values, mark ordinary dirty state, and never save
+implicitly. `id` cannot be changed after construction. Use intention-revealing model methods for
+changes that enforce invariants or raise domain events, journal facts, or outbox messages.
+
 See the [Doxa repository](https://github.com/div0ky/doxajs) for documentation and support.
 
 ## Broadcasting

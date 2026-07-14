@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -22,6 +23,8 @@ import { runPraxis } from '@doxajs/praxis'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const workspace = path.resolve(import.meta.dirname, '..')
+const compilerVersion = packageVersion('compiler')
+const gnosisVersion = packageVersion('gnosis')
 const applicationRoot = path.join(workspace, 'examples/persistence-app')
 let artifactsDirectory: string
 let generatedApplication: string
@@ -57,7 +60,7 @@ describe('Gnosis read-only local engineering server', () => {
 
   it('compiles model relationships into the canonical manifest', () => {
     expect(manifest.formatVersion).toBe(3)
-    expect(manifest.frameworkVersion).toBe('0.1.0-alpha.12')
+    expect(manifest.frameworkVersion).toBe(compilerVersion)
     expect(manifest.models.find((model) => model.id.endsWith('/counter'))?.relationships).toEqual([
       {
         name: 'notes',
@@ -94,7 +97,7 @@ describe('Gnosis read-only local engineering server', () => {
       expect.objectContaining({
         applicationId: 'persistence-reference-app',
         manifestFormatVersion: 3,
-        frameworkVersion: '0.1.0-alpha.12',
+        frameworkVersion: compilerVersion,
       }),
     )
 
@@ -344,7 +347,7 @@ describe('Gnosis read-only local engineering server', () => {
           items: expect.arrayContaining([
             expect.objectContaining({
               package: '@doxajs/core',
-              version: '0.1.0-alpha.12',
+              version: compilerVersion,
               source: 'models.md',
             }),
           ]),
@@ -401,7 +404,7 @@ describe('Gnosis read-only local engineering server', () => {
         expect.objectContaining({
           applicationId: 'garden',
           manifestFormatVersion: 3,
-          gnosisVersion: '0.1.0-alpha.12',
+          gnosisVersion,
         }),
       )
     } finally {
@@ -481,6 +484,13 @@ describe('Gnosis read-only local engineering server', () => {
     }
   })
 })
+
+function packageVersion(packageName: 'compiler' | 'gnosis'): string {
+  const packageJson = JSON.parse(
+    readFileSync(path.join(workspace, 'packages', packageName, 'package.json'), 'utf8'),
+  ) as { version: string }
+  return packageJson.version
+}
 
 function runChild(
   command: string,

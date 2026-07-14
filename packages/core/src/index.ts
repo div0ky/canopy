@@ -218,10 +218,12 @@ export {
 export {
   DetachedModelError,
   Model,
+  ModelIdentityMutationError,
   ModelNotFoundError,
   ModelNotRegisteredError,
   StaleModelError,
   type ModelAttributes,
+  type ModelAttributePatch,
   type ModelChanges,
   type ModelConstructor,
   type ModelJournalFact,
@@ -435,6 +437,7 @@ export type ModelStorage =
       readonly table: string
       readonly primaryKey: string
       readonly columns: Readonly<Record<string, string>>
+      readonly optionalAttributes?: readonly string[]
       readonly versionColumn?: string
       readonly timestamps: false | TableModelTimestamps
     }
@@ -444,6 +447,8 @@ export interface SaveEntity<State extends JsonValue = JsonValue> {
   readonly id: string
   readonly expectedVersion?: number
   readonly state: State
+  /** Logical attributes removed from a previously persisted state; column adapters clear them. */
+  readonly removedAttributes?: readonly string[]
   readonly storage?: ModelStorage
 }
 

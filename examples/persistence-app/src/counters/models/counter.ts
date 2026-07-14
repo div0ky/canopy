@@ -55,14 +55,6 @@ export class Counter extends Model<CounterAttributes, CounterRelations> {
     return this.related('tags')
   }
 
-  rename(label?: string): void {
-    if (label === undefined) {
-      delete this.attributes.label
-      return
-    }
-    this.attributes.label = label
-  }
-
   increment(amount: number): void {
     if (!Number.isInteger(amount) || amount <= 0) {
       throw new Error('Counter increments must be positive integers.')

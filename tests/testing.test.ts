@@ -185,12 +185,27 @@ describe('@doxajs/testing', () => {
       expect(
         await harness.action(SaveLegacyCustomer, { id: 'mapped-memory', displayName: 'Mapped' }),
       ).toEqual({ id: 'mapped-memory', displayName: 'Mapped', version: 1, created: true })
+      await harness.action(SaveLegacyCustomer, {
+        id: 'mapped-memory',
+        displayName: 'Mapped',
+        nickname: 'Temporary',
+      })
+      await harness.action(SaveLegacyCustomer, {
+        id: 'mapped-memory',
+        displayName: 'Mapped',
+        nickname: undefined,
+      })
       expect(
         transactions.state.entities.get('model:counters/legacy-customer/mapped-memory'),
       ).toEqual(
         expect.objectContaining({
-          state: { id: 'mapped-memory', displayName: 'Mapped', active: true },
-          version: 1,
+          state: {
+            id: 'mapped-memory',
+            displayName: 'Mapped',
+            active: true,
+            nullableCode: null,
+          },
+          version: 3,
         }),
       )
     } finally {
@@ -399,6 +414,9 @@ describe('@doxajs/testing', () => {
       expect(queue.hasQueued(ProcessCounterJob)).toBe(true)
       await queue.runNext()
       await queue.runSchedule('schedule:counters/process-counters')
+      expect(transactions.state.entities.get('model:counters/counter/scheduled-counter')).toEqual(
+        expect.objectContaining({ state: { id: 'scheduled-counter', value: 1 } }),
+      )
       expect(recordedEvents).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ event: 'counter-incremented', value: 2 }),
