@@ -4,8 +4,8 @@
 - **Accepted:** 2026-07-10
 - **Product name:** Gnosis
 - **Package:** `@doxajs/gnosis`
-- **Implementation:** Deferred until application-manifest and diagnostics contracts stabilize
-- **Target:** After application-manifest and diagnostics contracts stabilize
+- **Implementation:** Read-only local Phase 1 activated
+- **Activated:** 2026-07-13
 - **Decision owners:** Doxa maintainers
 
 ## Decision
@@ -13,9 +13,10 @@
 Doxa will provide a first-party AI-assisted engineering product named **Gnosis**, built around a
 local MCP server, version-aware documentation, generated guidelines, focused skills, application
 inspection, and safe engineering workflows. Doxa will design its manifest, diagnostics,
-documentation, CLI, and package metadata to power Gnosis. Implementation is deferred until those
-source contracts are stable enough that the MCP surface will not become a second, incompatible
-interpretation of the application.
+documentation, CLI, and package metadata to power Gnosis. The local read-only Phase 1 is activated
+now that the manifest is versioned, compiler provenance is stable, runtime boot is artifact-only,
+and Praxis inspection is proven. Mutating workflows remain deferred until the shared operation
+planner exists.
 
 Gnosis includes more than an MCP transport. It combines:
 
@@ -36,18 +37,22 @@ The MCP server can therefore adapt a stable Doxa introspection API rather than r
 application through runtime reflection. This makes the protocol layer comparatively small and keeps
 agent behavior consistent with boot validation, generators, tests, and human-facing diagnostics.
 
-## Why implementation is deferred
+## Activation boundary
 
-An MCP server built before the manifest and diagnostics stabilize would freeze accidental shapes,
-duplicate inspection logic, and require repeated compatibility migrations. Doxa should preserve
-machine-readable foundations now and implement the agent product after:
+The Phase 1 server must not freeze Praxis presentation strings or create a second application
+scanner. Activation therefore includes a protocol-independent typed introspection package shared by
+Praxis and Gnosis. It consumes the validated generated manifest and exposes bounded deterministic
+records. The MCP package remains a thin transport adapter.
+
+The following foundations are required as part of Phase 1 rather than deferred prerequisites:
 
 - The application manifest has a versioned schema.
 - Source locations and declaration provenance are reliable.
 - `doxa inspect:*` commands expose stable structured results.
-- CLI mutations can produce plans and diffs before applying changes.
 - Framework and plugin documentation is versioned and package-addressable.
 - Configuration and diagnostics classify secret and sensitive values.
+
+CLI mutation plans and diffs are required before Phase 3, not before the read-only local server.
 
 ## Boundary
 
@@ -76,6 +81,12 @@ doxa mcp
 The AI client launches the command inside the application workspace. A remote Streamable HTTP
 transport is deferred because it introduces authentication, tenancy, origin validation, network
 exposure, and production-data concerns unrelated to the initial developer experience.
+
+Praxis must make that launch declarative rather than procedural for the developer. New applications
+receive project-scoped MCP configuration for supported agents, and framework upgrades add or update
+the same registration without replacing unrelated agent configuration. The registered command uses
+the application's installed Praxis package. `doxa mcp` remains available for protocol diagnostics,
+but documentation must not instruct developers to start it as a standing process.
 
 Doxa should use the official TypeScript MCP SDK behind a small protocol adapter and pin its version
 through the Doxa compatibility contract.

@@ -66,6 +66,8 @@ The MVP physically separates architectural responsibilities:
 @doxajs/runtime
 @doxajs/testing
 @doxajs/cli
+@doxajs/introspection
+@doxajs/gnosis
 ```
 
 - `@doxajs/core` contains the application programming model and public contracts only.
@@ -78,6 +80,10 @@ The MVP physically separates architectural responsibilities:
 - `@doxajs/testing` builds on public core plus deliberate runtime testing contracts.
 - `@doxajs/cli` orchestrates compiler, generators, diagnostics, operational commands, and official
   hosts.
+- `@doxajs/introspection` derives stable, bounded, protocol-independent inspection records from the
+  manifest.
+- `@doxajs/gnosis` adapts introspection records and versioned documentation to a local MCP server;
+  it remains an optional development dependency and is excluded from production installations.
 
 The runtime cannot import TypeScript compiler APIs, compile source, or reconstruct the graph at
 boot. The compiler is unnecessary in the production runtime image. `@doxajs/manifest` remains a

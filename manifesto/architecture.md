@@ -333,9 +333,9 @@ infrastructure adapters use separate public surfaces such as `@doxajs/testing`, 
 and `@doxajs/postgres-drizzle`. Compiler, registry, container, lifecycle, and runtime implementation
 packages do not become application dependencies.
 
-The MVP physically separates `@doxajs/core`, `@doxajs/manifest`, `@doxajs/compiler`,
-`@doxajs/runtime`, `@doxajs/testing`, and `@doxajs/cli`. The package graph must preserve four
-conceptual zones:
+The framework physically separates `@doxajs/core`, `@doxajs/manifest`, `@doxajs/compiler`,
+`@doxajs/runtime`, `@doxajs/testing`, Praxis, `@doxajs/introspection`, and `@doxajs/gnosis`. The
+package graph must preserve four conceptual zones:
 
 1. Kernel and programming model, with minimal infrastructure dependencies.
 2. Public contracts used by features and adapters.
@@ -347,6 +347,10 @@ not require a concrete adapter in order to be understood or tested.
 
 Runtime cannot depend on the compiler or TypeScript source analysis. Manifest remains a data-only
 contract package. CI rejects cycles and forbidden dependency directions.
+
+`@doxajs/introspection` may depend on the manifest but not on Praxis, Gnosis, the compiler, runtime,
+or infrastructure adapters. Gnosis depends on introspection and remains optional development
+tooling. Praxis may load Gnosis dynamically, while production installations omit optional tooling.
 
 Each package exposes a closed export map. Deep imports, build-directory imports, and relative
 imports across package boundaries are architectural defects. Shared internal concepts must become

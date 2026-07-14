@@ -4,7 +4,7 @@
 - **Direction:** Accepted
 - **Product:** Gnosis
 - **Package:** `@doxajs/gnosis`
-- **Implementation:** Deferred until the manifest and diagnostics stabilize
+- **Implementation:** Read-only local Phase 1 active
 - **Decision:** [0013: Gnosis](../decisions/0013-first-party-ai-engineering-mcp.md)
 
 Gnosis will provide Doxa's Laravel Boost-like developer experience: a local MCP server,
@@ -13,11 +13,14 @@ carefully controlled engineering workflows.
 
 ## Product shape
 
-Gnosis's MCP transport is launched through the framework CLI:
+Praxis registers Gnosis in project-scoped agent configuration. The coding agent owns the process
+lifecycle and launches the application's installed framework CLI entrypoint on demand:
 
 ```text
 doxa mcp
 ```
+
+Developers do not run this as a standing process.
 
 The initial server runs locally over stdio and gives compatible coding agents read-only access to
 the actual Doxa application model: packages and versions, features, dependency graph, routes,

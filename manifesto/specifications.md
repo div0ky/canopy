@@ -120,19 +120,19 @@ policy, hardening, and the complete HTTP specification remain unsettled.
 
 ## Operations and developer experience
 
-| Area                           | Status                                      | Central question                                                                                                                                              |
-| ------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Configuration and secrets      | Exploring                                   | [How do injectable configuration classes resolve, validate, and protect declared values?](decisions/0021-injectable-configuration-classes.md)                 |
-| Logging                        | Implemented                                 | [How do built-in structured records become contextual, redacted, color-coded local output and machine-readable production output?](specifications/logging.md) |
-| Metrics and tracing            | Exploring                                   | Which actor and causal fields connect traces, journal entries, jobs, and audit records?                                                                       |
-| Testing applications and fakes | Exploring                                   | [How do direct unit tests and pre-boot derived test graphs preserve framework semantics?](decisions/0020-preboot-test-overrides.md)                           |
-| CLI and generators             | Exploring                                   | [How do generators support opinionated defaults without making paths semantic?](decisions/0016-path-independent-structure-autowired-services.md)              |
-| Development debugger           | Implemented                                 | [How does Theoria expose safe causal execution evidence without becoming audit or APM storage?](specifications/theoria.md)                                    |
-| Diagnostics                    | Implemented                                 | Praxis inspection, Drizzle Studio, and [Theoria](specifications/theoria.md) expose the compiled graph, storage, and live execution behavior.                  |
-| Adapter contracts              | Unexplored                                  | Which guarantees and conformance cases apply to infrastructure engines?                                                                                       |
-| Compatibility releases         | Unexplored                                  | How does a release declare and prove a supported component matrix?                                                                                            |
-| Gnosis AI-assisted engineering | Accepted direction; implementation deferred | [How can agents safely inspect and work with a Doxa application?](future/ai-assisted-engineering.md)                                                          |
-| Container deployment           | Accepted; implementation in progress        | [How does one immutable image safely run web, background, and migration roles?](specifications/container-deployment.md)                                       |
+| Area                           | Status                               | Central question                                                                                                                                              |
+| ------------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Configuration and secrets      | Exploring                            | [How do injectable configuration classes resolve, validate, and protect declared values?](decisions/0021-injectable-configuration-classes.md)                 |
+| Logging                        | Implemented                          | [How do built-in structured records become contextual, redacted, color-coded local output and machine-readable production output?](specifications/logging.md) |
+| Metrics and tracing            | Exploring                            | Which actor and causal fields connect traces, journal entries, jobs, and audit records?                                                                       |
+| Testing applications and fakes | Exploring                            | [How do direct unit tests and pre-boot derived test graphs preserve framework semantics?](decisions/0020-preboot-test-overrides.md)                           |
+| CLI and generators             | Exploring                            | [How do generators support opinionated defaults without making paths semantic?](decisions/0016-path-independent-structure-autowired-services.md)              |
+| Development debugger           | Implemented                          | [How does Theoria expose safe causal execution evidence without becoming audit or APM storage?](specifications/theoria.md)                                    |
+| Diagnostics                    | Implemented                          | Praxis inspection, Drizzle Studio, and [Theoria](specifications/theoria.md) expose the compiled graph, storage, and live execution behavior.                  |
+| Adapter contracts              | Unexplored                           | Which guarantees and conformance cases apply to infrastructure engines?                                                                                       |
+| Compatibility releases         | Unexplored                           | How does a release declare and prove a supported component matrix?                                                                                            |
+| Gnosis AI-assisted engineering | Read-only Phase 1 accepted           | [How can agents safely inspect and work with a Doxa application?](specifications/gnosis.md)                                                                   |
+| Container deployment           | Accepted; implementation in progress | [How does one immutable image safely run web, background, and migration roles?](specifications/container-deployment.md)                                       |
 
 ## Recommended authoring order
 
