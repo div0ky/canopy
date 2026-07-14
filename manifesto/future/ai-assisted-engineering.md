@@ -4,7 +4,7 @@
 - **Direction:** Accepted
 - **Product:** Gnosis
 - **Package:** `@doxajs/gnosis`
-- **Implementation:** Read-only local Phase 1 active
+- **Implementation:** Read-only local server, generated guidelines, and bounded model queries active
 - **Decision:** [0013: Gnosis](../decisions/0013-first-party-ai-engineering-mcp.md)
 
 Gnosis will provide Doxa's Laravel Boost-like developer experience: a local MCP server,
@@ -22,13 +22,14 @@ doxa mcp
 
 Developers do not run this as a standing process.
 
-The initial server runs locally over stdio and gives compatible coding agents read-only access to
-the actual Doxa application model: packages and versions, features, dependency graph, routes,
-models, schemas, actions, queries, policies, events, observers, listeners, jobs, schedules,
-migrations, diagnostics, errors, logs, tests, and version-matched documentation.
+The local server runs over stdio and gives compatible coding agents read-only access to the actual
+Doxa application model: packages and versions, features, dependency graph, routes, models, schemas,
+actions, queries, policies, events, observers, listeners, jobs, schedules, migrations, diagnostics,
+and version-matched documentation. Its one application-data tool performs bounded model reads
+through Doxa's own read-only runtime path rather than accepting SQL.
 
-Doxa will also generate agent guidelines and install on-demand skills based on the framework and
-first-party plugins present in the application.
+Doxa generates a managed root `AGENTS.md` guidance block. Focused on-demand skills based on the
+framework and first-party plugins remain future work.
 
 ## Architectural advantage
 
@@ -64,7 +65,7 @@ Before implementing the MCP server, Doxa will ensure its foundational contracts 
 
 These requirements improve Doxa's ordinary human tooling and keep the later MCP adapter small.
 
-## Deferred implementation phases
+## Implementation phases
 
 ### Phase 1: Read-only local server
 
@@ -75,9 +76,12 @@ These requirements improve Doxa's ordinary human tooling and keep the later MCP 
 - Database schema and migration status.
 - Bounded logs, recent errors, command discovery, and test execution.
 
+The compiled graph, documentation search, and bounded model query are active. The remaining listed
+diagnostic capabilities are still deferred.
+
 ### Phase 2: Guidelines and skills
 
-- Versioned Doxa engineering guidelines.
+- Versioned Doxa engineering guidelines. **Active through managed `AGENTS.md` generation.**
 - Installed-plugin guidelines.
 - Focused skills for common development workflows.
 - Agent-specific configuration generation.

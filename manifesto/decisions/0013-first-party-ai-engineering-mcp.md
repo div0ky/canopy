@@ -135,10 +135,40 @@ run_tests
 Tool names are illustrative. The specification must keep the surface focused so tool discovery does
 not create context bloat.
 
+## Generated agent guidance
+
+Gnosis installation must create or update a managed Gnosis block in the repository-root `AGENTS.md`.
+New applications receive the guidance automatically, upgrades refresh it, and `doxa gnosis:install`
+restores it alongside project-scoped MCP registration. The writer preserves all application-owned
+content outside the managed block and fails closed for malformed or duplicate managed markers.
+
+The versioned guidance is owned by `@doxajs/gnosis` and must teach agents to prefer Gnosis's
+structured inspection and documentation tools over path inference, raw database access, or
+framework-private APIs. Praxis owns the filesystem merge because it already owns application
+creation, upgrades, and agent registration.
+
+## Bounded model-data inspection
+
+Gnosis may expose a read-only `query_models`-equivalent tool for local development. This is a
+distinct application-data capability, not arbitrary SQL or application evaluation. It must:
+
+- Resolve one declared model by stable manifest ID.
+- Accept only logical model attributes and Doxa-owned comparison and ordering vocabulary.
+- Require an explicit bounded field selection and cap predicates, ordering, and returned rows.
+- Execute through a fresh admitted console execution and read-only `ModelSession`.
+- Return detached plain structured values before the execution closes.
+- Recursively redact credential-shaped keys and values.
+- Refuse production execution and never accept SQL, filesystem paths, commands, or expressions.
+
+The MCP adapter receives this capability through a protocol-independent bridge supplied by Praxis.
+`@doxajs/gnosis` does not import the runtime or persistence adapter, and the runtime method remains
+usable by tests and non-MCP Doxa tooling.
+
 ## Mutating tools
 
-Code generation, migrations, database access, job redrive, and arbitrary application evaluation are
-not part of the initial read-only surface.
+Code generation, migrations, raw database access, job redrive, and arbitrary application evaluation
+are not part of the initial read-only surface. The bounded model-data inspection contract above is
+the only application-data exception.
 
 When mutating tools are introduced, they must:
 
