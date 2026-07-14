@@ -111,6 +111,7 @@ export interface ModelManifestEntry {
   readonly name: string
   readonly exportName: string
   readonly entityType: string
+  readonly attributes?: readonly string[]
   readonly storage:
     | { readonly kind: 'entity-state' }
     | {

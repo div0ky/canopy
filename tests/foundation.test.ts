@@ -9,6 +9,7 @@ import {
   SecretString,
   sanitizeObservationAttributes,
   sanitizeObservationError,
+  validateModelQueryPlan,
 } from '@doxajs/core'
 import {
   Doxa,
@@ -57,6 +58,48 @@ describe('foundational compile-to-boot slice', () => {
     expect(String(secret)).toBe('[REDACTED]')
     expect(JSON.stringify({ secret })).toBe('{"secret":"[REDACTED]"}')
     expect(secret.reveal()).toBe('database-password')
+  })
+
+  it('fails closed for malformed model query plans before adapter execution', () => {
+    expect(() =>
+      validateModelQueryPlan({
+        constraints: [
+          {
+            boolean: 'and',
+            predicate: {
+              kind: 'comparison',
+              attribute: 'value',
+              operator: 'execute sql' as '=',
+              value: 1,
+            },
+          },
+        ],
+        orders: [],
+        eagerLoads: [],
+        relationshipConstraints: [],
+      }),
+    ).toThrow('Unsupported model query operator')
+    expect(() =>
+      validateModelQueryPlan(
+        {
+          constraints: [
+            {
+              boolean: 'and',
+              predicate: {
+                kind: 'comparison',
+                attribute: 'unknown',
+                operator: '=',
+                value: 1,
+              },
+            },
+          ],
+          orders: [],
+          eagerLoads: [],
+          relationshipConstraints: [],
+        },
+        new Set(['id', 'value']),
+      ),
+    ).toThrow('Unknown model query attribute unknown')
   })
 
   it('recursively redacts observation evidence before a recorder can receive it', () => {

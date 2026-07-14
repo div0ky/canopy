@@ -32,6 +32,9 @@ import {
   MemoryLogSink,
   MemoryObservationRecorder,
   MemoryTelemetry,
+  applyModelQueryPlan,
+  type ModelQueryPlan,
+  type ModelQueryValue,
   type OutboxMessage,
   type PersistedEntity,
   type PolicyDecision,
@@ -558,6 +561,12 @@ export class MemoryTransactionManager extends TransactionManager {
   constructor(private readonly queue?: QueueManager) {
     super()
   }
+  async read<Output>(
+    _context: ExecutionContext,
+    work: (reader: import('@doxajs/core').ModelReader) => Promise<Output>,
+  ): Promise<Output> {
+    return work(new MemoryUnitOfWork(this.state))
+  }
   async transaction<Output>(
     _context: ExecutionContext,
     work: (unitOfWork: UnitOfWork) => Promise<Output>,
@@ -588,6 +597,48 @@ class MemoryUnitOfWork extends UnitOfWork {
     id: string,
   ): Promise<PersistedEntity<State> | undefined> {
     return this.state.entities.get(`${type}/${id}`) as PersistedEntity<State> | undefined
+  }
+  async queryEntities<State extends JsonValue>(
+    type: string,
+    _storage: import('@doxajs/core').ModelStorage,
+    plan: ModelQueryPlan,
+  ): Promise<readonly PersistedEntity<State>[]> {
+    const matches = [...this.state.entities.values()].filter((entity) => entity.type === type)
+    const states = applyModelQueryPlan(
+      matches.map((entity) => ({ ...(entity.state as Record<string, unknown>), __entity: entity })),
+      plan,
+    )
+    return states.map((state) => state.__entity as PersistedEntity<State>)
+  }
+  async aggregateEntities(
+    type: string,
+    storage: import('@doxajs/core').ModelStorage,
+    plan: ModelQueryPlan,
+    operation: 'count' | 'min' | 'max' | 'sum' | 'average',
+    attribute?: string,
+  ): Promise<number | ModelQueryValue | undefined> {
+    const { limit: _limit, offset: _offset, ...unbounded } = plan
+    const entities = await this.queryEntities(type, storage, unbounded)
+    if (operation === 'count') return entities.length
+    const values = entities
+      .map((entity) => (entity.state as Record<string, unknown>)[attribute!])
+      .filter(
+        (value): value is Exclude<ModelQueryValue, null> => value !== undefined && value !== null,
+      )
+    if (values.length === 0) return undefined
+    if (operation === 'sum' || operation === 'average') {
+      const total = values.reduce<number>((sum, value) => sum + Number(value), 0)
+      return operation === 'sum' ? total : total / values.length
+    }
+    return values.reduce((selected, value) =>
+      operation === 'min'
+        ? value < selected
+          ? value
+          : selected
+        : value > selected
+          ? value
+          : selected,
+    )
   }
   async saveEntity<State extends JsonValue>(entity: SaveEntity<State>): Promise<number> {
     const key = `${entity.type}/${entity.id}`

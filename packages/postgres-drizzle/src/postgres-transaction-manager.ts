@@ -8,6 +8,12 @@ import {
   type JsonValue,
   type LifecycleContext,
   type ModelStorage,
+  type ModelReader,
+  type ModelQueryConstraint,
+  type ModelQueryOperator,
+  type ModelQueryPlan,
+  type ModelQueryPredicate,
+  type ModelQueryValue,
   OptimisticConcurrencyError,
   type OutboxMessage,
   PersistenceError,
@@ -98,6 +104,29 @@ export class PostgresTransactionManager extends TransactionManager implements St
     return result
   }
 
+  async read<Output>(
+    context: ExecutionContext,
+    work: (reader: ModelReader) => Promise<Output>,
+  ): Promise<Output> {
+    const database = this.#database
+    if (!database) throw new PersistenceError('PostgreSQL transaction manager is not started.')
+    try {
+      return await database.transaction(
+        async (transaction) => {
+          const reader = new PostgresUnitOfWork(transaction, context)
+          try {
+            return await work(reader)
+          } finally {
+            reader.close()
+          }
+        },
+        { accessMode: 'read only' },
+      )
+    } catch (error) {
+      throw translatePersistenceError(error)
+    }
+  }
+
   async dispose(_context: LifecycleContext): Promise<void> {
     const pool = this.#pool
     this.#database = undefined
@@ -136,6 +165,81 @@ class PostgresUnitOfWork extends UnitOfWork {
       version: row.version,
       state: row.state as State,
     }
+  }
+
+  async queryEntities<State extends JsonValue>(
+    type: string,
+    storage: ModelStorage,
+    plan: ModelQueryPlan,
+  ): Promise<readonly PersistedEntity<State>[]> {
+    this.assertActive()
+    const where = queryWhere(type, storage, plan.constraints)
+    const order = queryOrder(storage, plan.orders)
+    const bounds = queryBounds(plan)
+    if (storage.kind === 'entity-state') {
+      const result = await this.session.execute(sql`
+        SELECT entity_type, entity_id, version, state
+        FROM ${entityStates}
+        ${where}
+        ${order}
+        ${bounds}
+      `)
+      return result.rows.map((row) => {
+        const value = row as Record<string, unknown>
+        return {
+          type: String(value.entity_type),
+          id: String(value.entity_id),
+          version: numberVersion(value.version, type, String(value.entity_id)),
+          state: value.state as State,
+        }
+      })
+    }
+    const version = versionExpression(storage)
+    const result = await this.session.execute(sql`
+      SELECT *, ${version} AS ${sql.identifier('__doxa_version')}
+      FROM ${qualifiedIdentifier(storage.table)}
+      ${where}
+      ${order}
+      ${bounds}
+    `)
+    return result.rows.map((row) => {
+      const value = row as Record<string, unknown>
+      const state = hydrateMappedState(value, storage)
+      const id = String(state.id)
+      return {
+        type,
+        id,
+        version: numberVersion(value.__doxa_version, type, id),
+        state: state as State,
+      }
+    })
+  }
+
+  async aggregateEntities(
+    type: string,
+    storage: ModelStorage,
+    plan: ModelQueryPlan,
+    operation: 'count' | 'min' | 'max' | 'sum' | 'average',
+    attribute?: string,
+  ): Promise<number | ModelQueryValue | undefined> {
+    this.assertActive()
+    if (operation !== 'count' && !attribute) {
+      throw new PersistenceError(`${operation} model aggregate requires an attribute.`)
+    }
+    const where = queryWhere(type, storage, plan.constraints)
+    const expression = aggregateExpression(storage, operation, attribute)
+    const source =
+      storage.kind === 'entity-state' ? sql`${entityStates}` : qualifiedIdentifier(storage.table)
+    const result = await this.session.execute(sql`
+      SELECT ${expression} AS ${sql.identifier('__doxa_aggregate')}
+      FROM ${source}
+      ${where}
+    `)
+    const value = (result.rows[0] as Record<string, unknown> | undefined)?.__doxa_aggregate
+    if (value === null || value === undefined) return undefined
+    return operation === 'count' || operation === 'sum' || operation === 'average'
+      ? Number(value)
+      : (databaseJsonValue(value) as ModelQueryValue)
   }
 
   async saveEntity<State extends JsonValue>(entity: SaveEntity<State>): Promise<number> {
@@ -404,6 +508,158 @@ class PostgresUnitOfWork extends UnitOfWork {
   private assertActive(): void {
     if (!this.#active) throw new StaleUnitOfWorkError('Unit of Work is no longer active.')
   }
+}
+
+function queryWhere(
+  type: string,
+  storage: ModelStorage,
+  constraints: readonly ModelQueryConstraint[],
+): SQL {
+  const application = compileConstraints(storage, constraints)
+  const typeConstraint =
+    storage.kind === 'entity-state' ? sql`${entityStates.entityType} = ${type}` : undefined
+  const combined =
+    typeConstraint && application
+      ? sql`(${typeConstraint}) AND (${application})`
+      : (typeConstraint ?? application)
+  return combined ? sql`WHERE ${combined}` : sql``
+}
+
+function compileConstraints(
+  storage: ModelStorage,
+  constraints: readonly ModelQueryConstraint[],
+): SQL | undefined {
+  let expression: SQL | undefined
+  for (const constraint of constraints) {
+    const next = compilePredicate(storage, constraint.predicate)
+    expression = expression
+      ? constraint.boolean === 'and'
+        ? sql`(${expression}) AND (${next})`
+        : sql`(${expression}) OR (${next})`
+      : next
+  }
+  return expression
+}
+
+function compilePredicate(storage: ModelStorage, predicate: ModelQueryPredicate): SQL {
+  if (predicate.kind === 'group')
+    return compileConstraints(storage, predicate.predicates) ?? sql`TRUE`
+  if (predicate.kind === 'null') {
+    if (storage.kind === 'entity-state' && predicate.attribute !== 'id') {
+      const json = jsonAttribute(predicate.attribute)
+      const condition = sql`(${json} IS NULL OR ${json} = 'null'::jsonb)`
+      return predicate.negate ? sql`NOT (${condition})` : condition
+    }
+    const field = queryAttribute(storage, predicate.attribute)
+    return predicate.negate ? sql`${field} IS NOT NULL` : sql`${field} IS NULL`
+  }
+  if (predicate.kind === 'membership') {
+    if (predicate.values.length === 0) return predicate.negate ? sql`TRUE` : sql`FALSE`
+    const field = comparableAttribute(storage, predicate.attribute, predicate.values[0]!)
+    const values = sql.join(
+      predicate.values.map((value) => sql`${databaseQueryValue(value)}`),
+      sql`, `,
+    )
+    return predicate.negate ? sql`${field} NOT IN (${values})` : sql`${field} IN (${values})`
+  }
+  if (predicate.kind === 'between') {
+    const field = comparableAttribute(storage, predicate.attribute, predicate.values[0])
+    const condition = sql`${field} BETWEEN ${databaseQueryValue(predicate.values[0])} AND ${databaseQueryValue(predicate.values[1])}`
+    return predicate.negate ? sql`NOT (${condition})` : condition
+  }
+  if (predicate.kind === 'column') {
+    return comparisonSql(
+      queryAttribute(storage, predicate.attribute),
+      predicate.operator,
+      queryAttribute(storage, predicate.comparedAttribute),
+    )
+  }
+  return comparisonSql(
+    comparableAttribute(storage, predicate.attribute, predicate.value),
+    predicate.operator,
+    sql`${databaseQueryValue(predicate.value)}`,
+  )
+}
+
+function comparisonSql(left: SQL, operator: ModelQueryOperator, right: SQL): SQL {
+  if (operator === '=') return sql`${left} = ${right}`
+  if (operator === '!=') return sql`${left} <> ${right}`
+  if (operator === '<') return sql`${left} < ${right}`
+  if (operator === '<=') return sql`${left} <= ${right}`
+  if (operator === '>') return sql`${left} > ${right}`
+  if (operator === '>=') return sql`${left} >= ${right}`
+  if (operator === 'like') return sql`${left} LIKE ${right}`
+  return sql`${left} ILIKE ${right}`
+}
+
+function queryAttribute(storage: ModelStorage, attribute: string): SQL {
+  if (storage.kind === 'entity-state') {
+    return attribute === 'id' ? sql`${entityStates.entityId}` : jsonTextAttribute(attribute)
+  }
+  return sql`${sql.identifier(attribute === 'id' ? storage.primaryKey : (storage.columns[attribute] ?? attribute))}`
+}
+
+function comparableAttribute(
+  storage: ModelStorage,
+  attribute: string,
+  value: ModelQueryValue,
+): SQL {
+  if (storage.kind === 'table' || attribute === 'id') return queryAttribute(storage, attribute)
+  const field = jsonTextAttribute(attribute)
+  if (typeof value === 'number') return sql`(${field})::numeric`
+  if (typeof value === 'boolean') return sql`(${field})::boolean`
+  if (value instanceof Date) return sql`(${field})::timestamptz`
+  return field
+}
+
+function jsonTextAttribute(attribute: string): SQL {
+  return sql`(${entityStates.state} ->> ${attribute})`
+}
+
+function jsonAttribute(attribute: string): SQL {
+  return sql`(${entityStates.state} -> ${attribute})`
+}
+
+function databaseQueryValue(value: ModelQueryValue): unknown {
+  return value instanceof Date ? value : value
+}
+
+function queryOrder(storage: ModelStorage, orders: ModelQueryPlan['orders']): SQL {
+  if (orders.length === 0) return sql``
+  return sql`ORDER BY ${sql.join(
+    orders.map((order) => {
+      const field =
+        storage.kind === 'entity-state' && order.attribute !== 'id'
+          ? jsonAttribute(order.attribute)
+          : queryAttribute(storage, order.attribute)
+      return order.direction === 'desc' ? sql`${field} DESC` : sql`${field} ASC`
+    }),
+    sql`, `,
+  )}`
+}
+
+function queryBounds(plan: ModelQueryPlan): SQL {
+  return sql`${plan.limit === undefined ? sql`` : sql`LIMIT ${plan.limit}`} ${
+    plan.offset === undefined ? sql`` : sql`OFFSET ${plan.offset}`
+  }`
+}
+
+function aggregateExpression(
+  storage: ModelStorage,
+  operation: 'count' | 'min' | 'max' | 'sum' | 'average',
+  attribute?: string,
+): SQL {
+  if (operation === 'count') return sql`count(*)`
+  const field =
+    storage.kind === 'entity-state'
+      ? operation === 'sum' || operation === 'average'
+        ? sql`(${jsonTextAttribute(attribute!)})::numeric`
+        : jsonAttribute(attribute!)
+      : queryAttribute(storage, attribute!)
+  if (operation === 'min') return sql`min(${field})`
+  if (operation === 'max') return sql`max(${field})`
+  if (operation === 'sum') return sql`sum(${field})`
+  return sql`avg(${field})`
 }
 
 function qualifiedIdentifier(value: string): SQL {
