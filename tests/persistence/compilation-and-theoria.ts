@@ -155,7 +155,13 @@ export function registerCompilationAndTheoriaTests(
           primaryKey: 'customer_id',
           versionColumn: 'lock_version',
           timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
-          columns: { id: 'customer_id', displayName: 'full_name', active: 'enabled' },
+          columns: {
+            id: 'customer_id',
+            displayName: 'full_name',
+            active: 'enabled',
+            nullableCode: 'nullable_code',
+          },
+          optionalAttributes: ['nickname'],
         },
       }),
       expect.objectContaining({

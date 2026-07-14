@@ -69,6 +69,7 @@ import { RenameCounter } from '../examples/persistence-app/dist/counters/actions
 import { SaveCounter } from '../examples/persistence-app/dist/counters/actions/save-counter.js'
 import { InspectCounterQueries } from '../examples/persistence-app/dist/counters/queries/inspect-counter-queries.js'
 import { SaveLegacyCustomer } from '../examples/persistence-app/dist/counters/actions/save-legacy-customer.js'
+import { ClearLegacyCustomerNickname } from '../examples/persistence-app/dist/counters/actions/clear-legacy-customer-nickname.js'
 import { DeleteLegacyCustomer } from '../examples/persistence-app/dist/counters/actions/delete-legacy-customer.js'
 import { SaveLegacyNote } from '../examples/persistence-app/dist/counters/actions/save-legacy-note.js'
 import { RequestCounterNotification } from '../examples/persistence-app/dist/counters/actions/request-counter-notification.js'
@@ -127,6 +128,8 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         customer_id text PRIMARY KEY,
         full_name text NOT NULL,
         enabled boolean NOT NULL,
+        nickname text,
+        nullable_code text,
         lock_version integer NOT NULL DEFAULT 1,
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now()
@@ -2487,8 +2490,8 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
   it('maps Eloquent-style models onto existing tables without losing durability or concurrency', async () => {
     const runtime = await bootPersistenceRuntime()
     await pool.query(`
-      INSERT INTO legacy_customers (customer_id, full_name, enabled, lock_version)
-      VALUES ('legacy-existing', 'Before', true, 7)
+      INSERT INTO legacy_customers (customer_id, full_name, enabled, nickname, lock_version)
+      VALUES ('legacy-existing', 'Before', true, 'Original nickname', 7)
     `)
     const updated = await runAction(runtime, SaveLegacyCustomer, {
       id: 'legacy-existing',
@@ -2500,17 +2503,35 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       version: 8,
       created: false,
     })
+    expect(await runAction(runtime, ClearLegacyCustomerNickname, 'legacy-existing')).toEqual({
+      nickname: undefined,
+      nullableCode: null,
+      saved: true,
+      version: 9,
+    })
     const existing = await pool.query<{
       full_name: string
       enabled: boolean
+      nickname: string | null
       lock_version: number
       updated_at: Date
     }>(`
-      SELECT full_name, enabled, lock_version, updated_at FROM legacy_customers WHERE customer_id = 'legacy-existing'
+      SELECT full_name, enabled, nickname, lock_version, updated_at FROM legacy_customers WHERE customer_id = 'legacy-existing'
     `)
     expect(existing.rows[0]).toEqual(
-      expect.objectContaining({ full_name: 'After', enabled: true, lock_version: 8 }),
+      expect.objectContaining({
+        full_name: 'After',
+        enabled: true,
+        nickname: null,
+        lock_version: 9,
+      }),
     )
+    expect(await runAction(runtime, ClearLegacyCustomerNickname, 'legacy-existing')).toEqual({
+      nickname: undefined,
+      nullableCode: null,
+      saved: false,
+      version: 9,
+    })
     expect(
       (
         await pool.query(

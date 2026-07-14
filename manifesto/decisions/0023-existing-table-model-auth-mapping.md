@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
+- **Amended:** 2026-07-14
 - **Implementation:** Complete for the MVP common path
 - **Decision owners:** Doxa maintainers
 
@@ -44,6 +45,9 @@ Defaults should make mapped declarations smaller:
 - Optimistic concurrency uses the declared version column, or PostgreSQL's `xmin` when no version
   column is available.
 - `static table` alone is sufficient when only the table name differs.
+- TypeScript-optional logical attributes map an absent value to SQL `NULL` and hydrate SQL `NULL`
+  back to an absent attribute. Required attributes whose type explicitly includes `null` retain
+  `null`; the compiler records that distinction in the table-storage artifact.
 
 The compiler records and validates the mapping. The runtime still owns hydration, identity maps,
 dirty tracking, observers, `save()`, transactions, optimistic concurrency, journal, and outbox.
@@ -108,7 +112,8 @@ relabels that format or silently weakens password policy.
 ## Required proof
 
 1. A model with only `static table` hydrates, mutates, saves, refreshes, and deletes existing rows.
-2. Key, column, timestamp, and version overrides retain observer and concurrency semantics.
+2. Key, column, timestamp, version, and optional-attribute overrides retain observer, dirty-state,
+   and concurrency semantics.
 3. Advanced multi-record mappers remain an explicit post-MVP extension point.
 4. Auth can register and authenticate against mapped identity and credential tables.
 5. Auth can map identities while retaining default Doxa session, token, challenge, and audit tables.

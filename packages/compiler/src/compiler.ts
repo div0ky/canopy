@@ -909,6 +909,7 @@ export async function compileApplication(
     }
     const name = requiredClassName(declaration)
     const localId = readRequiredStaticString(declaration, 'id')
+    const optionalAttributes = compileOptionalModelAttributes(declaration)
     const entry: ModelManifestEntry = {
       id: `model:${ownerId}/${localId}`,
       ownerId,
@@ -917,7 +918,7 @@ export async function compileApplication(
       entityType: `model:${ownerId}/${localId}`,
       attributes: compileModelAttributes(declaration),
       relationships: [],
-      storage: compileModelStorage(declaration),
+      storage: compileModelStorage(declaration, optionalAttributes),
       source: sourceOf(declaration, normalized.projectRoot),
     }
     modelByDeclaration.set(declaration, entry)
@@ -1072,6 +1073,21 @@ export async function compileApplication(
     return names
   }
 
+  function compileOptionalModelAttributes(declaration: ts.ClassDeclaration): readonly string[] {
+    const symbol = declaration.name ? checker.getSymbolAtLocation(declaration.name) : undefined
+    if (!symbol) fail(declaration, 'Model attributes could not be resolved.')
+    const attributes = modelAttributeType(checker.getDeclaredTypeOfSymbol(symbol))
+    if (!attributes) {
+      fail(declaration, `${requiredClassName(declaration)} must declare Model attribute types.`)
+    }
+    return checker
+      .getPropertiesOfType(attributes)
+      .filter((property) => (property.flags & ts.SymbolFlags.Optional) !== 0)
+      .map((property) => property.name)
+      .filter((name) => validIdentifier(name))
+      .sort((left, right) => left.localeCompare(right))
+  }
+
   function modelAttributeType(type: ts.Type): ts.Type | undefined {
     for (const base of checker.getBaseTypes(type as ts.InterfaceType)) {
       const declaration = base.getSymbol()?.declarations?.[0]
@@ -1084,7 +1100,10 @@ export async function compileApplication(
     return undefined
   }
 
-  function compileModelStorage(declaration: ts.ClassDeclaration): ModelManifestEntry['storage'] {
+  function compileModelStorage(
+    declaration: ts.ClassDeclaration,
+    optionalAttributes: readonly string[],
+  ): ModelManifestEntry['storage'] {
     const tableValue = readOptionalStaticJson(declaration, 'table')
     if (tableValue === undefined) return { kind: 'entity-state' }
     if (typeof tableValue !== 'string' || !validQualifiedIdentifier(tableValue)) {
@@ -1150,6 +1169,7 @@ export async function compileApplication(
       table: tableValue,
       primaryKey: primaryKeyValue,
       columns: { ...columnsValue, id: primaryKeyValue },
+      ...(optionalAttributes.length > 0 ? { optionalAttributes } : {}),
       ...(typeof versionValue === 'string' ? { versionColumn: versionValue } : {}),
       timestamps,
     }

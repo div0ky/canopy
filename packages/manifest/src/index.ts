@@ -120,6 +120,7 @@ export interface ModelManifestEntry {
         readonly table: string
         readonly primaryKey: string
         readonly columns: Readonly<Record<string, string>>
+        readonly optionalAttributes?: readonly string[]
         readonly versionColumn?: string
         readonly timestamps: false | { readonly createdAt: string; readonly updatedAt: string }
       }
@@ -410,6 +411,25 @@ export function assertManifest(value: unknown): asserts value is DoxaManifest {
       throw new ManifestCompatibilityError(
         `Doxa manifest model ${model.id} has invalid relationships.`,
       )
+    }
+    if (
+      isRecord(model.storage) &&
+      model.storage.kind === 'table' &&
+      model.storage.optionalAttributes !== undefined
+    ) {
+      const optionalAttributes = model.storage.optionalAttributes
+      if (
+        !Array.isArray(optionalAttributes) ||
+        !optionalAttributes.every(nonEmptyString) ||
+        new Set(optionalAttributes).size !== optionalAttributes.length ||
+        optionalAttributes.some(
+          (attribute) => attribute === 'id' || !model.attributes.includes(attribute),
+        )
+      ) {
+        throw new ManifestCompatibilityError(
+          `Doxa manifest model ${model.id} has invalid optional attributes.`,
+        )
+      }
     }
     for (const relationship of model.relationships) {
       if (

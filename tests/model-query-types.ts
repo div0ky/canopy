@@ -1,3 +1,5 @@
+import { Model } from '@doxajs/core'
+
 import { Counter, CounterNote } from '../examples/persistence-app/dist/counters/models/counter.js'
 
 function modelQueryTypeProofs(): void {
@@ -39,4 +41,27 @@ function modelQueryTypeProofs(): void {
   Counter.prototype.fill({ value: undefined })
 }
 
+class ModelIdentityTypeProof extends Counter {
+  attemptIdentityMutation(): void {
+    // @ts-expect-error Model identity is readonly inside model behavior too.
+    this.attributes.id = 'other'
+    // @ts-expect-error The protected attribute bag cannot be replaced.
+    this.attributes = { id: 'other', value: 1 }
+  }
+}
+
+class RequiredUndefinedTypeProof extends Model<{
+  id: string
+  required: string | undefined
+  optional?: string
+}> {}
+
+RequiredUndefinedTypeProof.prototype.setAttribute('required', 'value')
+RequiredUndefinedTypeProof.prototype.setAttribute('optional', undefined)
+// @ts-expect-error Only optional attributes can be removed.
+RequiredUndefinedTypeProof.prototype.setAttribute('required', undefined)
+// @ts-expect-error Required attributes cannot be removed through fill.
+RequiredUndefinedTypeProof.prototype.fill({ required: undefined })
+
 void modelQueryTypeProofs
+void ModelIdentityTypeProof
