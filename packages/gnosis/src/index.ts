@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { Buffer } from 'node:buffer'
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
@@ -27,6 +28,7 @@ export { documentationIndex, searchDocumentation, type DocumentationSection }
 
 export const GNOSIS_PROTOCOL_ADAPTER_VERSION = 1 as const
 export const GNOSIS_VERSION = packageVersion()
+export const MAX_MODEL_QUERY_RESULT_BYTES = 1_000_000
 
 export interface GnosisModelQueryRequest {
   readonly modelId: string
@@ -115,7 +117,12 @@ const documentationSearchSchema = z.object({
     )
     .max(20),
 })
-const modelQueryValueSchema = z.union([z.string(), z.number().finite(), z.boolean(), z.null()])
+const modelQueryValueSchema = z.union([
+  z.string().max(10_000),
+  z.number().finite(),
+  z.boolean(),
+  z.null(),
+])
 const modelQueryInputSchema = {
   modelId: z.string().min(1).max(256),
   fields: z.array(z.string().min(1).max(128)).min(1).max(50),
@@ -257,7 +264,7 @@ export function createGnosisServer(
               `${modelId} does not declare logical attribute ${unknown}.`,
             )
           }
-          return sanitizeInspectionValue(
+          const result = sanitizeInspectionValue(
             await options.queryModels!({
               modelId,
               fields: uniqueFields,
@@ -266,6 +273,13 @@ export function createGnosisServer(
               limit: limit ?? 20,
             }),
           )
+          if (Buffer.byteLength(JSON.stringify(result), 'utf8') > MAX_MODEL_QUERY_RESULT_BYTES) {
+            throw new IntrospectionError(
+              'invalid_input',
+              'Model query result exceeds 1,000,000 bytes. Request fewer fields or rows.',
+            )
+          }
+          return result
         }),
     )
   }

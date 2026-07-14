@@ -120,6 +120,18 @@ describe('Gnosis read-only local engineering server', () => {
         ) as object,
       ),
     ).toHaveLength(100)
+    expect(
+      sanitizeInspectionValue(
+        'primary postgres://doxa:first@localhost/doxa fallback https://user:second@example.test/',
+      ),
+    ).toBe(
+      'primary postgres://doxa:[REDACTED]@localhost/doxa fallback https://user:[REDACTED]@example.test/',
+    )
+    expect(
+      sanitizeInspectionValue(
+        `-----BEGIN PRIVATE KEY-----${'a'.repeat(25_000)}-----END PRIVATE KEY-----`,
+      ),
+    ).toBe('[REDACTED]')
 
     let staleError: unknown
     try {
@@ -153,6 +165,19 @@ describe('Gnosis read-only local engineering server', () => {
     const server = createGnosisServer(manifest, {
       queryModels: async (request) => {
         modelQueries.push(request)
+        if (request.limit === 100) {
+          return {
+            modelId: request.modelId,
+            fields: request.fields,
+            rows: Array.from({ length: 100 }, (_, index) => ({
+              id: `counter-${index}-${'a'.repeat(20_000)}`,
+              value: 'b'.repeat(20_000),
+            })),
+            returned: 100,
+            truncated: false,
+            executionId: 'execution-large',
+          }
+        }
         return {
           modelId: request.modelId,
           fields: request.fields,
@@ -237,6 +262,40 @@ describe('Gnosis read-only local engineering server', () => {
       })
       expect(unknownAttribute.isError).toBe(true)
       expect(modelQueries).toHaveLength(1)
+
+      const oversizedFilter = await client.callTool({
+        name: 'query_models',
+        arguments: {
+          modelId: 'model:counters/counter',
+          fields: ['id'],
+          filters: [{ attribute: 'id', operator: '=', value: 'a'.repeat(10_001) }],
+        },
+      })
+      expect(oversizedFilter.isError).toBe(true)
+      expect(modelQueries).toHaveLength(1)
+
+      const oversizedResult = await client.callTool({
+        name: 'query_models',
+        arguments: {
+          modelId: 'model:counters/counter',
+          fields: ['id', 'value'],
+          limit: 100,
+        },
+      })
+      expect(oversizedResult.isError).toBe(true)
+      const oversizedResultContent = oversizedResult.content as Array<{
+        type: string
+        text?: string
+      }>
+      expect(
+        JSON.parse(
+          oversizedResultContent[0]?.type === 'text' ? (oversizedResultContent[0].text ?? '') : '',
+        ),
+      ).toEqual({
+        code: 'invalid_input',
+        message: 'Model query result exceeds 1,000,000 bytes. Request fewer fields or rows.',
+      })
+      expect(modelQueries).toHaveLength(2)
 
       const missing = await client.callTool({
         name: 'describe_model',

@@ -156,11 +156,13 @@ export {
 } from './errors.js'
 
 export type RuntimeState = 'booting' | 'ready' | 'draining' | 'stopping' | 'disposing' | 'stopped'
+export type RuntimeProfile = 'application' | 'model-reader'
 
 type ApplicationDeclaration = abstract new () => DoxaApplication
 
 export interface BootOptions {
   readonly artifactsDirectory?: string
+  readonly profile?: RuntimeProfile
   readonly environment?: Readonly<Record<string, string | undefined>>
   readonly dotenvPath?: string | false
   readonly configurationOverrides?: Readonly<Record<string, Readonly<Record<string, unknown>>>>
@@ -282,6 +284,7 @@ export class DoxaRuntime {
 
   private constructor(
     readonly manifest: DoxaManifest,
+    readonly profile: RuntimeProfile,
     private readonly artifacts: RuntimeArtifacts,
     private readonly graph: RuntimeGraph,
     private readonly participants: readonly LifecycleParticipant[],
@@ -423,7 +426,17 @@ export class DoxaRuntime {
       )
     }
     const deadlines = { ...DEFAULT_DEADLINES, ...options.deadlines }
-    const configurations = await materializeConfigurations(artifacts, options)
+    const profile = normalizeRuntimeProfile(options.profile)
+    const includedProviderIds = providerIdsForProfile(artifacts.manifest, profile)
+    const includedConfigurationIds = configurationIdsForProviders(
+      artifacts.manifest,
+      includedProviderIds,
+    )
+    const configurations = await materializeConfigurations(
+      artifacts,
+      options,
+      includedConfigurationIds,
+    )
     assertOperationInfrastructure(artifacts.manifest)
     const consoleOptions: ConsoleLogSinkOptions = {
       ...(options.logging && options.logging.format ? { format: options.logging.format } : {}),
@@ -451,6 +464,7 @@ export class DoxaRuntime {
       configurations,
       options.providerOverrides ?? {},
       logger,
+      includedProviderIds,
     )
     const transactionProvider = artifacts.manifest.providers.find((provider) =>
       provider.capabilities.includes('transactions'),
@@ -503,6 +517,7 @@ export class DoxaRuntime {
     sink.attach(observations)
     const runtime = new DoxaRuntime(
       artifacts.manifest,
+      profile,
       artifacts,
       graph,
       graph.participants,
@@ -568,6 +583,18 @@ export class DoxaRuntime {
   }
 
   async admit<Output>(
+    seed: ExecutionContextSeed,
+    work: (context: ExecutionContext) => Output | Promise<Output>,
+  ): Promise<Output> {
+    if (this.profile !== 'application') {
+      throw new ExecutionAdmissionError(
+        'The model-reader runtime profile admits only bounded model record queries.',
+      )
+    }
+    return this.#admitExecution(seed, work)
+  }
+
+  async #admitExecution<Output>(
     seed: ExecutionContextSeed,
     work: (context: ExecutionContext) => Output | Promise<Output>,
   ): Promise<Output> {
@@ -1035,7 +1062,31 @@ export class DoxaRuntime {
     }
   }
 
-  async queryModelRecords(input: ModelRecordQuery): Promise<ModelRecordQueryResult> {
+  async queryModelRecords(
+    input: ModelRecordQuery,
+    seed: ExecutionContextSeed,
+  ): Promise<ModelRecordQueryResult> {
+    if (this.profile !== 'model-reader') {
+      throw new OperationDispatchError(
+        'Model record inspection requires the model-reader runtime profile.',
+      )
+    }
+    if (
+      seed.actor.kind !== 'system' ||
+      seed.actor.id === undefined ||
+      seed.transport.kind !== 'console' ||
+      seed.authentication?.state !== 'authenticated' ||
+      seed.authentication.identityId !== seed.actor.id ||
+      seed.authentication.method !== 'console'
+    ) {
+      throw new ExecutionAdmissionError(
+        'Model record inspection requires an authenticated system console execution.',
+      )
+    }
+    return this.#admitExecution(seed, () => this.#queryModelRecords(input))
+  }
+
+  async #queryModelRecords(input: ModelRecordQuery): Promise<ModelRecordQueryResult> {
     const store = this.requireExecution('query')
     const definition = this.#modelsById.get(input.modelId)
     if (!definition) {
@@ -1050,6 +1101,13 @@ export class DoxaRuntime {
     }
     if (filters.length > 20) {
       throw new OperationDispatchError('Model record queries accept at most 20 filters.')
+    }
+    if (
+      filters.some((filter) => typeof filter.value === 'string' && filter.value.length > 10_000)
+    ) {
+      throw new OperationDispatchError(
+        'Model record query string comparisons accept at most 10,000 characters.',
+      )
     }
     if (orderBy.length > 5) {
       throw new OperationDispatchError('Model record queries accept at most 5 ordering entries.')
@@ -1091,7 +1149,7 @@ export class DoxaRuntime {
             const models = new ModelSession(
               reader,
               this.#modelsByConstructor,
-              this.modelObserverDispatcher(store),
+              undefined,
               false,
               this.modelQueryDiagnosticRecorder(),
             )
@@ -2260,9 +2318,62 @@ async function loadArtifacts(artifactsDirectory: string): Promise<RuntimeArtifac
   return { manifest, registry }
 }
 
+function providerIdsForProfile(
+  manifest: DoxaManifest,
+  profile: RuntimeProfile,
+): ReadonlySet<string> | undefined {
+  if (profile === 'application') return undefined
+  const providerById = new Map(manifest.providers.map((provider) => [provider.id, provider]))
+  const transactionProvider = manifest.providers.find((provider) =>
+    provider.capabilities.includes('transactions'),
+  )
+  if (!transactionProvider) {
+    throw new RuntimeIntegrityError(
+      'The model-reader runtime profile requires a declared transaction provider.',
+    )
+  }
+  const included = new Set<string>()
+  const include = (id: string): void => {
+    if (included.has(id)) return
+    const provider = providerById.get(id)
+    if (!provider) return
+    included.add(id)
+    for (const dependency of provider.dependencies) {
+      if (dependency.targetId) include(dependency.targetId)
+    }
+  }
+  include(transactionProvider.id)
+  return included
+}
+
+function normalizeRuntimeProfile(value: unknown): RuntimeProfile {
+  if (value === undefined || value === 'application') return 'application'
+  if (value === 'model-reader') return value
+  throw new RuntimeIntegrityError(`Unknown Doxa runtime profile ${String(value)}.`)
+}
+
+function configurationIdsForProviders(
+  manifest: DoxaManifest,
+  includedProviderIds: ReadonlySet<string> | undefined,
+): ReadonlySet<string> | undefined {
+  if (!includedProviderIds) return undefined
+  const configurationIds = new Set(manifest.configurations.map((entry) => entry.id))
+  const included = new Set<string>()
+  for (const provider of manifest.providers) {
+    if (!includedProviderIds.has(provider.id)) continue
+    for (const dependency of provider.dependencies) {
+      if (dependency.targetId && configurationIds.has(dependency.targetId)) {
+        included.add(dependency.targetId)
+      }
+    }
+  }
+  return included
+}
+
 async function materializeConfigurations(
   artifacts: RuntimeArtifacts,
   options: BootOptions,
+  includedConfigurationIds?: ReadonlySet<string>,
 ): Promise<Map<string, object>> {
   const dotenv =
     options.dotenvPath === false ? {} : await loadDotenv(path.resolve(options.dotenvPath ?? '.env'))
@@ -2271,6 +2382,7 @@ async function materializeConfigurations(
   const issues: string[] = []
 
   for (const configuration of artifacts.manifest.configurations) {
+    if (includedConfigurationIds && !includedConfigurationIds.has(configuration.id)) continue
     const Constructor = artifacts.registry.constructors[configuration.id]
     if (!Constructor) throw new RuntimeIntegrityError(`Registry is missing ${configuration.id}.`)
     const instance = Object.create(Constructor.prototype) as Record<string, unknown>
@@ -2350,6 +2462,7 @@ function constructSingletonGraph(
   configurations: ReadonlyMap<string, object>,
   overrides: Readonly<Record<string, object>>,
   logger: Logger,
+  includedProviderIds?: ReadonlySet<string>,
 ): RuntimeGraph {
   const providerById = new Map(
     artifacts.manifest.providers.map((provider) => [provider.id, provider]),
@@ -2372,6 +2485,7 @@ function constructSingletonGraph(
     if (configuration) return configuration
     const provider = providerById.get(id)
     if (!provider) return undefined
+    if (includedProviderIds && !includedProviderIds.has(id)) return undefined
     if (provider.scope === 'singleton' && singletonInstances.has(id)) {
       return singletonInstances.get(id)
     }
@@ -2428,7 +2542,11 @@ function constructSingletonGraph(
   for (const provider of [...artifacts.manifest.providers].sort((left, right) =>
     left.id.localeCompare(right.id),
   )) {
-    if (provider.scope === 'singleton') resolve(provider.id)
+    if (
+      provider.scope === 'singleton' &&
+      (!includedProviderIds || includedProviderIds.has(provider.id))
+    )
+      resolve(provider.id)
   }
   return {
     participants: participantOrder,

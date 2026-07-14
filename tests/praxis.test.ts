@@ -607,22 +607,26 @@ describe('Praxis command suite', () => {
   })
 
   it('fails Gnosis installation closed on malformed managed guidance', async () => {
-    const root = await temporaryDirectory()
-    const original = '# Project instructions\n\n<doxa-gnosis-guidelines>\nIncomplete block.\n'
-    await writeFile(path.join(root, 'AGENTS.md'), original)
-    const errors: string[] = []
+    for (const original of [
+      '# Project instructions\n\n<doxa-gnosis-guidelines>\nIncomplete block.\n',
+      '</doxa-gnosis-guidelines>\nReversed block.\n<doxa-gnosis-guidelines>\n',
+    ]) {
+      const root = await temporaryDirectory()
+      await writeFile(path.join(root, 'AGENTS.md'), original)
+      const errors: string[] = []
 
-    expect(
-      await runPraxis(['gnosis:install', '--agent=codex'], root, {
-        out: () => undefined,
-        error: (message) => errors.push(message),
-      }),
-    ).toBe(1)
-    expect(errors).toEqual([
-      'AGENTS.md contains malformed or duplicate Doxa Gnosis guideline markers.',
-    ])
-    expect(await readFile(path.join(root, 'AGENTS.md'), 'utf8')).toBe(original)
-    expect(await fileExists(path.join(root, '.codex/config.toml'))).toBe(false)
+      expect(
+        await runPraxis(['gnosis:install', '--agent=codex'], root, {
+          out: () => undefined,
+          error: (message) => errors.push(message),
+        }),
+      ).toBe(1)
+      expect(errors).toEqual([
+        'AGENTS.md contains malformed or duplicate Doxa Gnosis guideline markers.',
+      ])
+      expect(await readFile(path.join(root, 'AGENTS.md'), 'utf8')).toBe(original)
+      expect(await fileExists(path.join(root, '.codex/config.toml'))).toBe(false)
+    }
   })
 
   it('installs and wires Theoria without manual package or Feature edits', async () => {

@@ -1632,33 +1632,31 @@ async function queryGnosisModels(
   buildHash: string,
   request: import('@doxajs/gnosis').GnosisModelQueryRequest,
 ): Promise<import('@doxajs/gnosis').GnosisModelQueryResult> {
+  const environment = { ...(await dotenvEnvironment(cwd)), ...process.env }
+  if (environment.NODE_ENV?.trim().toLowerCase() === 'production') {
+    throw new PraxisCommandError('Gnosis model queries are disabled in production.')
+  }
   const module = await loadPrebuiltApplication(cwd)
   if (module.manifest.buildHash !== buildHash) {
     throw new PraxisCommandError(
       'Doxa artifacts changed after Gnosis started. Restart the MCP client.',
     )
   }
-  const environment = { ...(await dotenvEnvironment(cwd)), ...process.env }
-  if (environment.NODE_ENV === 'production') {
-    throw new PraxisCommandError('Gnosis model queries are disabled in production.')
-  }
   const runtime = await Doxa.boot(module.Application, {
     artifactsDirectory: path.join(cwd, '.doxa'),
+    profile: 'model-reader',
     dotenvPath: false,
     environment,
     roles: { worker: false, scheduler: false },
     logging: false,
   })
   try {
-    return await runtime.admit(
-      {
-        actor: { kind: 'system', id: 'doxa:gnosis' },
-        authentication: { state: 'authenticated', identityId: 'doxa:gnosis', method: 'console' },
-        transport: { kind: 'console', name: 'gnosis:query-models' },
-        deadline: new Date(Date.now() + 30_000),
-      },
-      () => runtime.queryModelRecords(request),
-    )
+    return await runtime.queryModelRecords(request, {
+      actor: { kind: 'system', id: 'doxa:gnosis' },
+      authentication: { state: 'authenticated', identityId: 'doxa:gnosis', method: 'console' },
+      transport: { kind: 'console', name: 'gnosis:query-models' },
+      deadline: new Date(Date.now() + 30_000),
+    })
   } finally {
     await runtime.shutdown()
   }

@@ -31,9 +31,11 @@ idempotent, bounded, and closed-world. Unknown models return stable structured e
 
 The sole application-data capability is `query_models`. It accepts a stable model ID, explicitly
 selected logical fields, bounded comparison filters and ordering, and at most 100 rows. Praxis boots
-the matching artifact in a fresh authenticated non-production console execution, uses Doxa's
-read-only `ModelSession`, disables application logging, and always shuts the runtime down. The tool
-refuses production, raw SQL, physical table and column names, arbitrary expressions, and mutations.
+the matching artifact with the restricted `model-reader` profile in a fresh authenticated
+non-production console execution. The profile starts only the transaction-provider dependency
+closure, uses Doxa's read-only `ModelSession` without application model observers, disables
+application logging and diagnostic adapters, and always shuts the runtime down. The tool refuses
+production, raw SQL, physical table and column names, arbitrary expressions, and mutations.
 
 The package is an optional Praxis dependency and is absent from production installations performed
 with `--prod --no-optional`. Remote transport, unrestricted application-data access, logs, tests,

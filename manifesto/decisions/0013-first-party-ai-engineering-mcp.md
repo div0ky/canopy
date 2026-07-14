@@ -154,8 +154,14 @@ distinct application-data capability, not arbitrary SQL or application evaluatio
 
 - Resolve one declared model by stable manifest ID.
 - Accept only logical model attributes and Doxa-owned comparison and ordering vocabulary.
-- Require an explicit bounded field selection and cap predicates, ordering, and returned rows.
-- Execute through a fresh admitted console execution and read-only `ModelSession`.
+- Require an explicit bounded field selection and cap predicates, ordering, returned rows, scalar
+  input size, and serialized result size.
+- Execute through a fresh admitted console execution and read-only `ModelSession` without model
+  observer callbacks.
+- Require the runtime to admit that entrypoint only for an authenticated system actor whose identity
+  matches the actor ID over the console transport.
+- Boot the runtime's named `model-reader` profile so only the transaction provider and its declared
+  dependency closure participate in lifecycle.
 - Return detached plain structured values before the execution closes.
 - Recursively redact credential-shaped keys and values.
 - Refuse production execution and never accept SQL, filesystem paths, commands, or expressions.

@@ -52,7 +52,10 @@ rewriting the file.
 
 The server uses the official pinned TypeScript MCP SDK and stdio transport. It writes no protocol
 information to stdout outside the MCP transport. Ordinary shutdown does not boot an application
-runtime. A `query_models` call delegates one bounded boot, execution, and shutdown to Praxis.
+runtime. A `query_models` call delegates one bounded `model-reader` profile boot, execution, and
+shutdown to Praxis. That profile materializes and starts only the transaction provider and its
+declared configuration and provider dependency closure. It does not construct or start unrelated
+providers, and its ordinary `admit` entrypoint is closed.
 
 ## Initial resources and tools
 
@@ -90,11 +93,15 @@ than reaching tool handlers or raw internal exceptions. Error results do not inc
 
 `query_models` requires a stable model ID, one through fifty logical fields, at most twenty
 comparison predicates, at most five logical ordering entries, and a row limit from one through one
-hundred. It accepts only JSON scalar comparison values and returns detached plain records. It does
-not accept SQL, physical table or column names, relationship callbacks, arbitrary expressions, or
-mutation terminals. Praxis admits the work as the authenticated `doxa:gnosis` system actor, uses a
-read-only model session, disables runtime logging on the protocol process, refuses production
-execution, and shuts the runtime down in `finally`.
+hundred. It accepts only JSON scalar comparison values, caps string comparisons at 10,000
+characters, caps the sanitized structured result at 1,000,000 UTF-8 bytes, and returns detached
+plain records. It does not accept SQL, physical table or column names, relationship callbacks,
+arbitrary expressions, or mutation terminals. Praxis admits the work as the authenticated
+`doxa:gnosis` system actor, uses a read-only model session without invoking application model
+observers, disables runtime logging and application observation or telemetry adapters on the
+protocol process, refuses production execution, and shuts the runtime down in `finally`. The runtime
+itself rejects model-reader calls whose actor, authenticated identity, authentication method, or
+transport does not match that system-console boundary.
 
 ## Application information
 

@@ -2372,11 +2372,57 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
   })
 
   it('queries declared models through bounded logical read-only records', async () => {
-    const runtime = await bootPersistenceRuntime()
-    await runAction(runtime, SaveCounter, { id: 'gnosis-low', amount: 1 })
-    await runAction(runtime, SaveCounter, { id: 'gnosis-high', amount: 3 })
-    executionSequence += 1
-    const result = await runtime.admit(
+    const writer = await bootPersistenceRuntime()
+    await runAction(writer, SaveCounter, { id: 'gnosis-low', amount: 1 })
+    await runAction(writer, SaveCounter, { id: 'gnosis-high', amount: 3 })
+    await expect(
+      writer.queryModelRecords(
+        { modelId: 'model:counters/counter', fields: ['id'] },
+        { actor: { kind: 'system', id: 'not-gnosis' }, transport: { kind: 'test' } },
+      ),
+    ).rejects.toThrow('model-reader runtime profile')
+    await writer.shutdown()
+    resetObserverLog()
+    resetTelemetryRecords()
+    const observationsBefore = await pool.query<{ count: string }>(
+      'SELECT COUNT(*) AS count FROM doxa_theoria_observations',
+    )
+    const runtime = await bootPersistenceRuntime({
+      profile: 'model-reader',
+      minimalEnvironment: true,
+    })
+    await expect(
+      runtime.admit(
+        { actor: { kind: 'system', id: 'not-a-model-query' }, transport: { kind: 'test' } },
+        () => undefined,
+      ),
+    ).rejects.toThrow('admits only bounded model record queries')
+    await expect(
+      runtime.queryModelRecords(
+        {
+          modelId: 'model:counters/counter',
+          fields: ['id'],
+          filters: [{ attribute: 'id', operator: '=', value: 'a'.repeat(10_001) }],
+        },
+        {
+          actor: { kind: 'system', id: 'oversized-query' },
+          authentication: {
+            state: 'authenticated',
+            identityId: 'oversized-query',
+            method: 'console',
+          },
+          transport: { kind: 'console', name: 'oversized-query' },
+        },
+      ),
+    ).rejects.toThrow('at most 10,000 characters')
+    const result = await runtime.queryModelRecords(
+      {
+        modelId: 'model:counters/counter',
+        fields: ['id', 'value'],
+        filters: [{ attribute: 'value', operator: '>=', value: 1 }],
+        orderBy: [{ attribute: 'value', direction: 'desc' }],
+        limit: 1,
+      },
       {
         actor: { kind: 'system', id: 'doxa:gnosis' },
         authentication: {
@@ -2386,14 +2432,6 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         },
         transport: { kind: 'console', name: 'gnosis:query-models' },
       },
-      () =>
-        runtime.queryModelRecords({
-          modelId: 'model:counters/counter',
-          fields: ['id', 'value'],
-          filters: [{ attribute: 'value', operator: '>=', value: 1 }],
-          orderBy: [{ attribute: 'value', direction: 'desc' }],
-          limit: 1,
-        }),
     )
     expect(result).toEqual({
       modelId: 'model:counters/counter',
@@ -2403,6 +2441,16 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       truncated: true,
       executionId: expect.any(String),
     })
+    expect(runtime.profile).toBe('model-reader')
+    expect(observerLog).toEqual([])
+    expect(telemetryRecords).toEqual([])
+    expect(
+      (
+        await pool.query<{ count: string }>(
+          'SELECT COUNT(*) AS count FROM doxa_theoria_observations',
+        )
+      ).rows,
+    ).toEqual(observationsBefore.rows)
   })
 
   it('maps Eloquent-style models onto existing tables without losing durability or concurrency', async () => {
@@ -3214,16 +3262,26 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
   })
 })
 
-async function bootPersistenceRuntime(): Promise<DoxaRuntime> {
+async function bootPersistenceRuntime(
+  options: {
+    readonly profile?: 'application' | 'model-reader'
+    readonly minimalEnvironment?: boolean
+  } = {},
+): Promise<DoxaRuntime> {
   const artifactsDirectory = await temporaryDirectory()
   await compilePersistenceApplication(artifactsDirectory)
   const runtime = await Doxa.boot(Application, {
     artifactsDirectory,
+    ...(options.profile ? { profile: options.profile } : {}),
     dotenvPath: false,
     environment: {
       DATABASE_CONNECTION_STRING: connectionString,
-      COMMUNICATIONS_SEND_GRID_WEBHOOK_PUBLIC_KEY: sendGridPublicKey,
-      COMMUNICATIONS_TWILIO_AUTH_TOKEN: twilioAuthToken,
+      ...(options.minimalEnvironment
+        ? {}
+        : {
+            COMMUNICATIONS_SEND_GRID_WEBHOOK_PUBLIC_KEY: sendGridPublicKey,
+            COMMUNICATIONS_TWILIO_AUTH_TOKEN: twilioAuthToken,
+          }),
     },
   })
   runtimes.push(runtime)

@@ -28,7 +28,9 @@ async function installGnosisGuidelines(cwd: string): Promise<string> {
   const existing = (await readOptional(file)) ?? ''
   const starts = occurrences(existing, startMarker)
   const ends = occurrences(existing, endMarker)
-  if (starts !== ends || starts > 1) {
+  const start = existing.indexOf(startMarker)
+  const end = existing.indexOf(endMarker)
+  if (starts !== ends || starts > 1 || (starts === 1 && end < start)) {
     throw new PraxisCommandError(
       'AGENTS.md contains malformed or duplicate Doxa Gnosis guideline markers.',
     )
@@ -47,9 +49,8 @@ async function installGnosisGuidelines(cwd: string): Promise<string> {
             : '\n\n'
     content = `${existing}${separator}${block}\n`
   } else {
-    const start = existing.indexOf(startMarker)
-    const end = existing.indexOf(endMarker, start) + endMarker.length
-    const suffix = existing.slice(end)
+    const afterBlock = end + endMarker.length
+    const suffix = existing.slice(afterBlock)
     content = `${existing.slice(0, start)}${block}${suffix || '\n'}`
   }
   await writeChanged(file, content)
