@@ -12,6 +12,7 @@ import {
 import type { ModelObserverDispatcher } from './observer.js'
 import {
   InvalidModelCursorError,
+  MODEL_QUERY_MAX_PAGE_SIZE,
   ModelQuery,
   ModelQueryError,
   type ModelCursorPage,
@@ -19,6 +20,7 @@ import {
   type ModelPage,
   type ModelQueryPlan,
   type ModelQueryValue,
+  type ModelRelationPath,
   validateModelQueryPlan,
 } from './model-query.js'
 import type { ModelRelationship } from './model-relation.js'
@@ -46,6 +48,12 @@ export type ModelConstructor<
 
 type RelationsOf<Instance extends Model<any, any>> =
   Instance extends Model<any, infer Relations> ? Relations : never
+type ModelQueryInput<Attributes extends ModelAttributes> = Partial<{
+  [Key in keyof Attributes]:
+    Extract<Attributes[Key], ModelQueryValue> | (undefined extends Attributes[Key] ? null : never)
+}>
+type ModelQueryAttributeValue<Value> =
+  Extract<Value, ModelQueryValue> | (undefined extends Value ? null : never)
 
 export type ModelChanges<Attributes extends ModelAttributes> = {
   [Key in keyof Attributes]?: Attributes[Key] | undefined
@@ -204,7 +212,7 @@ export abstract class Model<
 
   static where<Attributes extends ModelAttributes, Instance extends Model<Attributes, any>>(
     this: ModelConstructor<Instance, Attributes>,
-    input: Partial<Attributes>,
+    input: ModelQueryInput<Attributes>,
   ): ModelQuery<Instance, Attributes, RelationsOf<Instance>>
   static where<
     Attributes extends ModelAttributes,
@@ -213,7 +221,7 @@ export abstract class Model<
   >(
     this: ModelConstructor<Instance, Attributes>,
     attribute: Key,
-    value: Attributes[Key],
+    value: ModelQueryAttributeValue<Attributes[Key]>,
   ): ModelQuery<Instance, Attributes, RelationsOf<Instance>>
   static where<
     Attributes extends ModelAttributes,
@@ -222,32 +230,33 @@ export abstract class Model<
   >(
     this: ModelConstructor<Instance, Attributes>,
     attribute: Key,
-    operator: import('./model-query.js').ModelQueryOperator,
-    value: Attributes[Key],
+    operator: NonNullable<Attributes[Key]> extends string
+      ? import('./model-query.js').ModelQueryOperator
+      : NonNullable<Attributes[Key]> extends number | Date
+        ? '=' | '!=' | '<' | '<=' | '>' | '>='
+        : '=' | '!=',
+    value: ModelQueryAttributeValue<Attributes[Key]>,
   ): ModelQuery<Instance, Attributes, RelationsOf<Instance>>
   static where<Attributes extends ModelAttributes, Instance extends Model<Attributes, any>>(
     this: ModelConstructor<Instance, Attributes>,
-    input: Partial<Attributes> | Extract<keyof Attributes, string>,
+    input: ModelQueryInput<Attributes> | Extract<keyof Attributes, string>,
     operatorOrValue?:
-      import('./model-query.js').ModelQueryOperator | Attributes[Extract<keyof Attributes, string>],
-    value?: Attributes[Extract<keyof Attributes, string>],
+      | import('./model-query.js').ModelQueryOperator
+      | ModelQueryAttributeValue<Attributes[Extract<keyof Attributes, string>]>,
+    value?: ModelQueryAttributeValue<Attributes[Extract<keyof Attributes, string>]>,
   ): ModelQuery<Instance, Attributes, RelationsOf<Instance>> {
     const query = new ModelQuery<Instance, Attributes, RelationsOf<Instance>>(this)
     if (typeof input === 'object') return query.where(input)
     return value === undefined
-      ? query.where(input, operatorOrValue as Attributes[Extract<keyof Attributes, string>])
-      : query.where(input, operatorOrValue as import('./model-query.js').ModelQueryOperator, value)
+      ? query.where(input, operatorOrValue as never)
+      : query.where(input, operatorOrValue as never, value as never)
   }
 
   static with<Attributes extends ModelAttributes, Instance extends Model<Attributes, any>>(
     this: ModelConstructor<Instance, Attributes>,
     relations:
-      | Extract<keyof RelationsOf<Instance>, string>
-      | `${Extract<keyof RelationsOf<Instance>, string>}.${string}`
-      | readonly (
-          | Extract<keyof RelationsOf<Instance>, string>
-          | `${Extract<keyof RelationsOf<Instance>, string>}.${string}`
-        )[],
+      | ModelRelationPath<RelationsOf<Instance>>
+      | readonly ModelRelationPath<RelationsOf<Instance>>[],
   ): ModelQuery<Instance, Attributes, RelationsOf<Instance>>
   static with<Attributes extends ModelAttributes, Instance extends Model<Attributes, any>>(
     this: ModelConstructor<Instance, Attributes>,
@@ -256,24 +265,16 @@ export abstract class Model<
   static with<Attributes extends ModelAttributes, Instance extends Model<Attributes, any>>(
     this: ModelConstructor<Instance, Attributes>,
     relations:
-      | Extract<keyof RelationsOf<Instance>, string>
-      | `${Extract<keyof RelationsOf<Instance>, string>}.${string}`
-      | readonly (
-          | Extract<keyof RelationsOf<Instance>, string>
-          | `${Extract<keyof RelationsOf<Instance>, string>}.${string}`
-        )[]
+      | ModelRelationPath<RelationsOf<Instance>>
+      | readonly ModelRelationPath<RelationsOf<Instance>>[]
       | ModelEagerLoadConstraints<RelationsOf<Instance>>,
   ): ModelQuery<Instance, Attributes, RelationsOf<Instance>> {
     const query = new ModelQuery<Instance, Attributes, RelationsOf<Instance>>(this)
     return typeof relations === 'string' || Array.isArray(relations)
       ? query.with(
           relations as
-            | Extract<keyof RelationsOf<Instance>, string>
-            | `${Extract<keyof RelationsOf<Instance>, string>}.${string}`
-            | readonly (
-                | Extract<keyof RelationsOf<Instance>, string>
-                | `${Extract<keyof RelationsOf<Instance>, string>}.${string}`
-              )[],
+            | ModelRelationPath<RelationsOf<Instance>>
+            | readonly ModelRelationPath<RelationsOf<Instance>>[],
         )
       : query.with(relations as ModelEagerLoadConstraints<RelationsOf<Instance>>)
   }
@@ -675,15 +676,21 @@ export class ModelSession {
     perPage: number,
   ): Promise<ModelPage<Instance>> {
     positiveInteger(page, 'Page')
-    positiveInteger(perPage, 'Per-page value')
+    boundedPositiveInteger(perPage, 'Per-page value', MODEL_QUERY_MAX_PAGE_SIZE)
+    const offset = (page - 1) * perPage
+    if (!Number.isSafeInteger(offset)) {
+      throw new ModelQueryError('Pagination offset exceeds the supported integer range.')
+    }
     const definition = this.definitionFor(Constructor)
-    await this.diagnose(Constructor, definition, plan, perPage)
+    const orders = deterministicOrders(plan.orders)
+    await this.diagnose(Constructor, definition, { ...plan, orders }, perPage)
     const { diagnostic: _diagnostic, ...silentPlan } = plan
     const total = Number(await this.queryAggregate(Constructor, silentPlan, 'count'))
     const items = await this.query(Constructor, {
       ...silentPlan,
+      orders,
       limit: perPage,
-      offset: (page - 1) * perPage,
+      offset,
     })
     return Object.freeze({
       items,
@@ -703,20 +710,25 @@ export class ModelSession {
     plan: ModelQueryPlan,
     input: { readonly first: number; readonly after?: string; readonly before?: string },
   ): Promise<ModelCursorPage<Instance>> {
-    positiveInteger(input.first, 'Cursor page size')
+    boundedPositiveInteger(input.first, 'Cursor page size', MODEL_QUERY_MAX_PAGE_SIZE)
     if (input.after && input.before) {
       throw new InvalidModelCursorError(
         'Cursor pagination accepts either after or before, not both.',
       )
     }
     const definition = this.definitionFor(Constructor)
-    await this.diagnose(Constructor, definition, plan, input.first)
     const { diagnostic: _diagnostic, ...silentPlan } = plan
     const orders = deterministicOrders(silentPlan.orders)
+    await this.diagnose(Constructor, definition, { ...plan, orders }, input.first)
     const cursor = input.after ?? input.before
     const reverse = input.before !== undefined
     const positioned = cursor
-      ? addCursorConstraint(silentPlan, orders, decodeCursor(cursor), reverse ? 'before' : 'after')
+      ? addCursorConstraint(
+          silentPlan,
+          orders,
+          decodeCursor(cursor, Constructor, orders),
+          reverse ? 'before' : 'after',
+        )
       : silentPlan
     const executionOrders = reverse
       ? orders.map((order) => ({
@@ -814,7 +826,15 @@ export class ModelSession {
         any,
         Record<string, Model | readonly Model[] | undefined>
       > = new ModelQuery(related)
-      if (load.constrain) relatedQuery = load.constrain(relatedQuery)
+      if (load.constrain) {
+        const constrained = load.constrain(relatedQuery)
+        if (!(constrained instanceof ModelQuery) || constrained.Constructor !== related) {
+          throw new ModelQueryError(
+            `${Constructor.name}.${name} eager-load constraints must return its related model query.`,
+          )
+        }
+        relatedQuery = constrained
+      }
       if (load.nested.length > 0) relatedQuery = relatedQuery.with(load.nested)
       if (relationship.kind === 'belongsTo') {
         const keys = uniqueValues(
@@ -904,7 +924,15 @@ export class ModelSession {
         Record<string, Model | readonly Model[] | undefined>
       > = new ModelQuery(Related)
       if (nested.length > 0) relatedQuery = relatedQuery.whereHas(nested.join('.'))
-      if (constraint.constrain) relatedQuery = constraint.constrain(relatedQuery)
+      if (constraint.constrain) {
+        const constrained = constraint.constrain(relatedQuery)
+        if (!(constrained instanceof ModelQuery) || constrained.Constructor !== Related) {
+          throw new ModelQueryError(
+            `${Constructor.name}.${name} relationship constraints must return its related model query.`,
+          )
+        }
+        relatedQuery = constrained
+      }
 
       let attributeName: string
       let matchingValues: readonly unknown[]
@@ -1094,6 +1122,11 @@ function positiveInteger(value: number, name: string): void {
     throw new ModelQueryError(`${name} must be a positive integer.`)
 }
 
+function boundedPositiveInteger(value: number, name: string, maximum: number): void {
+  positiveInteger(value, name)
+  if (value > maximum) throw new ModelQueryError(`${name} must be at most ${maximum}.`)
+}
+
 function deterministicOrders(orders: ModelQueryPlan['orders']): ModelQueryPlan['orders'] {
   return orders.some((order) => order.attribute === 'id')
     ? orders
@@ -1101,21 +1134,38 @@ function deterministicOrders(orders: ModelQueryPlan['orders']): ModelQueryPlan['
 }
 
 function encodeCursor(model: Model, orders: ModelQueryPlan['orders']): string {
+  const Constructor = model.constructor as typeof Model
   return Buffer.from(
     JSON.stringify({
       version: 1,
+      model: Constructor.id,
+      ordering: orders.map((order) => [order.attribute, order.direction]),
       values: orders.map((order) => attribute(model, order.attribute)),
     }),
   ).toString('base64url')
 }
 
-function decodeCursor(cursor: string): readonly ModelQueryValue[] {
+function decodeCursor(
+  cursor: string,
+  Constructor: { readonly id: string },
+  orders: ModelQueryPlan['orders'],
+): readonly ModelQueryValue[] {
   try {
     const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as {
       version?: unknown
+      model?: unknown
+      ordering?: unknown
       values?: unknown
     }
-    if (decoded.version !== 1 || !Array.isArray(decoded.values)) throw new Error('invalid')
+    const expectedOrdering = orders.map((order) => [order.attribute, order.direction])
+    if (
+      decoded.version !== 1 ||
+      decoded.model !== Constructor.id ||
+      !isDeepStrictEqual(decoded.ordering, expectedOrdering) ||
+      !Array.isArray(decoded.values)
+    ) {
+      throw new Error('invalid')
+    }
     return decoded.values.map((value) => {
       if (
         value === null ||

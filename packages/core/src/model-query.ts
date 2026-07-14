@@ -1,6 +1,7 @@
 import { currentModelSession } from './model-session-context.js'
 import {
   ModelNotFoundError,
+  StaleModelError,
   type Model,
   type ModelAttributes,
   type ModelConstructor,
@@ -10,6 +11,7 @@ import {
 export type ModelQueryOperator = '=' | '!=' | '<' | '<=' | '>' | '>=' | 'like' | 'ilike'
 export type ModelQueryDirection = 'asc' | 'desc'
 export type ModelQueryValue = string | number | boolean | Date | null
+export const MODEL_QUERY_MAX_PAGE_SIZE = 1_000
 
 export type ModelQueryPredicate =
   | {
@@ -162,10 +164,47 @@ export interface ModelQuerySession {
 }
 
 type AttributeName<Attributes> = Extract<keyof Attributes, string>
+type AttributeNameMatching<Attributes, Value> = {
+  [Key in AttributeName<Attributes>]: NonNullable<Attributes[Key]> extends Value ? Key : never
+}[AttributeName<Attributes>]
+type ScalarAttributeName<Attributes> = AttributeNameMatching<
+  Attributes,
+  string | number | boolean | Date
+>
+type OrderedAttributeName<Attributes> = AttributeNameMatching<Attributes, string | number | Date>
+type NumericAttributeName<Attributes> = AttributeNameMatching<Attributes, number>
+type AttributeValue<Value> =
+  Extract<Value, ModelQueryValue> | (undefined extends Value ? null : never)
+type EqualityOperator = '=' | '!='
+type OrderedOperator = EqualityOperator | '<' | '<=' | '>' | '>='
+type OperatorFor<Value> =
+  NonNullable<Value> extends string
+    ? ModelQueryOperator
+    : NonNullable<Value> extends number | Date
+      ? OrderedOperator
+      : EqualityOperator
 type RelationName<Relations> = Extract<keyof Relations, string>
-type RelationPath<Relations> = RelationName<Relations> | `${RelationName<Relations>}.${string}`
 type RelatedModel<Value> =
   NonNullable<Value> extends readonly (infer Item)[] ? Item : NonNullable<Value>
+type RelationsOfModel<Value> =
+  RelatedModel<Value> extends Model<any, infer Relations> ? Relations : never
+type RelationPathAtDepth<Relations, Depth extends readonly unknown[]> = Depth['length'] extends 5
+  ? RelationName<Relations>
+  : {
+      [Key in RelationName<Relations>]:
+        | Key
+        | (RelationName<RelationsOfModel<Relations[Key]>> extends never
+            ? never
+            : `${Key}.${RelationPathAtDepth<RelationsOfModel<Relations[Key]>, [...Depth, unknown]>}`)
+    }[RelationName<Relations>]
+export type ModelRelationPath<Relations extends ModelRelations> = RelationPathAtDepth<Relations, []>
+type RelatedValueAtPath<Relations, Path extends string> = Path extends `${infer Head}.${infer Tail}`
+  ? Head extends keyof Relations
+    ? RelatedValueAtPath<RelationsOfModel<Relations[Head]>, Tail>
+    : never
+  : Path extends keyof Relations
+    ? Relations[Path]
+    : never
 type RelatedQuery<Value> =
   RelatedModel<Value> extends Model<infer Attributes, infer Relations>
     ? ModelQuery<RelatedModel<Value>, Attributes, Relations>
@@ -174,7 +213,7 @@ export type ModelEagerLoadConstraints<Relations extends ModelRelations> = Readon
   [Key in keyof Relations]?: (query: RelatedQuery<Relations[Key]>) => RelatedQuery<Relations[Key]>
 }>
 type QueryInput<Attributes extends ModelAttributes> = Partial<{
-  [Key in keyof Attributes]: Attributes[Key]
+  [Key in keyof Attributes]: AttributeValue<Attributes[Key]>
 }>
 
 const EMPTY_PLAN: ModelQueryPlan = Object.freeze({
@@ -189,20 +228,25 @@ export class ModelQuery<
   Attributes extends ModelAttributes,
   Relations extends ModelRelations = ModelRelations,
 > implements AsyncIterable<Instance> {
+  readonly plan: ModelQueryPlan
+
   constructor(
     readonly Constructor: ModelConstructor<Instance, Attributes>,
-    readonly plan: ModelQueryPlan = EMPTY_PLAN,
-  ) {}
+    plan: ModelQueryPlan = EMPTY_PLAN,
+    private readonly boundSession = currentModelSession<ModelQuerySession>(),
+  ) {
+    this.plan = freezePlan(plan)
+  }
 
   where(input: QueryInput<Attributes>): ModelQuery<Instance, Attributes, Relations>
   where<Key extends AttributeName<Attributes>>(
     attribute: Key,
-    value: Attributes[Key],
+    value: AttributeValue<Attributes[Key]>,
   ): ModelQuery<Instance, Attributes, Relations>
   where<Key extends AttributeName<Attributes>>(
     attribute: Key,
-    operator: ModelQueryOperator,
-    value: Attributes[Key],
+    operator: OperatorFor<Attributes[Key]>,
+    value: AttributeValue<Attributes[Key]>,
   ): ModelQuery<Instance, Attributes, Relations>
   where(
     group: (
@@ -216,8 +260,8 @@ export class ModelQuery<
       | ((
           query: ModelQuery<Instance, Attributes, Relations>,
         ) => ModelQuery<Instance, Attributes, Relations>),
-    operatorOrValue?: ModelQueryOperator | Attributes[AttributeName<Attributes>],
-    possibleValue?: Attributes[AttributeName<Attributes>],
+    operatorOrValue?: unknown,
+    possibleValue?: unknown,
   ): ModelQuery<Instance, Attributes, Relations> {
     return this.addWhere('and', input, operatorOrValue, possibleValue)
   }
@@ -225,12 +269,12 @@ export class ModelQuery<
   orWhere(input: QueryInput<Attributes>): ModelQuery<Instance, Attributes, Relations>
   orWhere<Key extends AttributeName<Attributes>>(
     attribute: Key,
-    value: Attributes[Key],
+    value: AttributeValue<Attributes[Key]>,
   ): ModelQuery<Instance, Attributes, Relations>
   orWhere<Key extends AttributeName<Attributes>>(
     attribute: Key,
-    operator: ModelQueryOperator,
-    value: Attributes[Key],
+    operator: OperatorFor<Attributes[Key]>,
+    value: AttributeValue<Attributes[Key]>,
   ): ModelQuery<Instance, Attributes, Relations>
   orWhere(
     group: (
@@ -244,15 +288,15 @@ export class ModelQuery<
       | ((
           query: ModelQuery<Instance, Attributes, Relations>,
         ) => ModelQuery<Instance, Attributes, Relations>),
-    operatorOrValue?: ModelQueryOperator | Attributes[AttributeName<Attributes>],
-    possibleValue?: Attributes[AttributeName<Attributes>],
+    operatorOrValue?: unknown,
+    possibleValue?: unknown,
   ): ModelQuery<Instance, Attributes, Relations> {
     return this.addWhere('or', input, operatorOrValue, possibleValue)
   }
 
   whereIn<Key extends AttributeName<Attributes>>(
     attribute: Key,
-    values: readonly Attributes[Key][],
+    values: readonly AttributeValue<Attributes[Key]>[],
   ): ModelQuery<Instance, Attributes, Relations> {
     return this.constraint('and', {
       kind: 'membership',
@@ -264,7 +308,7 @@ export class ModelQuery<
 
   whereNotIn<Key extends AttributeName<Attributes>>(
     attribute: Key,
-    values: readonly Attributes[Key][],
+    values: readonly AttributeValue<Attributes[Key]>[],
   ): ModelQuery<Instance, Attributes, Relations> {
     return this.constraint('and', {
       kind: 'membership',
@@ -284,7 +328,7 @@ export class ModelQuery<
 
   whereBetween<Key extends AttributeName<Attributes>>(
     attribute: Key,
-    values: readonly [Attributes[Key], Attributes[Key]],
+    values: readonly [AttributeValue<Attributes[Key]>, AttributeValue<Attributes[Key]>],
   ): ModelQuery<Instance, Attributes, Relations> {
     return this.constraint('and', {
       kind: 'between',
@@ -296,7 +340,7 @@ export class ModelQuery<
 
   whereNotBetween<Key extends AttributeName<Attributes>>(
     attribute: Key,
-    values: readonly [Attributes[Key], Attributes[Key]],
+    values: readonly [AttributeValue<Attributes[Key]>, AttributeValue<Attributes[Key]>],
   ): ModelQuery<Instance, Attributes, Relations> {
     return this.constraint('and', {
       kind: 'between',
@@ -307,16 +351,16 @@ export class ModelQuery<
   }
 
   whereColumn(
-    attribute: AttributeName<Attributes>,
+    attribute: ScalarAttributeName<Attributes>,
     operator: ModelQueryOperator,
-    comparedAttribute: AttributeName<Attributes>,
+    comparedAttribute: ScalarAttributeName<Attributes>,
   ): ModelQuery<Instance, Attributes, Relations> {
     validOperator(operator)
     return this.constraint('and', { kind: 'column', attribute, operator, comparedAttribute })
   }
 
   orderBy(
-    attribute: AttributeName<Attributes>,
+    attribute: ScalarAttributeName<Attributes>,
     direction: ModelQueryDirection = 'asc',
   ): ModelQuery<Instance, Attributes, Relations> {
     if (direction !== 'asc' && direction !== 'desc') {
@@ -325,15 +369,21 @@ export class ModelQuery<
     return this.copy({ orders: [...this.plan.orders, { attribute, direction }] })
   }
 
-  orderByDesc(attribute: AttributeName<Attributes>): ModelQuery<Instance, Attributes, Relations> {
+  orderByDesc(
+    attribute: ScalarAttributeName<Attributes>,
+  ): ModelQuery<Instance, Attributes, Relations> {
     return this.orderBy(attribute, 'desc')
   }
 
-  latest(attribute: AttributeName<Attributes> = 'createdAt' as AttributeName<Attributes>) {
+  latest(
+    attribute: ScalarAttributeName<Attributes> = 'createdAt' as ScalarAttributeName<Attributes>,
+  ) {
     return this.orderBy(attribute, 'desc')
   }
 
-  oldest(attribute: AttributeName<Attributes> = 'createdAt' as AttributeName<Attributes>) {
+  oldest(
+    attribute: ScalarAttributeName<Attributes> = 'createdAt' as ScalarAttributeName<Attributes>,
+  ) {
     return this.orderBy(attribute, 'asc')
   }
 
@@ -348,13 +398,13 @@ export class ModelQuery<
   }
 
   with(
-    relations: RelationPath<Relations> | readonly RelationPath<Relations>[],
+    relations: ModelRelationPath<Relations> | readonly ModelRelationPath<Relations>[],
   ): ModelQuery<Instance, Attributes, Relations>
   with(relations: ModelEagerLoadConstraints<Relations>): ModelQuery<Instance, Attributes, Relations>
   with(
     relations:
-      | RelationPath<Relations>
-      | readonly RelationPath<Relations>[]
+      | ModelRelationPath<Relations>
+      | readonly ModelRelationPath<Relations>[]
       | ModelEagerLoadConstraints<Relations>,
   ): ModelQuery<Instance, Attributes, Relations> {
     const additions: ModelEagerLoad[] =
@@ -384,9 +434,11 @@ export class ModelQuery<
     })
   }
 
-  whereHas(
-    relationship: RelationPath<Relations>,
-    constrain?: (query: ModelQuery<any, any, any>) => ModelQuery<any, any, any>,
+  whereHas<Path extends ModelRelationPath<Relations>>(
+    relationship: Path,
+    constrain?: (
+      query: RelatedQuery<RelatedValueAtPath<Relations, Path>>,
+    ) => RelatedQuery<RelatedValueAtPath<Relations, Path>>,
     operator: ModelRelationshipConstraint['operator'] = '>=',
     count = 1,
   ): ModelQuery<Instance, Attributes, Relations> {
@@ -399,7 +451,13 @@ export class ModelQuery<
           path: String(relationship),
           operator,
           count,
-          ...(constrain ? { constrain } : {}),
+          ...(constrain
+            ? {
+                constrain: constrain as unknown as NonNullable<
+                  ModelRelationshipConstraint['constrain']
+                >,
+              }
+            : {}),
         },
       ],
     })
@@ -427,17 +485,19 @@ export class ModelQuery<
       throw new ModelQueryError('Invalid belongsTo relationship.')
     return this.where(
       definition.foreignKey as AttributeName<Attributes>,
-      related.getAttribute(definition.ownerKey) as Attributes[AttributeName<Attributes>],
+      related.getAttribute(definition.ownerKey) as AttributeValue<
+        Attributes[AttributeName<Attributes>]
+      >,
     )
   }
 
   get(): Promise<readonly Instance[]> {
-    return session().query(this.Constructor, diagnosed(this.plan, 'get'))
+    return this.session().query(this.Constructor, diagnosed(this.plan, 'get'))
   }
 
   async first(): Promise<Instance | undefined> {
     return (
-      await session().query(this.Constructor, {
+      await this.session().query(this.Constructor, {
         ...diagnosed(this.plan, 'first'),
         limit: 1,
       })
@@ -446,7 +506,7 @@ export class ModelQuery<
 
   async firstOrFail(): Promise<Instance> {
     const value = (
-      await session().query(this.Constructor, {
+      await this.session().query(this.Constructor, {
         ...diagnosed(this.plan, 'firstOrFail'),
         limit: 1,
       })
@@ -457,49 +517,63 @@ export class ModelQuery<
 
   async exists(): Promise<boolean> {
     return (
-      (await session().queryAggregate(
-        this.Constructor,
-        diagnosed(this.plan, 'exists'),
-        'count',
-      )) !== 0
+      (
+        await this.session().queryValues(
+          this.Constructor,
+          { ...diagnosed(this.plan, 'exists'), limit: 1 },
+          'id',
+        )
+      ).length > 0
     )
   }
 
   async count(): Promise<number> {
     return Number(
-      await session().queryAggregate(this.Constructor, diagnosed(this.plan, 'count'), 'count'),
+      await this.session().queryAggregate(this.Constructor, diagnosed(this.plan, 'count'), 'count'),
     )
   }
 
-  value<Key extends AttributeName<Attributes>>(
+  value<Key extends ScalarAttributeName<Attributes>>(
     attribute: Key,
   ): Promise<Attributes[Key] | undefined> {
-    return session()
+    return this.session()
       .queryValues(this.Constructor, { ...diagnosed(this.plan, 'value'), limit: 1 }, attribute)
       .then((values) => values[0] as Attributes[Key] | undefined)
   }
 
-  pluck<Key extends AttributeName<Attributes>>(
+  pluck<Key extends ScalarAttributeName<Attributes>>(
     attribute: Key,
   ): Promise<readonly Attributes[Key][]> {
-    return session()
+    return this.session()
       .queryValues(this.Constructor, diagnosed(this.plan, 'pluck'), attribute)
       .then((values) => values as readonly Attributes[Key][])
   }
 
-  min<Key extends AttributeName<Attributes>>(attribute: Key) {
-    return session().queryAggregate(this.Constructor, diagnosed(this.plan, 'min'), 'min', attribute)
+  min<Key extends OrderedAttributeName<Attributes>>(attribute: Key) {
+    return this.session().queryAggregate(
+      this.Constructor,
+      diagnosed(this.plan, 'min'),
+      'min',
+      attribute,
+    )
   }
-  max<Key extends AttributeName<Attributes>>(attribute: Key) {
-    return session().queryAggregate(this.Constructor, diagnosed(this.plan, 'max'), 'max', attribute)
+  max<Key extends OrderedAttributeName<Attributes>>(attribute: Key) {
+    return this.session().queryAggregate(
+      this.Constructor,
+      diagnosed(this.plan, 'max'),
+      'max',
+      attribute,
+    )
   }
-  sum<Key extends AttributeName<Attributes>>(attribute: Key): Promise<number> {
-    return session()
+  sum<Key extends NumericAttributeName<Attributes>>(attribute: Key): Promise<number> {
+    return this.session()
       .queryAggregate(this.Constructor, diagnosed(this.plan, 'sum'), 'sum', attribute)
       .then((value) => (value === undefined ? 0 : Number(value)))
   }
-  average<Key extends AttributeName<Attributes>>(attribute: Key): Promise<number | undefined> {
-    return session()
+  average<Key extends NumericAttributeName<Attributes>>(
+    attribute: Key,
+  ): Promise<number | undefined> {
+    return this.session()
       .queryAggregate(this.Constructor, diagnosed(this.plan, 'average'), 'average', attribute)
       .then((value) => (value === undefined ? undefined : Number(value)))
   }
@@ -508,7 +582,7 @@ export class ModelQuery<
     readonly page: number
     readonly perPage: number
   }): Promise<ModelPage<Instance>> {
-    return session().paginate(
+    return this.session().paginate(
       this.Constructor,
       diagnosed(this.plan, 'paginate'),
       input.page,
@@ -521,20 +595,28 @@ export class ModelQuery<
     readonly after?: string
     readonly before?: string
   }): Promise<ModelCursorPage<Instance>> {
-    return session().cursorPaginate(this.Constructor, diagnosed(this.plan, 'cursorPaginate'), input)
+    return this.session().cursorPaginate(
+      this.Constructor,
+      diagnosed(this.plan, 'cursorPaginate'),
+      input,
+    )
   }
 
   cursor(input: { readonly batchSize?: number } = {}): AsyncIterable<Instance> {
     const Constructor = this.Constructor
     const plan = this.plan
     const batchSize = input.batchSize ?? 100
-    positiveInteger(batchSize, 'Cursor batch size')
+    boundedPositiveInteger(batchSize, 'Cursor batch size', MODEL_QUERY_MAX_PAGE_SIZE)
+    const activeSession = this.session()
     return {
       async *[Symbol.asyncIterator]() {
-        const query = new ModelQuery<Instance, Attributes, Relations>(Constructor, plan)
         let after: string | undefined
         do {
-          const page = await query.cursorPaginate({ first: batchSize, ...(after ? { after } : {}) })
+          assertSession(activeSession)
+          const page = await activeSession.cursorPaginate(Constructor, plan, {
+            first: batchSize,
+            ...(after ? { after } : {}),
+          })
           for (const model of page.items) yield model
           after = page.nextCursor
         } while (after)
@@ -554,11 +636,14 @@ export class ModelQuery<
       | ((
           query: ModelQuery<Instance, Attributes, Relations>,
         ) => ModelQuery<Instance, Attributes, Relations>),
-    operatorOrValue?: ModelQueryOperator | Attributes[AttributeName<Attributes>],
-    possibleValue?: Attributes[AttributeName<Attributes>],
+    operatorOrValue?: unknown,
+    possibleValue?: unknown,
   ): ModelQuery<Instance, Attributes, Relations> {
     if (typeof input === 'function') {
-      const grouped = input(new ModelQuery(this.Constructor))
+      const grouped = input(new ModelQuery(this.Constructor, EMPTY_PLAN, this.boundSession))
+      if (!(grouped instanceof ModelQuery) || grouped.Constructor !== this.Constructor) {
+        throw new ModelQueryError('Grouped model constraints must return the same model query.')
+      }
       return this.constraint(boolean, { kind: 'group', predicates: grouped.plan.constraints })
     }
     if (typeof input === 'object' && input !== null) {
@@ -593,15 +678,31 @@ export class ModelQuery<
   }
 
   private copy(changes: Partial<ModelQueryPlan>): ModelQuery<Instance, Attributes, Relations> {
-    return new ModelQuery(this.Constructor, Object.freeze({ ...this.plan, ...changes }))
+    return new ModelQuery(this.Constructor, { ...this.plan, ...changes }, this.boundSession)
+  }
+
+  private session(): ModelQuerySession {
+    return session(this.boundSession)
   }
 }
 
-function session(): ModelQuerySession {
+function session(bound?: ModelQuerySession): ModelQuerySession {
   const current = currentModelSession<ModelQuerySession>()
+  if (bound) {
+    if (!bound.active || current !== bound) {
+      throw new StaleModelError('Model query belongs to an execution that is no longer active.')
+    }
+    return bound
+  }
   if (!current?.active)
     throw new ModelQueryError('A model query requires an active Doxa ModelSession.')
   return current
+}
+
+function assertSession(bound: ModelQuerySession): void {
+  if (!bound.active || currentModelSession<ModelQuerySession>() !== bound) {
+    throw new StaleModelError('Model cursor belongs to an execution that is no longer active.')
+  }
 }
 
 function diagnosed(
@@ -619,6 +720,12 @@ function queryValue(value: unknown): ModelQueryValue {
     typeof value === 'boolean' ||
     value instanceof Date
   ) {
+    if (typeof value === 'number' && !Number.isFinite(value)) {
+      throw new ModelQueryError('Model query numbers must be finite.')
+    }
+    if (value instanceof Date && Number.isNaN(value.getTime())) {
+      throw new ModelQueryError('Model query dates must be valid.')
+    }
     return value
   }
   throw new ModelQueryError(
@@ -641,6 +748,11 @@ function validRelationshipOperator(operator: string): void {
 function positiveInteger(value: number, name: string): void {
   if (!Number.isSafeInteger(value) || value <= 0)
     throw new ModelQueryError(`${name} must be a positive integer.`)
+}
+
+function boundedPositiveInteger(value: number, name: string, maximum: number): void {
+  positiveInteger(value, name)
+  if (value > maximum) throw new ModelQueryError(`${name} must be at most ${maximum}.`)
 }
 
 function nonNegativeInteger(value: number, name: string): void {
@@ -697,6 +809,9 @@ function validateConstraints(
   allowedAttributes?: ReadonlySet<string>,
 ): void {
   for (const constraint of constraints) {
+    if (constraint.boolean !== 'and' && constraint.boolean !== 'or') {
+      throw new ModelQueryError(`Unsupported model query boolean ${String(constraint.boolean)}.`)
+    }
     const predicate = constraint.predicate
     if (predicate.kind === 'group') {
       validateConstraints(predicate.predicates, allowedAttributes)
@@ -775,9 +890,10 @@ function comparisonMatches(left: unknown, operator: ModelQueryOperator, right: u
     )
     return expression.test(source)
   }
+  if (operator === '=') return isDeepEqual(left, right)
+  if (operator === '!=') return !isDeepEqual(left, right)
+  if (left === null || left === undefined || right === null || right === undefined) return false
   const compared = compare(left, right)
-  if (operator === '=') return compared === 0
-  if (operator === '!=') return compared !== 0
   if (operator === '<') return compared < 0
   if (operator === '<=') return compared <= 0
   if (operator === '>') return compared > 0
@@ -794,5 +910,45 @@ function compare(left: unknown, right: unknown): number {
 }
 
 function isDeepEqual(left: unknown, right: unknown): boolean {
+  if ((left === null || left === undefined) && (right === null || right === undefined)) return true
   return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function freezePlan(plan: ModelQueryPlan): ModelQueryPlan {
+  const freezePredicate = (predicate: ModelQueryPredicate): ModelQueryPredicate => {
+    if (predicate.kind === 'group') {
+      return Object.freeze({
+        ...predicate,
+        predicates: Object.freeze(
+          predicate.predicates.map((constraint) =>
+            Object.freeze({ ...constraint, predicate: freezePredicate(constraint.predicate) }),
+          ),
+        ),
+      })
+    }
+    if (predicate.kind === 'membership') {
+      return Object.freeze({ ...predicate, values: Object.freeze([...predicate.values]) })
+    }
+    if (predicate.kind === 'between') {
+      return Object.freeze({
+        ...predicate,
+        values: Object.freeze([...predicate.values]) as readonly [ModelQueryValue, ModelQueryValue],
+      })
+    }
+    return Object.freeze({ ...predicate })
+  }
+  return Object.freeze({
+    ...plan,
+    constraints: Object.freeze(
+      plan.constraints.map((constraint) =>
+        Object.freeze({ ...constraint, predicate: freezePredicate(constraint.predicate) }),
+      ),
+    ),
+    orders: Object.freeze(plan.orders.map((order) => Object.freeze({ ...order }))),
+    eagerLoads: Object.freeze(plan.eagerLoads.map((load) => Object.freeze({ ...load }))),
+    relationshipConstraints: Object.freeze(
+      plan.relationshipConstraints.map((constraint) => Object.freeze({ ...constraint })),
+    ),
+    ...(plan.diagnostic ? { diagnostic: Object.freeze({ ...plan.diagnostic }) } : {}),
+  })
 }

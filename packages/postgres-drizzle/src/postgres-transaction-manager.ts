@@ -120,7 +120,7 @@ export class PostgresTransactionManager extends TransactionManager implements St
             reader.close()
           }
         },
-        { accessMode: 'read only' },
+        { accessMode: 'read only', isolationLevel: 'repeatable read' },
       )
     } catch (error) {
       throw translatePersistenceError(error)
@@ -555,12 +555,23 @@ function compilePredicate(storage: ModelStorage, predicate: ModelQueryPredicate)
   }
   if (predicate.kind === 'membership') {
     if (predicate.values.length === 0) return predicate.negate ? sql`TRUE` : sql`FALSE`
-    const field = comparableAttribute(storage, predicate.attribute, predicate.values[0]!)
-    const values = sql.join(
-      predicate.values.map((value) => sql`${databaseQueryValue(value)}`),
-      sql`, `,
+    const nonNullValues = predicate.values.filter((value) => value !== null)
+    const field = comparableAttribute(
+      storage,
+      predicate.attribute,
+      nonNullValues[0] ?? predicate.values[0]!,
     )
-    return predicate.negate ? sql`${field} NOT IN (${values})` : sql`${field} IN (${values})`
+    const membership =
+      nonNullValues.length === 0
+        ? sql`FALSE`
+        : sql`COALESCE(${field} IN (${sql.join(
+            nonNullValues.map((value) => sql`${databaseQueryValue(value)}`),
+            sql`, `,
+          )}), FALSE)`
+    const condition = predicate.values.includes(null)
+      ? sql`(${membership}) OR (${nullCondition(storage, predicate.attribute)})`
+      : membership
+    return predicate.negate ? sql`NOT (${condition})` : condition
   }
   if (predicate.kind === 'between') {
     const field = comparableAttribute(storage, predicate.attribute, predicate.values[0])
@@ -569,9 +580,9 @@ function compilePredicate(storage: ModelStorage, predicate: ModelQueryPredicate)
   }
   if (predicate.kind === 'column') {
     return comparisonSql(
-      queryAttribute(storage, predicate.attribute),
+      columnComparisonAttribute(storage, predicate.attribute, predicate.operator),
       predicate.operator,
-      queryAttribute(storage, predicate.comparedAttribute),
+      columnComparisonAttribute(storage, predicate.comparedAttribute, predicate.operator),
     )
   }
   return comparisonSql(
@@ -582,8 +593,8 @@ function compilePredicate(storage: ModelStorage, predicate: ModelQueryPredicate)
 }
 
 function comparisonSql(left: SQL, operator: ModelQueryOperator, right: SQL): SQL {
-  if (operator === '=') return sql`${left} = ${right}`
-  if (operator === '!=') return sql`${left} <> ${right}`
+  if (operator === '=') return sql`${left} IS NOT DISTINCT FROM ${right}`
+  if (operator === '!=') return sql`${left} IS DISTINCT FROM ${right}`
   if (operator === '<') return sql`${left} < ${right}`
   if (operator === '<=') return sql`${left} <= ${right}`
   if (operator === '>') return sql`${left} > ${right}`
@@ -612,12 +623,32 @@ function comparableAttribute(
   return field
 }
 
+function columnComparisonAttribute(
+  storage: ModelStorage,
+  attribute: string,
+  operator: ModelQueryOperator,
+): SQL {
+  if (storage.kind === 'table' || operator === 'like' || operator === 'ilike') {
+    return queryAttribute(storage, attribute)
+  }
+  if (attribute === 'id') return sql`to_jsonb(${queryAttribute(storage, attribute)})`
+  return sql`COALESCE(${jsonAttribute(attribute)}, 'null'::jsonb)`
+}
+
 function jsonTextAttribute(attribute: string): SQL {
   return sql`(${entityStates.state} ->> ${attribute})`
 }
 
 function jsonAttribute(attribute: string): SQL {
   return sql`(${entityStates.state} -> ${attribute})`
+}
+
+function nullCondition(storage: ModelStorage, attribute: string): SQL {
+  if (storage.kind === 'entity-state' && attribute !== 'id') {
+    const json = jsonAttribute(attribute)
+    return sql`(${json} IS NULL OR ${json} = 'null'::jsonb)`
+  }
+  return sql`${queryAttribute(storage, attribute)} IS NULL`
 }
 
 function databaseQueryValue(value: ModelQueryValue): unknown {
@@ -627,12 +658,15 @@ function databaseQueryValue(value: ModelQueryValue): unknown {
 function queryOrder(storage: ModelStorage, orders: ModelQueryPlan['orders']): SQL {
   if (orders.length === 0) return sql``
   return sql`ORDER BY ${sql.join(
-    orders.map((order) => {
+    orders.flatMap((order) => {
       const field =
         storage.kind === 'entity-state' && order.attribute !== 'id'
           ? jsonAttribute(order.attribute)
           : queryAttribute(storage, order.attribute)
-      return order.direction === 'desc' ? sql`${field} DESC` : sql`${field} ASC`
+      const nullRank = nullCondition(storage, order.attribute)
+      return order.direction === 'desc'
+        ? [sql`CASE WHEN ${nullRank} THEN 1 ELSE 0 END ASC`, sql`${field} DESC`]
+        : [sql`CASE WHEN ${nullRank} THEN 0 ELSE 1 END ASC`, sql`${field} ASC`]
     }),
     sql`, `,
   )}`

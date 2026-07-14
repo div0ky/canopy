@@ -22,6 +22,7 @@ export interface InspectCounterQueriesResult {
   readonly nextCursorIds: readonly string[]
   readonly previousCursorIds: readonly string[]
   readonly invalidCursorError: string | undefined
+  readonly mismatchedCursorError: string | undefined
   readonly eagerNotes: Readonly<Record<string, readonly string[]>>
   readonly primaryNotes: Readonly<Record<string, string | undefined>>
   readonly eagerTags: Readonly<Record<string, readonly string[]>>
@@ -42,6 +43,12 @@ export interface InspectCounterQueriesResult {
   readonly nullLabelIds: readonly string[]
   readonly notInIds: readonly string[]
   readonly columnComparisonCount: number
+  readonly implicitPageIds: readonly string[]
+  readonly nullEqualityIds: readonly string[]
+  readonly nullInequalityIds: readonly string[]
+  readonly nullMembershipIds: readonly string[]
+  readonly nonNullMembershipIds: readonly string[]
+  readonly nullOrderedIds: readonly string[]
 }
 
 export class InspectCounterQueries extends Query<
@@ -85,6 +92,17 @@ export class InspectCounterQueries extends Query<
     } catch (error) {
       invalidCursorError = error instanceof Error ? error.name : String(error)
     }
+    let mismatchedCursorError: string | undefined
+    if (cursorPage.nextCursor) {
+      try {
+        await Counter.query()
+          .orderBy('label')
+          .orderBy('id')
+          .cursorPaginate({ first: input.cursorSize, after: cursorPage.nextCursor })
+      } catch (error) {
+        mismatchedCursorError = error instanceof Error ? error.name : String(error)
+      }
+    }
     const iteratedIds: string[] = []
     for await (const counter of base.cursor({ batchSize: input.cursorSize })) {
       iteratedIds.push(counter.id)
@@ -121,6 +139,7 @@ export class InspectCounterQueries extends Query<
       nextCursorIds: nextCursorPage.items.map((counter) => counter.id),
       previousCursorIds: previousCursorPage.items.map((counter) => counter.id),
       invalidCursorError,
+      mismatchedCursorError,
       eagerNotes: Object.fromEntries(
         counters.map((counter) => [counter.id, counter.notes.map((note) => note.body)]),
       ),
@@ -176,6 +195,19 @@ export class InspectCounterQueries extends Query<
         .orderBy('id')
         .pluck('id'),
       columnComparisonCount: await Counter.query().whereColumn('id', '=', 'label').count(),
+      implicitPageIds: (
+        await Counter.where('value', '>=', input.minimumValue)
+          .orderBy('value')
+          .paginate({ page: input.page, perPage: input.perPage })
+      ).items.map((counter) => counter.id),
+      nullEqualityIds: await Counter.where('label', null).orderBy('id').pluck('id'),
+      nullInequalityIds: await Counter.where('label', '!=', null).orderBy('id').pluck('id'),
+      nullMembershipIds: await Counter.query().whereIn('label', [null]).orderBy('id').pluck('id'),
+      nonNullMembershipIds: await Counter.query()
+        .whereNotIn('label', [null])
+        .orderBy('id')
+        .pluck('id'),
+      nullOrderedIds: await Counter.query().orderBy('label').orderBy('id').pluck('id'),
     }
   }
 }

@@ -5,8 +5,11 @@ import path from 'node:path'
 import { compileApplication } from '@doxajs/compiler'
 import {
   MemoryCache,
+  Model,
+  type ModelQuery,
   RoleInjectionError,
   SecretString,
+  StaleModelError,
   sanitizeObservationAttributes,
   sanitizeObservationError,
   validateModelQueryPlan,
@@ -31,6 +34,7 @@ import { NestedCounter } from '../examples/reference-app/dist/nested-counter.js'
 import { MutateCounterQuery } from '../examples/reference-app/dist/mutate-counter-query.js'
 import { operationLog, resetOperationLog } from '../examples/reference-app/dist/operation-log.js'
 import { ReadCounter } from '../examples/reference-app/dist/read-counter.js'
+import { runWithModelSession } from '../packages/core/dist/model-session-context.js'
 
 const workspace = path.resolve(import.meta.dirname, '..')
 const referenceApplication = path.join(workspace, 'examples/reference-app')
@@ -100,6 +104,72 @@ describe('foundational compile-to-boot slice', () => {
         new Set(['id', 'value']),
       ),
     ).toThrow('Unknown model query attribute unknown')
+    expect(() =>
+      validateModelQueryPlan({
+        constraints: [
+          {
+            boolean: 'xor' as 'and',
+            predicate: { kind: 'comparison', attribute: 'value', operator: '=', value: 1 },
+          },
+        ],
+        orders: [],
+        eagerLoads: [],
+        relationshipConstraints: [],
+      }),
+    ).toThrow('Unsupported model query boolean xor')
+    expect(() =>
+      validateModelQueryPlan({
+        constraints: [
+          {
+            boolean: 'and',
+            predicate: { kind: 'comparison', attribute: 'value', operator: '=', value: Infinity },
+          },
+        ],
+        orders: [],
+        eagerLoads: [],
+        relationshipConstraints: [],
+      }),
+    ).toThrow('Model query numbers must be finite')
+  })
+
+  it('keeps model query plans immutable at runtime', () => {
+    class QueryProofModel extends Model<{ id: string; value: number }> {
+      static override readonly id = 'query-proof'
+    }
+    const query = QueryProofModel.where({ value: 1 }).orderBy('value')
+    expect(Object.isFrozen(query.plan)).toBe(true)
+    expect(Object.isFrozen(query.plan.constraints)).toBe(true)
+    expect(Object.isFrozen(query.plan.constraints[0]?.predicate)).toBe(true)
+    expect(Object.isFrozen(query.plan.orders)).toBe(true)
+    class OtherQueryProofModel extends Model<{ id: string; value: number }> {
+      static override readonly id = 'other-query-proof'
+    }
+    expect(() =>
+      QueryProofModel.query().where(() => OtherQueryProofModel.query() as never),
+    ).toThrow('Grouped model constraints must return the same model query')
+  })
+
+  it('rejects model queries and cursors after their execution session ends', async () => {
+    class QueryProofModel extends Model<{ id: string; value: number }> {
+      static override readonly id = 'query-proof'
+    }
+    const firstSession = modelQuerySession()
+    const secondSession = modelQuerySession()
+    let query!: ModelQuery<QueryProofModel, { id: string; value: number }>
+    let cursor!: AsyncIterable<QueryProofModel>
+    await runWithModelSession(firstSession, () => {
+      query = QueryProofModel.query()
+      cursor = query.cursor()
+      expect(() => QueryProofModel.query().cursor({ batchSize: 1_001 })).toThrow(
+        'Cursor batch size must be at most 1000',
+      )
+    })
+    firstSession.active = false
+
+    await runWithModelSession(secondSession, async () => {
+      expect(() => query.get()).toThrow(StaleModelError)
+      await expect(collect(cursor)).rejects.toBeInstanceOf(StaleModelError)
+    })
   })
 
   it('recursively redacts observation evidence before a recorder can receive it', () => {
@@ -604,6 +674,23 @@ describe('foundational compile-to-boot slice', () => {
     await runtime.shutdown()
   })
 })
+
+function modelQuerySession() {
+  return {
+    active: true,
+    query: () => Promise.resolve([]),
+    queryValues: () => Promise.resolve([]),
+    queryAggregate: () => Promise.resolve(0),
+    paginate: () => Promise.resolve({ items: [], page: 1, perPage: 1, total: 0, lastPage: 1 }),
+    cursorPaginate: () => Promise.resolve({ items: [] }),
+  }
+}
+
+async function collect<Value>(values: AsyncIterable<Value>): Promise<readonly Value[]> {
+  const collected: Value[] = []
+  for await (const value of values) collected.push(value)
+  return collected
+}
 
 async function temporaryDirectory(): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), 'doxa-foundation-'))

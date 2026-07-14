@@ -39,6 +39,11 @@ Constraints combine with `and` unless an `or` operation is explicit. Nested grou
 logical boundaries. Attribute names and operator/value combinations must be type checked where
 TypeScript can prove them and validated again before adapter execution.
 
+Equality and membership treat null as a comparable Doxa value: equality matches null or a missing
+entity-state attribute, inequality is its inverse, and membership can include or exclude null.
+Ordered comparisons with a null operand do not match. Ascending order places null first and
+descending order places null last so PostgreSQL and memory adapters expose the same result order.
+
 The accepted comparison vocabulary is equality, inequality, less-than, less-than-or-equal,
 greater-than, greater-than-or-equal, and SQL-like pattern comparison. Raw expressions are not model
 query values.
@@ -47,7 +52,9 @@ query values.
 
 Queries must support ascending and descending ordering, `latest`, `oldest`, limits, and offsets.
 User-declared ordering is preserved. Pagination and cursor operations must append the model primary
-key as a deterministic tiebreaker when it is not already present.
+key as a deterministic tiebreaker when it is not already present. Per-page values and cursor page or
+batch sizes may not exceed 1,000, and offset pagination must reject a page whose derived offset is
+outside the safe integer range.
 
 ## Terminal operations
 
@@ -76,10 +83,10 @@ results.
 Offset pagination returns a Doxa-owned page containing `items`, `page`, `perPage`, `total`, and
 `lastPage`. Page and per-page inputs must be positive bounded integers.
 
-Cursor pagination uses an opaque, versioned cursor containing the complete deterministic ordering
-position, including the primary-key tiebreaker. The result contains the hydrated items and opaque
-next and previous cursors when those directions exist. Adapters must not expose encoded physical
-column names.
+Cursor pagination uses an opaque, versioned cursor containing the model identity and complete
+deterministic logical ordering position, including the primary-key tiebreaker. A cursor from another
+model or ordering is invalid. The result contains the hydrated items and opaque next and previous
+cursors when those directions exist. Adapters must not expose encoded physical column names.
 
 Async cursor iteration fetches bounded batches and yields attached models. It must not buffer the
 complete result set. An iterator used after its execution ends fails as stale.
@@ -91,6 +98,8 @@ Every model query requires an active Doxa execution and `ModelSession`.
 - Actions and jobs use the active Unit of Work as a writable model reader.
 - Query handlers use a read-only model reader and read-only `ModelSession`.
 - Query results pass through the session identity map.
+- A read-only session observes one stable persistence snapshot across pagination, cursor, aggregate,
+  and relationship-loading statements.
 - Overlapping results for the same model identity return the same object instance.
 - `retrieved` fires only when an identity is newly hydrated into that session.
 - Query-mode `save`, `create`, and `delete` fail with `ReadOnlyExecutionError` before persistence.

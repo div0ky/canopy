@@ -232,6 +232,7 @@ export {
 export {
   applyModelQueryPlan,
   InvalidModelCursorError,
+  MODEL_QUERY_MAX_PAGE_SIZE,
   ModelQuery,
   ModelQueryError,
   validateModelQueryPlan,
@@ -245,6 +246,7 @@ export {
   type ModelQueryPlan,
   type ModelQueryPredicate,
   type ModelQueryValue,
+  type ModelRelationPath,
 } from './model-query.js'
 export {
   belongsTo,

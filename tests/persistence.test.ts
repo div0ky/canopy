@@ -2548,8 +2548,8 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const runtime = await bootPersistenceRuntime()
     for (const [id, amount] of [
       ['query-a', 1],
-      ['query-b', 2],
       ['query-c', 2],
+      ['query-b', 2],
     ] as const) {
       await runAction(runtime, SaveCounter, { id, amount })
       await runAction(runtime, RenameCounter, { id, label: 'query-group' })
@@ -2627,6 +2627,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       nextCursorIds: ['query-c'],
       previousCursorIds: ['query-a', 'query-b'],
       invalidCursorError: 'InvalidModelCursorError',
+      mismatchedCursorError: 'InvalidModelCursorError',
       eagerNotes: {
         'query-a': ['First', 'Second'],
         'query-b': [],
@@ -2663,6 +2664,12 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       nullLabelIds: ['query-unlabeled'],
       notInIds: ['query-b', 'query-c'],
       columnComparisonCount: 0,
+      implicitPageIds: ['query-c'],
+      nullEqualityIds: ['query-unlabeled'],
+      nullInequalityIds: ['query-a', 'query-b', 'query-c'],
+      nullMembershipIds: ['query-unlabeled'],
+      nonNullMembershipIds: ['query-a', 'query-b', 'query-c'],
+      nullOrderedIds: ['query-unlabeled', 'query-a', 'query-b', 'query-c'],
     })
     expect(observerLog).toEqual([
       expect.objectContaining({ phase: 'retrieved', modelId: 'query-a' }),

@@ -565,7 +565,7 @@ export class MemoryTransactionManager extends TransactionManager {
     _context: ExecutionContext,
     work: (reader: import('@doxajs/core').ModelReader) => Promise<Output>,
   ): Promise<Output> {
-    return work(new MemoryUnitOfWork(this.state))
+    return work(new MemoryUnitOfWork(cloneState(this.state)))
   }
   async transaction<Output>(
     _context: ExecutionContext,

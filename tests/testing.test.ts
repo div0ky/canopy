@@ -218,8 +218,8 @@ describe('@doxajs/testing', () => {
       harness.actingAsSystem()
       for (const [id, value] of [
         ['memory-a', 1],
-        ['memory-b', 2],
         ['memory-c', 2],
+        ['memory-b', 2],
       ] as const) {
         await harness.action(CreateCounter, { id, value })
         await harness.action(RenameCounter, { id, label: 'memory-group' })
@@ -282,6 +282,7 @@ describe('@doxajs/testing', () => {
           nextCursorIds: ['memory-c'],
           previousCursorIds: ['memory-a', 'memory-b'],
           invalidCursorError: 'InvalidModelCursorError',
+          mismatchedCursorError: 'InvalidModelCursorError',
           eagerNotes: {
             'memory-a': ['First', 'Second'],
             'memory-b': [],
@@ -318,6 +319,12 @@ describe('@doxajs/testing', () => {
           nullLabelIds: ['memory-unlabeled'],
           notInIds: ['memory-b', 'memory-c'],
           columnComparisonCount: 0,
+          implicitPageIds: ['memory-c'],
+          nullEqualityIds: ['memory-unlabeled'],
+          nullInequalityIds: ['memory-a', 'memory-b', 'memory-c'],
+          nullMembershipIds: ['memory-unlabeled'],
+          nonNullMembershipIds: ['memory-a', 'memory-b', 'memory-c'],
+          nullOrderedIds: ['memory-unlabeled', 'memory-a', 'memory-b', 'memory-c'],
         }),
       )
       expect(harness.observations?.observations).toEqual(
