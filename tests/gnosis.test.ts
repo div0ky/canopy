@@ -389,19 +389,20 @@ describe('Gnosis read-only local engineering server', () => {
       await readFile(path.join(generatedApplication, '.mcp.json'), 'utf8'),
     ) as {
       mcpServers: {
-        gnosis: { command: string; args: string[] }
+        gnosis: { command: string; args: string[]; cwd: string }
       }
     }
     expect(registration.mcpServers.gnosis).toEqual({
       command: 'node',
       args: ['./node_modules/@doxajs/praxis/dist/bin.js', 'mcp'],
+      cwd: '.',
       env: {},
     })
     const client = new Client({ name: 'gnosis-stdio-test', version: '1.0.0' })
     const transport = new StdioClientTransport({
       command: registration.mcpServers.gnosis.command,
       args: registration.mcpServers.gnosis.args,
-      cwd: generatedApplication,
+      cwd: path.resolve(generatedApplication, registration.mcpServers.gnosis.cwd),
       env: { ...getDefaultEnvironment(), CI: '1' },
       stderr: 'pipe',
     })

@@ -476,7 +476,7 @@ describe('Praxis command suite', () => {
       `packages:\n  - .\n\nallowBuilds:\n  esbuild: true\n`,
     )
     expect(await readFile(path.join(destination, '.codex/config.toml'), 'utf8')).toBe(
-      `[mcp_servers.gnosis]\ncommand = "node"\nargs = ["./node_modules/@doxajs/praxis/dist/bin.js","mcp"]\nstartup_timeout_sec = 120\n`,
+      `[mcp_servers.gnosis]\ncommand = "node"\nargs = ["./node_modules/@doxajs/praxis/dist/bin.js","mcp"]\ncwd = "."\nstartup_timeout_sec = 120\n`,
     )
     const agents = await readFile(path.join(destination, 'AGENTS.md'), 'utf8')
     expect(agents).toContain('<doxa-gnosis-guidelines>')
@@ -487,6 +487,7 @@ describe('Praxis command suite', () => {
         gnosis: {
           command: 'node',
           args: ['./node_modules/@doxajs/praxis/dist/bin.js', 'mcp'],
+          cwd: '.',
           env: {},
         },
       },
@@ -496,6 +497,7 @@ describe('Praxis command suite', () => {
         gnosis: {
           command: 'node',
           args: ['./node_modules/@doxajs/praxis/dist/bin.js', 'mcp'],
+          cwd: '.',
           env: {},
         },
       },
@@ -633,6 +635,56 @@ describe('Praxis command suite', () => {
     expect(errors).toEqual([])
   })
 
+  it('registers a generated monorepo application at the repository root', async () => {
+    const root = await temporaryDirectory()
+    const destination = path.join(root, 'apps/doxaapp')
+    await mkdir(path.join(root, '.git'))
+    await writeFile(path.join(root, 'AGENTS.md'), '# Monorepo guidance\n')
+
+    expect(
+      await runPraxis(['new', 'Doxa App', `--directory=${destination}`], root, {
+        out: () => undefined,
+        error: (message) => {
+          throw new Error(message)
+        },
+      }),
+    ).toBe(0)
+
+    expect(await fileExists(path.join(destination, '.codex/config.toml'))).toBe(false)
+    expect(await fileExists(path.join(destination, '.cursor/mcp.json'))).toBe(false)
+    expect(await readFile(path.join(root, 'AGENTS.md'), 'utf8')).toContain(
+      '# Monorepo guidance\n\n<doxa-gnosis-guidelines>',
+    )
+    expect(await readFile(path.join(root, '.codex/config.toml'), 'utf8')).toContain(
+      'cwd = "apps/doxaapp"',
+    )
+    expect(JSON.parse(await readFile(path.join(root, '.mcp.json'), 'utf8'))).toEqual({
+      mcpServers: {
+        gnosis: expect.objectContaining({ cwd: 'apps/doxaapp' }),
+      },
+    })
+    expect(JSON.parse(await readFile(path.join(root, '.cursor/mcp.json'), 'utf8'))).toEqual({
+      mcpServers: {
+        gnosis: expect.objectContaining({ cwd: 'apps/doxaapp' }),
+      },
+    })
+    expect(JSON.parse(await readFile(path.join(root, '.vscode/mcp.json'), 'utf8'))).toEqual({
+      servers: {
+        gnosis: expect.objectContaining({ cwd: '${workspaceFolder}/apps/doxaapp' }),
+      },
+    })
+
+    expect(
+      await runPraxis(['gnosis:install'], destination, {
+        out: () => undefined,
+        error: (message) => {
+          throw new Error(message)
+        },
+      }),
+    ).toBe(0)
+    expect(await fileExists(path.join(destination, 'AGENTS.md'))).toBe(false)
+  })
+
   it('installs selected Gnosis clients idempotently without replacing unrelated configuration', async () => {
     const root = await temporaryDirectory()
     await mkdir(path.join(root, '.codex'), { recursive: true })
@@ -659,13 +711,14 @@ describe('Praxis command suite', () => {
     expect(codex).toContain('model = "gpt-example"')
     expect(codex).toContain('[mcp_servers.existing]')
     expect(codex.match(/\[mcp_servers\.gnosis\]/g)).toHaveLength(1)
-    expect(codex).not.toContain('cwd =')
+    expect(codex).toContain('cwd = "."')
     expect(JSON.parse(claude)).toEqual({
       mcpServers: {
         existing: { command: 'existing-server' },
         gnosis: {
           command: 'node',
           args: ['./node_modules/@doxajs/praxis/dist/bin.js', 'mcp'],
+          cwd: '.',
           env: {},
         },
       },
@@ -934,11 +987,14 @@ describe('Praxis command suite', () => {
 
   it('validates an installed upgrade with build, migration status, and optional tests', async () => {
     const root = await temporaryDirectory()
+    const application = path.join(root, 'apps/doxaapp')
+    await mkdir(path.join(root, '.git'))
+    await mkdir(application, { recursive: true })
     const currentPraxis = JSON.parse(
       await readFile(path.join(workspace, 'packages/praxis/package.json'), 'utf8'),
     ) as { version: string }
     await writeFile(
-      path.join(root, 'package.json'),
+      path.join(application, 'package.json'),
       `${JSON.stringify(upgradeFixturePackage(currentPraxis.version), null, 2)}\n`,
     )
     const invocations: string[][] = []
@@ -951,7 +1007,7 @@ describe('Praxis command suite', () => {
           `--to=${currentPraxis.version}`,
           '--verify',
         ],
-        root,
+        application,
         {
           out: () => undefined,
           error: (message) => {
@@ -973,6 +1029,10 @@ describe('Praxis command suite', () => {
     expect(await fileExists(path.join(root, '.mcp.json'))).toBe(true)
     expect(await fileExists(path.join(root, '.cursor/mcp.json'))).toBe(true)
     expect(await fileExists(path.join(root, '.vscode/mcp.json'))).toBe(true)
+    expect(await fileExists(path.join(application, '.codex/config.toml'))).toBe(false)
+    expect(await readFile(path.join(root, '.codex/config.toml'), 'utf8')).toContain(
+      'cwd = "apps/doxaapp"',
+    )
   })
 
   it('describes same-version continuation as validated alignment', async () => {

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import { PraxisCommandError } from './errors.js'
@@ -10,15 +10,29 @@ const serverCommand = 'node'
 const serverArguments = ['./node_modules/@doxajs/praxis/dist/bin.js', 'mcp'] as const
 
 export async function installGnosisRegistration(
-  cwd: string,
+  applicationRoot: string,
   agents: readonly GnosisAgent[] = GNOSIS_AGENTS,
 ): Promise<readonly string[]> {
-  const files: string[] = [await installGnosisGuidelines(cwd)]
+  const resolvedApplicationRoot = path.resolve(applicationRoot)
+  const repositoryRoot = await findRepositoryRoot(resolvedApplicationRoot)
+  const applicationCwd = path.relative(repositoryRoot, resolvedApplicationRoot) || '.'
+  const files: string[] = [await installGnosisGuidelines(repositoryRoot)]
   for (const agent of agents) {
-    const file = await registerAgent(cwd, agent)
-    files.push(path.relative(cwd, file))
+    const file = await registerAgent(repositoryRoot, applicationCwd, agent)
+    files.push(path.relative(repositoryRoot, file))
   }
   return files
+}
+
+async function findRepositoryRoot(applicationRoot: string): Promise<string> {
+  const resolvedApplicationRoot = path.resolve(applicationRoot)
+  let directory = resolvedApplicationRoot
+  while (true) {
+    if (await exists(path.join(directory, '.git'))) return directory
+    const parent = path.dirname(directory)
+    if (parent === directory) return resolvedApplicationRoot
+    directory = parent
+  }
 }
 
 async function installGnosisGuidelines(cwd: string): Promise<string> {
@@ -98,37 +112,48 @@ export function parseGnosisAgents(args: readonly string[]): readonly GnosisAgent
   return GNOSIS_AGENTS.filter((agent) => selected.has(agent))
 }
 
-async function registerAgent(cwd: string, agent: GnosisAgent): Promise<string> {
-  if (agent === 'codex') return registerCodex(cwd)
+async function registerAgent(
+  repositoryRoot: string,
+  applicationCwd: string,
+  agent: GnosisAgent,
+): Promise<string> {
+  if (agent === 'codex') return registerCodex(repositoryRoot, applicationCwd)
   if (agent === 'claude') {
-    return registerJson(cwd, '.mcp.json', 'mcpServers', {
+    return registerJson(repositoryRoot, '.mcp.json', 'mcpServers', {
       command: serverCommand,
       args: serverArguments,
+      cwd: applicationCwd,
       env: {},
     })
   }
   if (agent === 'cursor') {
-    return registerJson(cwd, '.cursor/mcp.json', 'mcpServers', {
+    return registerJson(repositoryRoot, '.cursor/mcp.json', 'mcpServers', {
       command: serverCommand,
       args: serverArguments,
+      cwd: applicationCwd,
       env: {},
     })
   }
-  return registerJson(cwd, '.vscode/mcp.json', 'servers', {
+  const workspaceCwd =
+    applicationCwd === '.'
+      ? '${workspaceFolder}'
+      : `\${workspaceFolder}/${applicationCwd.split(path.sep).join('/')}`
+  return registerJson(repositoryRoot, '.vscode/mcp.json', 'servers', {
     type: 'stdio',
     command: serverCommand,
     args: serverArguments,
-    cwd: '${workspaceFolder}',
+    cwd: workspaceCwd,
   })
 }
 
-async function registerCodex(cwd: string): Promise<string> {
-  const file = path.join(cwd, '.codex/config.toml')
+async function registerCodex(repositoryRoot: string, applicationCwd: string): Promise<string> {
+  const file = path.join(repositoryRoot, '.codex/config.toml')
   const header = '[mcp_servers.gnosis]'
   const block = [
     header,
     `command = ${JSON.stringify(serverCommand)}`,
     `args = ${JSON.stringify(serverArguments)}`,
+    `cwd = ${JSON.stringify(applicationCwd)}`,
     'startup_timeout_sec = 120',
   ].join('\n')
   const existing = await readOptional(file)
@@ -141,7 +166,7 @@ async function registerCodex(cwd: string): Promise<string> {
     if (start === -1) {
       if (/^\s*mcp_servers\.gnosis\b/m.test(existing)) {
         throw new PraxisCommandError(
-          `${path.relative(cwd, file)} declares Gnosis with unsupported dotted TOML keys. Convert it to ${header} before reinstalling.`,
+          `${path.relative(repositoryRoot, file)} declares Gnosis with unsupported dotted TOML keys. Convert it to ${header} before reinstalling.`,
         )
       }
       content = `${existing.trimEnd()}\n\n${block}\n`
@@ -210,4 +235,14 @@ function isGnosisAgent(value: string): value is GnosisAgent {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+async function exists(file: string): Promise<boolean> {
+  try {
+    await access(file)
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw error
+  }
 }
