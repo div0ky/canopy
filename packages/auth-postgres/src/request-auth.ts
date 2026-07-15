@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 
 import { AuthenticationError, HttpError, type ResolvedHttpAuthentication } from '@doxajs/core'
+import type { CompiledAuthNormalization } from './compiled-auth.js'
 
 export function digest(value: string): string {
   return createHash('sha256').update(value).digest('hex')
@@ -81,4 +82,24 @@ export function normalizeEmail(value: string): string {
 
 export function normalizeEmailForLogin(value: string): string {
   return value.trim().normalize('NFC').toLowerCase()
+}
+
+export function normalizeIdentifier(
+  value: string,
+  normalization: CompiledAuthNormalization,
+  validate = false,
+): string {
+  if (normalization.preset === 'exact') return value.normalize('NFC')
+  let normalized = value.trim().normalize('NFC').toLowerCase()
+  if (normalization.preset === 'email-or-domain' && !normalized.includes('@')) {
+    normalized = `${normalized}@${normalization.domain}`
+  }
+  if (
+    validate &&
+    (normalization.preset === 'email' || normalization.preset === 'email-or-domain') &&
+    (normalized.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized))
+  ) {
+    throw new AuthenticationError('invalid_registration', 'A valid email address is required.')
+  }
+  return normalized
 }

@@ -9,6 +9,7 @@ import {
   IntrospectionError,
   applicationInfo,
   assertCurrentManifest,
+  describeAuthentication,
   describeModel,
   inspectGraph,
   inspectSurface,
@@ -103,6 +104,19 @@ const modelInspectionSchema = z.object({
   storage: z.record(z.string(), z.unknown()),
   source: sourceSchema,
 })
+const authenticationInspectionSchema = z.object({
+  mode: z.enum(['doxa-owned', 'managed', 'login-only']),
+  source: z.enum(['doxa-owned', 'model', 'table']),
+  modelId: z.string().optional(),
+  table: z.string(),
+  identifier: z.record(z.string(), z.unknown()),
+  contactEmail: z.string().optional(),
+  verification: z.record(z.string(), z.unknown()),
+  eligibility: z.array(z.record(z.string(), z.unknown())),
+  hashers: z.array(z.string()),
+  credentialOwnership: z.enum(['doxa', 'external']),
+  routes: z.record(z.string(), z.unknown()),
+})
 const documentationSearchSchema = z.object({
   items: z
     .array(
@@ -188,6 +202,12 @@ export function createGnosisServer(
   registerJsonResource(server, 'application-models', 'doxa://application/models', () =>
     inspectSurface(manifest, 'models'),
   )
+  registerJsonResource(
+    server,
+    'application-authentication',
+    'doxa://application/authentication',
+    () => describeAuthentication(manifest),
+  )
   registerJsonResource(server, 'documentation-index', 'doxa://documentation/index', () => docs)
 
   server.registerTool(
@@ -234,6 +254,16 @@ export function createGnosisServer(
       annotations: readOnlyAnnotations,
     },
     async ({ id }) => toolResult(() => describeModel(manifest, id)),
+  )
+
+  server.registerTool(
+    'describe_authentication',
+    {
+      description: 'Describe the compiled authentication mapping without credential values.',
+      outputSchema: authenticationInspectionSchema,
+      annotations: readOnlyAnnotations,
+    },
+    async () => toolResult(() => describeAuthentication(manifest)),
   )
 
   if (options.queryModels) {

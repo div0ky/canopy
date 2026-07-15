@@ -150,6 +150,14 @@ export class ModelIdentityMutationError extends Error {
   }
 }
 
+export class AuthOwnedModelAttributeError extends Error {
+  override readonly name = 'AuthOwnedModelAttributeError'
+
+  constructor(readonly attribute: string) {
+    super(`Model attribute ${attribute} is owned by Doxa Auth and cannot be written directly.`)
+  }
+}
+
 const MODEL_INTERNALS = Symbol('doxa.model.internals')
 
 interface PendingJournalFact {
@@ -175,6 +183,7 @@ interface ModelInternals<Attributes extends ModelAttributes> {
   readonly session: ModelSession | undefined
   readonly relations: ReadonlyMap<string, Model | readonly Model[] | undefined>
   changes(): ModelChanges<Attributes>
+  generatedIdentity(id: string): void
   replace(attributes: Attributes, version: number, exists: boolean): void
   attached(session: ModelSession, original: Partial<Attributes>, version?: number): void
   saved(version: number, changes: ModelChanges<Attributes>, created: boolean): void
@@ -436,6 +445,9 @@ export abstract class Model<
       session: this.#session,
       relations: this.#relations,
       changes: () => this.currentChanges(),
+      generatedIdentity: (id) => {
+        this.#attributes = modelAttributeState({ ...this.attributes, id } as Attributes)
+      },
       replace: (attributes, version, exists) => {
         this.#attributes = modelAttributeState(attributes)
         this.#original = clone(attributes)
@@ -510,6 +522,9 @@ export class ModelSession {
         readonly entityType: string
         readonly storage: ModelStorage
         readonly attributes?: ReadonlySet<string>
+        readonly attributeNormalizers?: ReadonlyMap<string, (value: unknown) => unknown>
+        readonly authOwnedAttributes?: ReadonlySet<string>
+        readonly clearAttributeOnChange?: ReadonlyMap<string, string>
       }
     >,
     private readonly observers?: ModelObserverDispatcher,
@@ -577,13 +592,32 @@ export class ModelSession {
     const created = !internals.exists
     await this.observers?.dispatch('saving', model)
     await this.observers?.dispatch(created ? 'creating' : 'updating', model)
-    changes = model.isDirty() ? internals.changes() : {}
     const definition = this.definitionFor(model.constructor as Function)
+    changes = model.isDirty() ? internals.changes() : {}
+    for (const attribute of definition.authOwnedAttributes ?? []) {
+      if (
+        Object.hasOwn(changes, attribute) &&
+        (!created || (internals.attributes as Record<string, unknown>)[attribute] !== null)
+      ) {
+        throw new AuthOwnedModelAttributeError(attribute)
+      }
+    }
+    const attributes = internals.attributes as Record<string, unknown>
+    for (const [attribute, normalize] of definition.attributeNormalizers ?? []) {
+      if (!Object.hasOwn(changes, attribute)) continue
+      const normalized = normalize(attributes[attribute])
+      if (!Object.is(normalized, attributes[attribute])) attributes[attribute] = normalized
+    }
+    for (const [changed, cleared] of definition.clearAttributeOnChange ?? []) {
+      if (Object.hasOwn(changes, changed)) attributes[cleared] = null
+    }
+    changes = model.isDirty() ? internals.changes() : {}
     const type = definition.entityType
     const removedAttributes = Object.keys(changes).filter(
       (attribute) => !Object.hasOwn(internals.attributes, attribute),
     )
-    const version = await this.writer().saveEntity({
+    const pendingIdentity = model.id
+    const saved = await this.writer().saveEntity({
       type,
       id: model.id,
       ...(internals.version !== undefined ? { expectedVersion: internals.version } : {}),
@@ -591,6 +625,13 @@ export class ModelSession {
       ...(removedAttributes.length > 0 ? { removedAttributes } : {}),
       storage: definition.storage,
     })
+    const version = typeof saved === 'number' ? saved : saved.version
+    if (typeof saved !== 'number' && saved.id && saved.id !== pendingIdentity) {
+      internals.generatedIdentity(saved.id)
+      ;(changes as Record<string, unknown>).id = saved.id
+      this.#identityMap.delete(`${type}/${pendingIdentity}`)
+      this.#identityMap.set(`${type}/${saved.id}`, model)
+    }
     for (const fact of internals.pendingJournal) {
       await this.writer().record({
         type: fact.type,
@@ -832,6 +873,9 @@ export class ModelSession {
     readonly entityType: string
     readonly storage: ModelStorage
     readonly attributes?: ReadonlySet<string>
+    readonly attributeNormalizers?: ReadonlyMap<string, (value: unknown) => unknown>
+    readonly authOwnedAttributes?: ReadonlySet<string>
+    readonly clearAttributeOnChange?: ReadonlyMap<string, string>
   } {
     const definition = this.models.get(Constructor)
     if (!definition)

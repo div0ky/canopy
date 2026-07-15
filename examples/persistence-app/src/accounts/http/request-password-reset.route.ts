@@ -10,15 +10,15 @@ export class RequestPasswordResetRoute extends Route {
   private readonly auth = this.inject(Auth)
   private readonly actions = this.inject(ActionBus)
   async handle(request: HttpRequest): Promise<Response> {
-    const body = await request.json<{ email?: unknown }>()
-    const email = typeof body.email === 'string' ? body.email : ''
-    const grant = await this.auth.issuePasswordReset(email)
+    const body = await request.json<{ identifier?: unknown }>()
+    const identifier = typeof body.identifier === 'string' ? body.identifier : ''
+    const grant = await this.auth.issuePasswordReset(identifier)
     if (grant) {
       const identity = await this.auth.findIdentity(grant.identityId)
-      if (identity)
+      if (identity?.contactEmail)
         await this.actions.execute(SendAuthEmail, {
           kind: 'password-reset',
-          to: identity.email,
+          to: identity.contactEmail,
           token: grant.token.reveal(),
         })
     }

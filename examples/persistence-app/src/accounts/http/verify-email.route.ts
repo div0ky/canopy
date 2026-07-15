@@ -12,7 +12,12 @@ export class VerifyEmailRoute extends Route {
       throw new HttpError(422, 'validation_failed', 'token is required')
     const identity = await this.auth.verifyEmail(body.token)
     return {
-      identity: { id: identity.id, email: identity.email, emailVerified: identity.emailVerified },
+      identity: {
+        id: identity.id,
+        identifier: identity.identifier,
+        contactEmail: identity.contactEmail,
+        verification: identity.verification,
+      },
     }
   }
 }

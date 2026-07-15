@@ -1,7 +1,7 @@
 export {
-  PostgresAuth,
-  type AuthIdentityTableMapping,
-  type AuthPasswordTableMapping,
-  type PostgresAuthOptions,
-} from './postgres-auth.js'
-export { DOXA_AUTH_MIGRATION_URL, installAuthSchema } from './migration.js'
+  DOXA_AUTH_MIGRATION_URL,
+  DOXA_AUTH_INFRASTRUCTURE_MIGRATION_URL,
+  DOXA_AUTH_SIDECAR_MIGRATION_URL,
+  DOXA_AUTH_CHALLENGE_BINDING_MIGRATION_URL,
+  installAuthSchema,
+} from './migration.js'

@@ -85,6 +85,8 @@ export {
   type AuthAccessTokenGrant,
   type AuthChallengeGrant,
   type AuthIdentity,
+  type AuthIdentityRegistrationFactory,
+  type AuthIdentityRegistrationInput,
   type AuthRequestMetadata,
   type AuthSession,
   type AuthSessionGrant,
@@ -99,6 +101,7 @@ export {
 } from './auth.js'
 
 import type { Event, Listener } from './event.js'
+import type { AuthIdentityRegistrationFactory } from './auth.js'
 import type { Policy } from './authorization.js'
 import type { Signal, SignalHandler } from './signal.js'
 import type { Route } from './http.js'
@@ -118,6 +121,92 @@ export type FeatureClass<T extends Feature = Feature> = abstract new () => T
 
 export type DoxaPluginPackage = '@doxajs/sendgrid' | '@doxajs/theoria' | '@doxajs/twilio-sms'
 
+export type AuthIdentifierKind = 'email' | 'username' | 'custom'
+export type AuthIdentifierNormalization =
+  | { readonly preset: 'exact' | 'lowercase' | 'email' }
+  | { readonly preset: 'email-or-domain'; readonly domain: string }
+
+export interface AuthIdentifierModelMapping {
+  readonly kind: AuthIdentifierKind
+  readonly attribute: string
+  readonly normalize: AuthIdentifierNormalization
+}
+
+export type AuthVerificationModelMapping =
+  | { readonly mode: 'mapped'; readonly attribute: string }
+  | { readonly mode: 'sidecar' }
+  | { readonly mode: 'trusted' }
+
+export type AuthEligibilityModelPredicate =
+  | { readonly attribute: string; readonly equals: string | number | boolean | null }
+  | { readonly attribute: string; readonly in: readonly (string | number | boolean | null)[] }
+  | { readonly attribute: string; readonly null: true }
+  | { readonly attribute: string; readonly notNull: true }
+
+export type AuthCredentialReaderPreset = 'doxa-argon2id' | 'bcrypt' | 'argon2id-phc' | 'sha256-hex'
+
+export interface AuthCredentialReaderConfiguration {
+  readonly preset: AuthCredentialReaderPreset
+  readonly hash: string
+}
+
+export interface AuthCredentialConfiguration {
+  readonly table: string
+  readonly identityId: string
+  readonly readers: readonly AuthCredentialReaderConfiguration[]
+  readonly write: {
+    readonly format: 'doxa-argon2id'
+    readonly destination:
+      | 'sidecar'
+      | {
+          readonly table?: string
+          readonly identityId?: string
+          readonly password: string
+          readonly updatedAt?: string
+        }
+  }
+}
+
+export interface AuthModelIdentityConfiguration {
+  readonly mode: 'managed' | 'login-only'
+  readonly model: Class<Model>
+  readonly identifier: AuthIdentifierModelMapping
+  readonly contactEmail?: string
+  readonly timestamps: { readonly createdAt: string; readonly updatedAt: string }
+  readonly verification: AuthVerificationModelMapping
+  readonly eligibility?: readonly AuthEligibilityModelPredicate[]
+  readonly credentials: AuthCredentialConfiguration
+  readonly registrationFactory?: Class<AuthIdentityRegistrationFactory>
+}
+
+export interface AuthRawIdentityConfiguration {
+  readonly mode: 'login-only'
+  readonly table: string
+  readonly columns: {
+    readonly id: string
+    readonly identifier: string
+    readonly contactEmail?: string
+    readonly createdAt: string
+    readonly updatedAt: string
+    readonly verification?: string
+  }
+  readonly identifier: {
+    readonly kind: AuthIdentifierKind
+    readonly normalize: AuthIdentifierNormalization
+  }
+  readonly verification: { readonly mode: 'mapped' | 'trusted' }
+  readonly eligibility?: readonly (
+    | { readonly column: string; readonly equals: string | number | boolean | null }
+    | { readonly column: string; readonly in: readonly (string | number | boolean | null)[] }
+    | { readonly column: string; readonly null: true }
+    | { readonly column: string; readonly notNull: true }
+  )[]
+  readonly credentials: AuthCredentialConfiguration
+}
+
+export type AuthIdentityConfiguration =
+  AuthModelIdentityConfiguration | AuthRawIdentityConfiguration
+
 export interface DoxaFrameworkConfiguration {
   readonly database?: {
     readonly applicationName?: string
@@ -125,6 +214,7 @@ export interface DoxaFrameworkConfiguration {
   readonly auth?: {
     readonly secureCookies?: boolean
     readonly trustedOrigins?: readonly string[]
+    readonly identity?: AuthIdentityConfiguration
   }
   readonly queue?: {
     readonly localConcurrency?: number
@@ -219,6 +309,7 @@ export {
   DetachedModelError,
   Model,
   ModelIdentityMutationError,
+  AuthOwnedModelAttributeError,
   ModelNotFoundError,
   ModelNotRegisteredError,
   StaleModelError,
@@ -452,6 +543,11 @@ export interface SaveEntity<State extends JsonValue = JsonValue> {
   readonly storage?: ModelStorage
 }
 
+export interface SavedEntity {
+  readonly version: number
+  readonly id?: string
+}
+
 export interface JournalFact<Payload extends JsonValue = JsonValue> {
   readonly type: string
   readonly version?: number
@@ -491,7 +587,9 @@ export abstract class ModelReader {
 
 /** Writable transaction boundary; actions and jobs also use it as their model reader. */
 export abstract class UnitOfWork extends ModelReader {
-  abstract saveEntity<State extends JsonValue>(entity: SaveEntity<State>): Promise<number>
+  abstract saveEntity<State extends JsonValue>(
+    entity: SaveEntity<State>,
+  ): Promise<number | SavedEntity>
   abstract deleteEntity(
     type: string,
     id: string,

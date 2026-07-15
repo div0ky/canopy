@@ -19,6 +19,7 @@ import {
   PersistenceError,
   type PersistedEntity,
   type SaveEntity,
+  type SavedEntity,
   type StagedDelivery,
   type DeliveryTransition,
   StaleUnitOfWorkError,
@@ -28,7 +29,7 @@ import {
 } from '@doxajs/core'
 import { and, eq, sql, type SQL } from 'drizzle-orm'
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres'
-import { Pool } from 'pg'
+import { Pool, type PoolClient } from 'pg'
 
 import {
   entityStates,
@@ -44,6 +45,13 @@ export interface PostgresTransactionOptions {
   readonly connectionString: string
   readonly maximumConnections?: number
   readonly applicationName?: string
+}
+
+interface FrameworkPostgresTransaction {
+  query<Row extends Record<string, unknown> = Record<string, unknown>>(
+    text: string,
+    values?: readonly unknown[],
+  ): Promise<{ readonly rows: Row[]; readonly rowCount: number | null }>
 }
 
 type Database = NodePgDatabase<typeof persistenceSchema>
@@ -93,6 +101,45 @@ export class PostgresTransactionManager extends TransactionManager implements St
         unitOfWork = new PostgresUnitOfWork(transaction, context)
         try {
           return await work(unitOfWork)
+        } finally {
+          unitOfWork.close()
+        }
+      })
+    } catch (error) {
+      throw translatePersistenceError(error)
+    }
+    await unitOfWork?.releaseAfterCommit()
+    return result
+  }
+
+  /** @internal Framework participants sharing the Model Unit of Work transaction. */
+  async frameworkTransaction<Output>(
+    context: ExecutionContext,
+    work: (unitOfWork: UnitOfWork, transaction: FrameworkPostgresTransaction) => Promise<Output>,
+  ): Promise<Output> {
+    const database = this.#database
+    if (!database) throw new PersistenceError('PostgreSQL transaction manager is not started.')
+    let unitOfWork: PostgresUnitOfWork | undefined
+    let result: Output
+    try {
+      result = await database.transaction(async (transaction) => {
+        unitOfWork = new PostgresUnitOfWork(transaction, context)
+        const client = (
+          transaction as unknown as { readonly session: { readonly client: PoolClient } }
+        ).session.client
+        if (!client?.query) {
+          throw new PersistenceError('PostgreSQL transaction participant is unavailable.')
+        }
+        try {
+          return await work(unitOfWork, {
+            query: async <Row extends Record<string, unknown> = Record<string, unknown>>(
+              text: string,
+              values?: readonly unknown[],
+            ) => {
+              const result = await client.query<Row>(text, values as unknown[] | undefined)
+              return { rows: result.rows, rowCount: result.rowCount }
+            },
+          })
         } finally {
           unitOfWork.close()
         }
@@ -242,7 +289,9 @@ class PostgresUnitOfWork extends UnitOfWork {
       : (databaseJsonValue(value) as ModelQueryValue)
   }
 
-  async saveEntity<State extends JsonValue>(entity: SaveEntity<State>): Promise<number> {
+  async saveEntity<State extends JsonValue>(
+    entity: SaveEntity<State>,
+  ): Promise<number | SavedEntity> {
     this.assertActive()
     if (entity.storage?.kind === 'table') return await this.saveMappedEntity(entity, entity.storage)
     const now = new Date()
@@ -340,7 +389,7 @@ class PostgresUnitOfWork extends UnitOfWork {
   private async saveMappedEntity<State extends JsonValue>(
     entity: SaveEntity<State>,
     storage: Extract<ModelStorage, { readonly kind: 'table' }>,
-  ): Promise<number> {
+  ): Promise<number | SavedEntity> {
     if (typeof entity.state !== 'object' || entity.state === null || Array.isArray(entity.state)) {
       throw new PersistenceError(`Mapped model ${entity.type} state must be a JSON object.`)
     }
@@ -363,17 +412,21 @@ class PostgresUnitOfWork extends UnitOfWork {
       )
     if (entity.expectedVersion === undefined) {
       try {
+        const databaseGeneratedIdentity = entity.id.startsWith('doxa-generated:')
+        if (databaseGeneratedIdentity) values.delete(storage.primaryKey)
         const columns = [...values.keys()].map((column) => sql.identifier(column))
         const parameters = [...values.values()].map((value) => sql`${value}`)
         const result = await this.session.execute(sql`
           INSERT INTO ${qualifiedIdentifier(storage.table)} (${sql.join(columns, sql`, `)})
           VALUES (${sql.join(parameters, sql`, `)})
-          RETURNING ${versionExpression(storage)} AS ${sql.identifier('__doxa_version')}
+          RETURNING ${versionExpression(storage)} AS ${sql.identifier('__doxa_version')},
+                    ${sql.identifier(storage.primaryKey)} AS ${sql.identifier('__doxa_id')}
         `)
         const row = result.rows[0] as Record<string, unknown> | undefined
         if (!row)
           throw new PersistenceError('PostgreSQL did not return the inserted mapped model version.')
-        return numberVersion(row.__doxa_version, entity.type, entity.id)
+        const version = numberVersion(row.__doxa_version, entity.type, entity.id)
+        return databaseGeneratedIdentity ? { version, id: String(row.__doxa_id) } : version
       } catch (error) {
         if (postgresCode(error) === '23505')
           throw new OptimisticConcurrencyError(entity.type, entity.id, entity.expectedVersion)

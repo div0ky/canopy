@@ -1,4 +1,4 @@
-export const MANIFEST_FORMAT_VERSION = 3 as const
+export const MANIFEST_FORMAT_VERSION = 4 as const
 
 export type Scope = 'singleton' | 'execution' | 'transient'
 
@@ -125,6 +125,70 @@ export interface ModelManifestEntry {
         readonly timestamps: false | { readonly createdAt: string; readonly updatedAt: string }
       }
   readonly source: SourceProvenance
+}
+
+export type AuthenticationEligibilityPredicate =
+  | { readonly column: string; readonly equals: string | number | boolean | null }
+  | { readonly column: string; readonly in: readonly (string | number | boolean | null)[] }
+  | { readonly column: string; readonly null: true }
+  | { readonly column: string; readonly notNull: true }
+
+export interface AuthenticationManifestEntry {
+  readonly mode: 'doxa-owned' | 'managed' | 'login-only'
+  readonly source: 'doxa-owned' | 'model' | 'table'
+  readonly modelId?: string
+  readonly table: string
+  readonly columns: {
+    readonly id: string
+    readonly identifier: string
+    readonly contactEmail?: string
+    readonly createdAt: string
+    readonly updatedAt: string
+  }
+  readonly attributes?: {
+    readonly identifier: string
+    readonly contactEmail?: string
+    readonly createdAt: string
+    readonly updatedAt: string
+    readonly verification?: string
+  }
+  readonly identifier: {
+    readonly kind: 'email' | 'username' | 'custom'
+    readonly normalization:
+      | { readonly preset: 'exact' | 'lowercase' | 'email' }
+      | { readonly preset: 'email-or-domain'; readonly domain: string }
+  }
+  readonly verification:
+    | { readonly mode: 'mapped'; readonly column: string }
+    | { readonly mode: 'sidecar' }
+    | { readonly mode: 'trusted' }
+    | { readonly mode: 'unsupported' }
+  readonly eligibility: readonly AuthenticationEligibilityPredicate[]
+  readonly credentials: {
+    readonly table: string
+    readonly identityId: string
+    readonly readers: readonly {
+      readonly preset: 'doxa-argon2id' | 'bcrypt' | 'argon2id-phc' | 'sha256-hex'
+      readonly hash: string
+    }[]
+    readonly write:
+      | { readonly destination: 'sidecar'; readonly format: 'doxa-argon2id' }
+      | {
+          readonly destination: 'in-place'
+          readonly format: 'doxa-argon2id'
+          readonly table: string
+          readonly identityId: string
+          readonly password: string
+          readonly updatedAt?: string
+        }
+  }
+  readonly registrationFactoryId?: string
+  readonly routes: {
+    readonly registration: boolean
+    readonly verification: boolean
+    readonly recovery: boolean
+    readonly passwordChange: boolean
+  }
 }
 
 export type ModelRelationshipManifest =
@@ -298,6 +362,7 @@ export interface DoxaManifest {
   readonly compilerVersion: string
   readonly buildHash: string
   readonly application: ApplicationManifestEntry
+  readonly authentication: AuthenticationManifestEntry
   readonly plugins: readonly PluginManifestEntry[]
   readonly features: readonly FeatureManifestEntry[]
   readonly configurations: readonly ConfigurationManifestEntry[]
@@ -358,6 +423,7 @@ export function assertManifest(value: unknown): asserts value is DoxaManifest {
 
   if (
     !isRecord(value.application) ||
+    !isRecord(value.authentication) ||
     !Array.isArray(value.plugins) ||
     !Array.isArray(value.features) ||
     !Array.isArray(value.configurations) ||
@@ -380,6 +446,7 @@ export function assertManifest(value: unknown): asserts value is DoxaManifest {
   }
 
   assertManifestEntry(value.application, 'application')
+  assertAuthenticationManifest(value.authentication)
   for (const [section, entries] of Object.entries({
     plugins: value.plugins,
     features: value.features,
@@ -444,6 +511,55 @@ export function assertManifest(value: unknown): asserts value is DoxaManifest {
       }
       assertModelRelationship(model.id, relationship)
     }
+  }
+}
+
+function assertAuthenticationManifest(value: Record<string, unknown>): void {
+  if (
+    !['doxa-owned', 'managed', 'login-only'].includes(String(value.mode)) ||
+    !['doxa-owned', 'model', 'table'].includes(String(value.source)) ||
+    !nonEmptyString(value.table) ||
+    !isRecord(value.columns) ||
+    !nonEmptyString(value.columns.id) ||
+    !nonEmptyString(value.columns.identifier) ||
+    !nonEmptyString(value.columns.createdAt) ||
+    !nonEmptyString(value.columns.updatedAt) ||
+    !isRecord(value.identifier) ||
+    !['email', 'username', 'custom'].includes(String(value.identifier.kind)) ||
+    !isRecord(value.identifier.normalization) ||
+    !['exact', 'lowercase', 'email', 'email-or-domain'].includes(
+      String(value.identifier.normalization.preset),
+    ) ||
+    !isRecord(value.verification) ||
+    !['mapped', 'sidecar', 'trusted', 'unsupported'].includes(String(value.verification.mode)) ||
+    !Array.isArray(value.eligibility) ||
+    !isRecord(value.credentials) ||
+    !nonEmptyString(value.credentials.table) ||
+    !nonEmptyString(value.credentials.identityId) ||
+    !Array.isArray(value.credentials.readers) ||
+    value.credentials.readers.length === 0 ||
+    !isRecord(value.credentials.write) ||
+    !isRecord(value.routes)
+  ) {
+    throw new ManifestCompatibilityError('Doxa manifest authentication contract is invalid.')
+  }
+  for (const reader of value.credentials.readers) {
+    if (
+      !isRecord(reader) ||
+      !['doxa-argon2id', 'bcrypt', 'argon2id-phc', 'sha256-hex'].includes(String(reader.preset)) ||
+      !nonEmptyString(reader.hash)
+    ) {
+      throw new ManifestCompatibilityError('Doxa manifest credential reader is invalid.')
+    }
+  }
+  if (value.verification.mode === 'mapped' && !nonEmptyString(value.verification.column)) {
+    throw new ManifestCompatibilityError('Mapped verification requires a physical column.')
+  }
+  if (
+    value.identifier.normalization.preset === 'email-or-domain' &&
+    !nonEmptyString(value.identifier.normalization.domain)
+  ) {
+    throw new ManifestCompatibilityError('Email domain normalization requires a domain.')
   }
 }
 

@@ -111,6 +111,7 @@ export const authChallenges = pgTable(
     identityId: text('identity_id').notNull(),
     purpose: text('purpose').notNull(),
     tokenDigest: text('token_digest').notNull(),
+    recipientDigest: text('recipient_digest').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
     consumedAt: timestamp('consumed_at', { withTimezone: true, mode: 'date' }),

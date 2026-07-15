@@ -31,6 +31,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./framework": {
+      "types": "./dist/framework.d.ts",
+      "default": "./dist/framework.js"
     }
   },
   "files": [
@@ -44,6 +48,7 @@
   },
   "dependencies": {
     "@doxajs/core": "workspace:*",
+    "bcryptjs": "3.0.3",
     "drizzle-orm": "0.45.2",
     "pg": "8.22.0"
   },

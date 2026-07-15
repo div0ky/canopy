@@ -15,12 +15,14 @@ export class RegisterRoute extends Route {
 
   async handle(request: HttpRequest): Promise<Response> {
     const identity = await this.auth.register(await credentials(request))
-    const verification = await this.auth.issueEmailVerification(identity.id)
-    await this.actions.execute(SendAuthEmail, {
-      kind: 'verification',
-      to: identity.email,
-      token: verification.token.reveal(),
-    })
+    if (identity.contactEmail && identity.verification === 'unverified') {
+      const verification = await this.auth.issueEmailVerification(identity.id)
+      await this.actions.execute(SendAuthEmail, {
+        kind: 'verification',
+        to: identity.contactEmail,
+        token: verification.token.reveal(),
+      })
+    }
     await UserRegistered.dispatch({ identityId: identity.id })
     return Http.created({ identity: publicIdentity(identity) })
   }
@@ -29,8 +31,9 @@ export class RegisterRoute extends Route {
 function publicIdentity(identity: import('@doxajs/core').AuthIdentity) {
   return {
     id: identity.id,
-    email: identity.email,
-    emailVerified: identity.emailVerified,
+    identifier: identity.identifier,
+    contactEmail: identity.contactEmail,
+    verification: identity.verification,
     createdAt: identity.createdAt.toISOString(),
   }
 }
