@@ -24,7 +24,7 @@ interface IdentityPanelProps {
   readonly current: CurrentIdentityResponse | undefined
   readonly onAuthenticate: (
     mode: 'login' | 'register',
-    credentials: { email: string; password: string },
+    credentials: { identifier: string; password: string },
   ) => Promise<void>
   readonly onLogout: () => Promise<void>
   readonly onIssueToken: (name: string) => Promise<{ token: string; accessToken: AccessToken }>
@@ -45,7 +45,7 @@ export function IdentityPanel({
   async function authenticate(mode: 'login' | 'register') {
     setPending(mode)
     try {
-      await onAuthenticate(mode, { email, password })
+      await onAuthenticate(mode, { identifier: email, password })
     } catch {
       /* The shell reports normalized Doxa errors. */
     } finally {
@@ -88,7 +88,7 @@ export function IdentityPanel({
             <dl className="flex flex-col gap-3 text-sm">
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-muted-foreground">User</dt>
-                <dd className="font-mono">{current.identity.email}</dd>
+                <dd className="font-mono">{current.identity.identifier}</dd>
               </div>
               <Separator />
               <div className="flex items-center justify-between gap-4">
@@ -100,7 +100,7 @@ export function IdentityPanel({
               <Separator />
               <div className="flex items-center justify-between gap-4">
                 <dt className="text-muted-foreground">Email status</dt>
-                <dd>{current.identity.emailVerified ? 'Email verified' : 'Email unverified'}</dd>
+                <dd className="capitalize">{current.identity.verification}</dd>
               </div>
             </dl>
             <Button

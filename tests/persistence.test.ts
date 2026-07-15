@@ -1,11 +1,12 @@
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { createHmac, generateKeyPairSync, randomUUID, sign } from 'node:crypto'
+import { argon2, createHash, createHmac, generateKeyPairSync, randomUUID, sign } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import { compileApplication } from '@doxajs/compiler'
 import { runPraxis } from '@doxajs/praxis'
-import { installAuthSchema, PostgresAuth } from '@doxajs/auth-postgres'
+import { DOXA_AUTH_SIDECAR_MIGRATION_URL, installAuthSchema } from '@doxajs/auth-postgres'
+import { PostgresAuth } from '@doxajs/auth-postgres/framework'
 import {
   AfterCommitError,
   AuthorizationError,
@@ -22,7 +23,10 @@ import {
   StaleUnitOfWorkError,
   StaleModelError,
   type UnitOfWork,
+  Model,
+  type ModelAttributes,
 } from '@doxajs/core'
+import { ModelSession, runWithModelSession } from '@doxajs/core/runtime'
 import {
   installPersistenceSchema,
   installCacheSchema,
@@ -145,6 +149,9 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         password_record text NOT NULL
       )
     `)
+    await pool.query(
+      `CREATE UNIQUE INDEX legacy_auth_users_email_lower_idx ON legacy_auth_users (lower(email_address))`,
+    )
     await pool.query(`CREATE TABLE legacy_notes (id text PRIMARY KEY, body text NOT NULL)`)
   })
 
@@ -697,6 +704,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       'Migrated framework/postgres-drizzle/0001_doxa_communications.sql',
       'Migrated framework/postgres-drizzle/0001_doxa_durability.sql',
       'Migrated framework/auth-postgres/0001_doxa_auth.sql',
+      'Migrated framework/auth-postgres/0003_challenge_recipient_binding.sql',
       'Migrated framework/queue-pg-boss/0001_doxa_schedule_controls.sql',
     ])
     expect(
@@ -1376,7 +1384,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
 
     const registration = await http.fetch(
       jsonRequest('http://doxa.test/auth/register', {
-        email,
+        identifier: email,
         password: 'complete reference flow password',
       }),
     )
@@ -1405,7 +1413,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
 
     const login = await http.fetch(
       jsonRequest('http://doxa.test/auth/login', {
-        email,
+        identifier: email,
         password: 'complete reference flow password',
       }),
     )
@@ -1527,7 +1535,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const runtime = await bootPersistenceRuntime()
     const http = new HonoHttpEngine(runtime)
     const register = (email: string, password: string) =>
-      http.fetch(jsonRequest('http://doxa.test/auth/register', { email, password }))
+      http.fetch(jsonRequest('http://doxa.test/auth/register', { identifier: email, password }))
 
     const tooShort = await register('seven@example.com', '1234567')
     expect(tooShort.status).toBe(422)
@@ -1548,18 +1556,18 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
 
     const registered = await http.fetch(
       jsonRequest('http://doxa.test/auth/register', {
-        email: '  Ada@Example.COM ',
+        identifier: '  Ada@Example.COM ',
         password: 'correct horse battery staple',
       }),
     )
     expect(registered.status).toBe(201)
     const registration = await responseData<{
-      identity: { id: string; email: string; emailVerified: boolean }
+      identity: { id: string; identifier: string; verification: string }
     }>(registered)
     expect(registration.identity).toEqual(
       expect.objectContaining({
-        email: 'ada@example.com',
-        emailVerified: false,
+        identifier: 'ada@example.com',
+        verification: 'unverified',
       }),
     )
     expect(recordedEvents.at(-1)).toEqual(
@@ -1596,7 +1604,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
 
     const duplicate = await http.fetch(
       jsonRequest('http://doxa.test/auth/register', {
-        email: 'ada@example.com',
+        identifier: 'ada@example.com',
         password: 'another valid password',
       }),
     )
@@ -1610,13 +1618,13 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
 
     const wrongPassword = await http.fetch(
       jsonRequest('http://doxa.test/auth/login', {
-        email: 'ada@example.com',
+        identifier: 'ada@example.com',
         password: 'wrong password value',
       }),
     )
     const unknownIdentity = await http.fetch(
       jsonRequest('http://doxa.test/auth/login', {
-        email: 'nobody@example.com',
+        identifier: 'nobody@example.com',
         password: 'wrong password value',
       }),
     )
@@ -1626,7 +1634,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
 
     const loggedIn = await http.fetch(
       jsonRequest('http://doxa.test/auth/login', {
-        email: 'ADA@example.com',
+        identifier: 'ADA@example.com',
         password: 'correct horse battery staple',
       }),
     )
@@ -1671,7 +1679,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       expect.objectContaining({
         identity: expect.objectContaining({
           id: registration.identity.id,
-          email: 'ada@example.com',
+          identifier: 'ada@example.com',
         }),
         actor: { kind: 'user', id: registration.identity.id },
         authentication: expect.objectContaining({
@@ -1690,7 +1698,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
           'content-type': 'application/json',
         },
         body: JSON.stringify({
-          email: 'ada@example.com',
+          identifier: 'ada@example.com',
           password: 'correct horse battery staple',
         }),
       }),
@@ -1753,7 +1761,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const http = new HonoHttpEngine(runtime)
     const registered = await http.fetch(
       jsonRequest('http://doxa.test/auth/register', {
-        email: 'security@example.com',
+        identifier: 'security@example.com',
         password: 'initial secure password',
       }),
     )
@@ -1782,7 +1790,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(verified.status).toBe(200)
     expect(await responseData(verified)).toEqual(
       expect.objectContaining({
-        identity: expect.objectContaining({ id: identity.id, emailVerified: true }),
+        identity: expect.objectContaining({ id: identity.id, verification: 'verified' }),
       }),
     )
     expect(
@@ -1794,10 +1802,10 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     ).toBe(422)
 
     const knownReset = await http.fetch(
-      jsonRequest('http://doxa.test/auth/password/forgot', { email: 'security@example.com' }),
+      jsonRequest('http://doxa.test/auth/password/forgot', { identifier: 'security@example.com' }),
     )
     const unknownReset = await http.fetch(
-      jsonRequest('http://doxa.test/auth/password/forgot', { email: 'unknown@example.com' }),
+      jsonRequest('http://doxa.test/auth/password/forgot', { identifier: 'unknown@example.com' }),
     )
     expect([knownReset.status, unknownReset.status]).toEqual([202, 202])
     expect(await knownReset.text()).toBe(await unknownReset.text())
@@ -1827,7 +1835,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       (
         await http.fetch(
           jsonRequest('http://doxa.test/auth/login', {
-            email: 'security@example.com',
+            identifier: 'security@example.com',
             password: 'initial secure password',
           }),
         )
@@ -1835,7 +1843,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     ).toBe(401)
     const loggedIn = await http.fetch(
       jsonRequest('http://doxa.test/auth/login', {
-        email: 'security@example.com',
+        identifier: 'security@example.com',
         password: 'reset secure password',
       }),
     )
@@ -1862,7 +1870,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         (
           await http.fetch(
             jsonRequest('http://doxa.test/auth/login', {
-              email: 'abuse@example.com',
+              identifier: 'abuse@example.com',
               password: 'wrong password value',
             }),
           )
@@ -1871,7 +1879,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     }
     const limited = await http.fetch(
       jsonRequest('http://doxa.test/auth/login', {
-        email: 'abuse@example.com',
+        identifier: 'abuse@example.com',
         password: 'wrong password value',
       }),
     )
@@ -1884,13 +1892,13 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const http = new HonoHttpEngine(runtime)
     await http.fetch(
       jsonRequest('http://doxa.test/auth/register', {
-        email: 'bearer@example.com',
+        identifier: 'bearer@example.com',
         password: 'correct horse battery staple',
       }),
     )
     const login = await http.fetch(
       jsonRequest('http://doxa.test/auth/login', {
-        email: 'bearer@example.com',
+        identifier: 'bearer@example.com',
         password: 'correct horse battery staple',
       }),
     )
@@ -2016,14 +2024,14 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const http = new HonoHttpEngine(runtime)
     const registration = await http.fetch(
       jsonRequest('http://doxa.test/auth/register', {
-        email: 'operator-auth@example.com',
+        identifier: 'operator-auth@example.com',
         password: 'operator secure password',
       }),
     )
     const identityId = (await responseData<{ identity: { id: string } }>(registration)).identity.id
     const login = await http.fetch(
       jsonRequest('http://doxa.test/auth/login', {
-        email: 'operator-auth@example.com',
+        identifier: 'operator-auth@example.com',
         password: 'operator secure password',
       }),
     )
@@ -2971,8 +2979,8 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     await auth.start(lifecycleContext())
     try {
       const email = `rotation-${Date.now()}@example.com`
-      await auth.register({ email, password: 'rotation secure password' })
-      const grant = await auth.login({ email, password: 'rotation secure password' })
+      await auth.register({ identifier: email, password: 'rotation secure password' })
+      const grant = await auth.login({ identifier: email, password: 'rotation secure password' })
       const oldToken = grant.token.reveal()
       const rotated = await auth.resolveHttp(
         new Request('http://doxa.test/auth/me', {
@@ -3029,8 +3037,8 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     await auth.start(lifecycleContext())
     try {
       const email = `websocket-${Date.now()}@example.com`
-      await auth.register({ email, password: 'websocket secure password' })
-      const grant = await auth.login({ email, password: 'websocket secure password' })
+      await auth.register({ identifier: email, password: 'websocket secure password' })
+      const grant = await auth.login({ identifier: email, password: 'websocket secure password' })
       const cookie = `doxa_session=${grant.token.reveal()}`
 
       await expect(
@@ -3068,8 +3076,11 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     await auth.start(lifecycleContext())
     try {
       const email = `reauth-${Date.now()}@example.com`
-      await auth.register({ email, password: 'reauthentication secure password' })
-      const grant = await auth.login({ email, password: 'reauthentication secure password' })
+      await auth.register({ identifier: email, password: 'reauthentication secure password' })
+      const grant = await auth.login({
+        identifier: email,
+        password: 'reauthentication secure password',
+      })
       await pool.query(
         `UPDATE doxa_auth_sessions SET authenticated_at = now() - interval '1 day' WHERE id = $1`,
         [grant.session.id],
@@ -3111,10 +3122,12 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     const email = `reauth-route-${Date.now()}@example.com`
     const password = 'reauthentication route password'
     const registration = await http.fetch(
-      jsonRequest('http://doxa.test/auth/register', { email, password }),
+      jsonRequest('http://doxa.test/auth/register', { identifier: email, password }),
     )
     expect(registration.status).toBe(201)
-    const login = await http.fetch(jsonRequest('http://doxa.test/auth/login', { email, password }))
+    const login = await http.fetch(
+      jsonRequest('http://doxa.test/auth/login', { identifier: email, password }),
+    )
     const cookie = login.headers.get('set-cookie')!.split(';', 1)[0]!
     await pool.query(
       `UPDATE doxa_auth_sessions SET authenticated_at = now() - interval '1 day'
@@ -3151,6 +3164,685 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect((await tokenRequest()).status).toBe(201)
   })
 
+  it('invalidates outstanding verification challenges when the contact email changes', async () => {
+    const auth = new PostgresAuth({
+      connectionString,
+      secureCookies: false,
+      trustedOrigins: ['http://doxa.test'],
+    })
+    await auth.start(lifecycleContext())
+    try {
+      const identity = await auth.register({
+        identifier: `challenge-${Date.now()}@example.com`,
+        password: 'challenge binding password',
+      })
+      const challenge = await auth.issueEmailVerification(identity.id)
+      await pool.query(
+        `UPDATE doxa_auth_identities SET email = $1, updated_at = now() WHERE id = $2`,
+        [`changed-${Date.now()}@example.com`, identity.id],
+      )
+      await expect(auth.verifyEmail(challenge.token.reveal())).rejects.toMatchObject({
+        code: 'invalid_token',
+      })
+      expect(
+        (
+          await pool.query<{ consumed_at: Date | null }>(
+            `SELECT consumed_at FROM doxa_auth_challenges WHERE identity_id = $1`,
+            [identity.id],
+          )
+        ).rows[0]?.consumed_at,
+      ).toBeNull()
+    } finally {
+      await auth.dispose(lifecycleContext())
+    }
+  })
+
+  it('registers managed identities through the Model lifecycle and rolls every participant back atomically', async () => {
+    await pool.query(await readFile(DOXA_AUTH_SIDECAR_MIGRATION_URL, 'utf8'))
+    await pool.query(`
+      CREATE TABLE managed_registration_users (
+        user_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        username text NOT NULL,
+        contact_email text NOT NULL,
+        password_hash text,
+        active boolean NOT NULL,
+        branch_tag text NOT NULL,
+        verified_at timestamptz,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+      )
+    `)
+    await pool.query(
+      `CREATE UNIQUE INDEX managed_registration_username_lower_idx
+       ON managed_registration_users (lower(username))`,
+    )
+
+    interface ManagedRegistrationAttributes extends ModelAttributes {
+      id: string
+      username: string
+      contactEmail: string
+      active: boolean
+      branchTag: string
+      verifiedAt: Date | null
+      createdAt: Date
+      updatedAt: Date
+    }
+    class ManagedRegistrationUser extends Model<ManagedRegistrationAttributes> {
+      recordRegistration(): void {
+        this.journal('managed-user.registered', { identityId: this.id })
+        this.outbox('managed-user.welcome', { identityId: this.id })
+      }
+      changeContactEmail(value: string): void {
+        this.attributes.contactEmail = value
+      }
+      forceVerification(value: Date): void {
+        this.attributes.verifiedAt = value
+      }
+    }
+
+    const transactions = new PostgresTransactionManager({ connectionString })
+    await transactions.start(lifecycleContext())
+    const phases: string[] = []
+    let failSaved = false
+    const definitions = new Map([
+      [
+        ManagedRegistrationUser,
+        {
+          entityType: 'managed-registration-user',
+          storage: {
+            kind: 'table' as const,
+            table: 'managed_registration_users',
+            primaryKey: 'user_id',
+            columns: {
+              id: 'user_id',
+              username: 'username',
+              contactEmail: 'contact_email',
+              active: 'active',
+              branchTag: 'branch_tag',
+              verifiedAt: 'verified_at',
+              createdAt: 'created_at',
+              updatedAt: 'updated_at',
+            },
+            timestamps: false as const,
+          },
+          attributes: new Set([
+            'id',
+            'username',
+            'contactEmail',
+            'active',
+            'branchTag',
+            'verifiedAt',
+            'createdAt',
+            'updatedAt',
+          ]),
+          attributeNormalizers: new Map([
+            ['username', (value: unknown) => String(value).trim().toLowerCase()],
+            ['contactEmail', (value: unknown) => String(value).trim().toLowerCase()],
+          ]),
+          authOwnedAttributes: new Set(['verifiedAt']),
+          clearAttributeOnChange: new Map([['contactEmail', 'verifiedAt']]),
+        },
+      ],
+    ])
+    const auth = new PostgresAuth({
+      connectionString,
+      secureCookies: false,
+      trustedOrigins: ['http://doxa.test'],
+    })
+    auth.bindCompiledAuthentication(
+      mappedAuthentication({
+        mode: 'managed',
+        table: 'managed_registration_users',
+        verification: { mode: 'mapped', column: 'verified_at' },
+      }),
+      {
+        registerManagedIdentity: async (request) => {
+          return await transactions.frameworkTransaction(
+            executionContext('managed-auth-registration'),
+            async (unitOfWork, participant) => {
+              const models = new ModelSession(unitOfWork, definitions, {
+                dispatch: async (phase, model) => {
+                  phases.push(phase)
+                  if (phase === 'creating') {
+                    ;(model as ManagedRegistrationUser).recordRegistration()
+                  }
+                  if (phase === 'saved' && failSaved)
+                    throw new Error('registration observer failed')
+                },
+              })
+              return await runWithModelSession(models, async () => {
+                try {
+                  const attributes: ManagedRegistrationAttributes = {
+                    id: request.id,
+                    username: request.identifier,
+                    contactEmail: request.contactEmail!,
+                    active: true,
+                    branchTag: 'north',
+                    verifiedAt: null,
+                    createdAt: request.createdAt,
+                    updatedAt: request.updatedAt,
+                  }
+                  const identity = models.make(ManagedRegistrationUser, attributes)
+                  await identity.save()
+                  await request.persistAuthentication(participant, identity.id)
+                  return identity.id
+                } finally {
+                  models.close()
+                }
+              })
+            },
+          )
+        },
+      },
+    )
+    await auth.start(lifecycleContext())
+    try {
+      const registered = await auth.register({
+        identifier: 'LifecycleUser',
+        contactEmail: 'lifecycle@example.com',
+        password: 'managed lifecycle password',
+      })
+      expect(registered.identifier).toBe('lifecycleuser')
+      expect(phases).toEqual(
+        expect.arrayContaining(['saving', 'creating', 'created', 'saved', 'committed']),
+      )
+      expect(
+        (
+          await pool.query(
+            `SELECT count(*)::int AS count FROM doxa_journal_entries
+             WHERE entity_type = 'managed-registration-user'`,
+          )
+        ).rows[0]?.count,
+      ).toBe(1)
+      expect(
+        (
+          await pool.query(
+            `SELECT count(*)::int AS count FROM doxa_outbox_messages
+             WHERE message_type = 'managed-user.welcome'`,
+          )
+        ).rows[0]?.count,
+      ).toBe(1)
+
+      await pool.query(
+        `UPDATE managed_registration_users SET verified_at = now() WHERE user_id = $1`,
+        [registered.id],
+      )
+      await transactions.transaction(
+        executionContext('managed-auth-contact-change'),
+        async (unitOfWork) => {
+          const models = new ModelSession(unitOfWork, definitions)
+          await runWithModelSession(models, async () => {
+            try {
+              const identity = await models.findOrFail(ManagedRegistrationUser, registered.id)
+              identity.changeContactEmail(' Changed@Example.COM ')
+              await identity.save()
+            } finally {
+              models.close()
+            }
+          })
+        },
+      )
+      expect(
+        (
+          await pool.query<{ contact_email: string; verified_at: Date | null }>(
+            `SELECT contact_email, verified_at FROM managed_registration_users WHERE user_id = $1`,
+            [registered.id],
+          )
+        ).rows[0],
+      ).toEqual({ contact_email: 'changed@example.com', verified_at: null })
+      await expect(
+        transactions.transaction(
+          executionContext('managed-auth-owned-write'),
+          async (unitOfWork) => {
+            const models = new ModelSession(unitOfWork, definitions)
+            await runWithModelSession(models, async () => {
+              try {
+                const identity = await models.findOrFail(ManagedRegistrationUser, registered.id)
+                identity.forceVerification(new Date())
+                await identity.save()
+              } finally {
+                models.close()
+              }
+            })
+          },
+        ),
+      ).rejects.toThrow('owned by Doxa Auth')
+
+      failSaved = true
+      await expect(
+        auth.register({
+          identifier: 'RollbackUser',
+          contactEmail: 'rollback@example.com',
+          password: 'managed rollback password',
+        }),
+      ).rejects.toThrow('registration observer failed')
+      expect(
+        (
+          await pool.query(
+            `SELECT count(*)::int AS count FROM managed_registration_users
+             WHERE username = 'rollbackuser'`,
+          )
+        ).rows[0]?.count,
+      ).toBe(0)
+      expect(
+        (
+          await pool.query(
+            `SELECT count(*)::int AS count FROM doxa_auth_mapped_passwords p
+             WHERE NOT EXISTS (
+               SELECT 1 FROM managed_registration_users u WHERE u.user_id::text = p.identity_id
+             )`,
+          )
+        ).rows[0]?.count,
+      ).toBe(0)
+    } finally {
+      await auth.dispose(lifecycleContext())
+      await transactions.dispose(lifecycleContext())
+    }
+  })
+
+  it('upgrades managed bcrypt credentials, gives sidecars precedence, and revokes ineligible identities', async () => {
+    await pool.query(await readFile(DOXA_AUTH_SIDECAR_MIGRATION_URL, 'utf8'))
+    await pool.query(`
+      CREATE TABLE legacy_managed_auth_users (
+        user_id text PRIMARY KEY,
+        username text NOT NULL,
+        contact_email text NOT NULL,
+        password_hash text NOT NULL,
+        active boolean NOT NULL,
+        verified_at timestamptz,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+      )
+    `)
+    await pool.query(
+      `CREATE UNIQUE INDEX legacy_managed_auth_username_lower_idx
+       ON legacy_managed_auth_users (lower(username))`,
+    )
+    await pool.query(
+      `INSERT INTO legacy_managed_auth_users
+       (user_id, username, contact_email, password_hash, active, created_at, updated_at)
+       VALUES ('managed-1', 'Ada', 'ada@example.com', $1, true, now(), now())`,
+      ['$2b$10$rIv/DSLLlVci6r6U.W.N.e0DggFleAwndNLWyGmpJvbsVP//5EQaK'],
+    )
+
+    const auth = new PostgresAuth({
+      connectionString,
+      secureCookies: false,
+      trustedOrigins: ['http://doxa.test'],
+    })
+    auth.bindCompiledAuthentication(
+      mappedAuthentication({
+        mode: 'managed',
+        verification: { mode: 'mapped', column: 'verified_at' },
+        eligibility: [{ column: 'active', equals: true }],
+      }),
+    )
+    await auth.start(lifecycleContext())
+    try {
+      const grant = await auth.login({
+        identifier: 'ADA',
+        password: 'legacy secure password',
+      })
+      expect(grant.identity).toEqual(
+        expect.objectContaining({
+          id: 'managed-1',
+          identifier: 'ada',
+          contactEmail: 'ada@example.com',
+        }),
+      )
+      const sidecar = await pool.query<{ password_record: string }>(
+        `SELECT password_record FROM doxa_auth_mapped_passwords WHERE identity_id = 'managed-1'`,
+      )
+      expect(sidecar.rows[0]?.password_record).toMatch(/^doxa-argon2id:/)
+
+      const access = await auth.issueAccessToken('managed-1', { name: 'eligibility-proof' })
+      await pool.query(
+        `UPDATE legacy_managed_auth_users SET active = false WHERE user_id = 'managed-1'`,
+      )
+      expect(
+        (
+          await auth.resolveHttp(
+            new Request('http://doxa.test/auth/me', {
+              headers: { cookie: `doxa_session=${grant.token.reveal()}` },
+            }),
+          )
+        ).authentication.state,
+      ).toBe('anonymous')
+      await expect(
+        auth.resolveHttp(
+          new Request('http://doxa.test/auth/me', {
+            headers: { authorization: `Bearer ${access.token.reveal()}` },
+          }),
+        ),
+      ).rejects.toMatchObject({ code: 'invalid_credentials' })
+      expect(
+        (
+          await pool.query(
+            `SELECT count(*)::int AS count FROM doxa_auth_audit_events
+             WHERE identity_id = 'managed-1' AND event_type = 'identity.ineligible'`,
+          )
+        ).rows[0]?.count,
+      ).toBeGreaterThan(0)
+
+      await pool.query(
+        `UPDATE legacy_managed_auth_users SET active = true WHERE user_id = 'managed-1'`,
+      )
+      await pool.query(
+        `UPDATE doxa_auth_mapped_passwords SET password_record = 'not-a-password-record'
+         WHERE identity_id = 'managed-1'`,
+      )
+      await expect(
+        auth.login({ identifier: 'ada', password: 'legacy secure password' }),
+      ).rejects.toMatchObject({ code: 'invalid_credentials' })
+    } finally {
+      await auth.dispose(lifecycleContext())
+    }
+  })
+
+  it('rejects weak SHA-256 credentials in login-only mode without issuing a session', async () => {
+    await pool.query(await readFile(DOXA_AUTH_SIDECAR_MIGRATION_URL, 'utf8'))
+    await pool.query(`
+      CREATE TABLE legacy_login_only_users (
+        user_id text PRIMARY KEY,
+        username text NOT NULL,
+        contact_email text NOT NULL,
+        password_hash text NOT NULL,
+        active boolean NOT NULL,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+      )
+    `)
+    await pool.query(
+      `CREATE UNIQUE INDEX legacy_login_only_username_lower_idx
+       ON legacy_login_only_users (lower(username))`,
+    )
+    const passwordHash = createHash('sha256').update('legacy password').digest('hex')
+    await pool.query(
+      `INSERT INTO legacy_login_only_users
+       (user_id, username, contact_email, password_hash, active, created_at, updated_at)
+       VALUES ('login-only-1', 'encore', 'encore@example.com', $1, true, now(), now())`,
+      [passwordHash],
+    )
+
+    const auth = new PostgresAuth({
+      connectionString,
+      secureCookies: false,
+      trustedOrigins: ['http://doxa.test'],
+    })
+    auth.bindCompiledAuthentication(
+      mappedAuthentication({
+        mode: 'login-only',
+        verification: { mode: 'trusted' },
+        readers: [
+          { preset: 'sha256-hex', hash: 'password_hash' },
+          { preset: 'argon2id-phc', hash: 'password_hash' },
+        ],
+      }),
+    )
+    await auth.start(lifecycleContext())
+    try {
+      await expect(
+        auth.login({ identifier: 'encore', password: 'legacy password' }),
+      ).rejects.toMatchObject({ code: 'invalid_credentials' })
+      expect(
+        (
+          await pool.query(
+            `SELECT count(*)::int AS count FROM doxa_auth_sessions WHERE identity_id = 'login-only-1'`,
+          )
+        ).rows[0]?.count,
+      ).toBe(0)
+
+      const salt = Buffer.from('0123456789abcdef', 'utf8')
+      const hash = await new Promise<Buffer>((resolve, reject) => {
+        argon2(
+          'argon2id',
+          {
+            message: Buffer.from('legacy password'),
+            nonce: salt,
+            parallelism: 2,
+            tagLength: 32,
+            memory: 19_456,
+            passes: 2,
+          },
+          (error, value) => (error ? reject(error) : resolve(value)),
+        )
+      })
+      const phc = `$argon2id$v=19$m=19456,t=2,p=2$${salt.toString('base64').replace(/=+$/, '')}$${hash.toString('base64').replace(/=+$/, '')}`
+      await pool.query(
+        `UPDATE legacy_login_only_users SET password_hash = $1 WHERE user_id = 'login-only-1'`,
+        [phc],
+      )
+      expect(
+        (await auth.login({ identifier: 'encore', password: 'legacy password' })).identity.id,
+      ).toBe('login-only-1')
+    } finally {
+      await auth.dispose(lifecycleContext())
+    }
+  })
+
+  it('upgrades and reuses a managed in-place bcrypt credential', async () => {
+    await pool.query(`
+      CREATE TABLE legacy_in_place_auth_users (
+        user_id text PRIMARY KEY,
+        username text NOT NULL,
+        contact_email text NOT NULL,
+        password_hash text NOT NULL,
+        active boolean NOT NULL,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+      )
+    `)
+    await pool.query(
+      `CREATE UNIQUE INDEX legacy_in_place_auth_username_lower_idx
+       ON legacy_in_place_auth_users (lower(username))`,
+    )
+    await pool.query(
+      `INSERT INTO legacy_in_place_auth_users
+       (user_id, username, contact_email, password_hash, active, created_at, updated_at)
+       VALUES ('in-place-1', 'Grace', 'grace@example.com', $1, true, now(), now())`,
+      ['$2b$10$rIv/DSLLlVci6r6U.W.N.e0DggFleAwndNLWyGmpJvbsVP//5EQaK'],
+    )
+
+    const auth = new PostgresAuth({
+      connectionString,
+      secureCookies: false,
+      trustedOrigins: ['http://doxa.test'],
+    })
+    auth.bindCompiledAuthentication(
+      mappedAuthentication({
+        mode: 'managed',
+        table: 'legacy_in_place_auth_users',
+        verification: { mode: 'trusted' },
+        write: {
+          destination: 'in-place',
+          format: 'doxa-argon2id',
+          table: 'legacy_in_place_auth_users',
+          identityId: 'user_id',
+          password: 'password_hash',
+          updatedAt: 'updated_at',
+        },
+      }),
+    )
+    await auth.start(lifecycleContext())
+    try {
+      expect(
+        (await auth.login({ identifier: 'GRACE', password: 'legacy secure password' })).identity,
+      ).toEqual(expect.objectContaining({ id: 'in-place-1', identifier: 'grace' }))
+      expect(
+        (
+          await pool.query<{ password_hash: string }>(
+            `SELECT password_hash FROM legacy_in_place_auth_users WHERE user_id = 'in-place-1'`,
+          )
+        ).rows[0]?.password_hash,
+      ).toMatch(/^doxa-argon2id:/)
+      expect(
+        (await auth.login({ identifier: 'grace', password: 'legacy secure password' })).identity.id,
+      ).toBe('in-place-1')
+    } finally {
+      await auth.dispose(lifecycleContext())
+    }
+  })
+
+  it('rolls back a mandatory credential upgrade when session issuance fails', async () => {
+    await pool.query(await readFile(DOXA_AUTH_SIDECAR_MIGRATION_URL, 'utf8'))
+    await pool.query(`
+      CREATE TABLE atomic_upgrade_auth_users (
+        user_id text PRIMARY KEY,
+        username text NOT NULL,
+        contact_email text NOT NULL,
+        password_hash text NOT NULL,
+        active boolean NOT NULL,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+      )
+    `)
+    await pool.query(
+      `CREATE UNIQUE INDEX atomic_upgrade_auth_username_lower_idx
+       ON atomic_upgrade_auth_users (lower(username))`,
+    )
+    await pool.query(
+      `INSERT INTO atomic_upgrade_auth_users
+       (user_id, username, contact_email, password_hash, active, created_at, updated_at)
+       VALUES ('atomic-upgrade-1', 'Atomic', 'atomic@example.com', $1, true, now(), now())`,
+      ['$2b$10$rIv/DSLLlVci6r6U.W.N.e0DggFleAwndNLWyGmpJvbsVP//5EQaK'],
+    )
+    await pool.query(`
+      CREATE FUNCTION reject_atomic_upgrade_session() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.identity_id = 'atomic-upgrade-1' THEN
+          RAISE EXCEPTION 'forced session failure';
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql
+    `)
+    await pool.query(`
+      CREATE TRIGGER reject_atomic_upgrade_session
+      BEFORE INSERT ON doxa_auth_sessions
+      FOR EACH ROW EXECUTE FUNCTION reject_atomic_upgrade_session()
+    `)
+
+    const auth = new PostgresAuth({
+      connectionString,
+      secureCookies: false,
+      trustedOrigins: ['http://doxa.test'],
+    })
+    auth.bindCompiledAuthentication(
+      mappedAuthentication({
+        mode: 'managed',
+        table: 'atomic_upgrade_auth_users',
+        verification: { mode: 'trusted' },
+      }),
+    )
+    await auth.start(lifecycleContext())
+    try {
+      await expect(
+        auth.login({ identifier: 'atomic', password: 'legacy secure password' }),
+      ).rejects.toThrow('Failed query: insert into "doxa_auth_sessions"')
+      expect(
+        (
+          await pool.query(
+            `SELECT 1 FROM doxa_auth_mapped_passwords WHERE identity_id = 'atomic-upgrade-1'`,
+          )
+        ).rowCount,
+      ).toBe(0)
+    } finally {
+      await auth.dispose(lifecycleContext())
+      await pool.query('DROP TRIGGER reject_atomic_upgrade_session ON doxa_auth_sessions')
+      await pool.query('DROP FUNCTION reject_atomic_upgrade_session()')
+    }
+  })
+
+  it('rejects composite and partial identifier uniqueness that leaves login ambiguous', async () => {
+    await pool.query(await readFile(DOXA_AUTH_SIDECAR_MIGRATION_URL, 'utf8'))
+    await pool.query(`
+      CREATE TABLE ambiguous_auth_users (
+        user_id text PRIMARY KEY,
+        tenant_id text NOT NULL,
+        username text NOT NULL,
+        contact_email text NOT NULL,
+        password_hash text NOT NULL,
+        active boolean NOT NULL,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+      )
+    `)
+    await pool.query(
+      `CREATE UNIQUE INDEX ambiguous_auth_username_tenant_idx
+       ON ambiguous_auth_users (lower(username), tenant_id)`,
+    )
+    await pool.query(
+      `CREATE UNIQUE INDEX ambiguous_auth_active_username_idx
+       ON ambiguous_auth_users (lower(username)) WHERE active`,
+    )
+
+    const auth = new PostgresAuth({
+      connectionString,
+      secureCookies: false,
+      trustedOrigins: ['http://doxa.test'],
+    })
+    auth.bindCompiledAuthentication(
+      mappedAuthentication({
+        mode: 'login-only',
+        table: 'ambiguous_auth_users',
+        verification: { mode: 'trusted' },
+      }),
+    )
+    await expect(auth.start(lifecycleContext())).rejects.toThrow(
+      'Normalized auth identifiers require citext uniqueness or a unique lower(column) index.',
+    )
+  })
+
+  it('uses direct case-insensitive lookup for a unique citext identifier', async () => {
+    await pool.query('CREATE EXTENSION IF NOT EXISTS citext')
+    await pool.query(`
+      CREATE TABLE citext_auth_users (
+        user_id text PRIMARY KEY,
+        username citext NOT NULL UNIQUE,
+        contact_email text NOT NULL,
+        password_hash text NOT NULL,
+        active boolean NOT NULL,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+      )
+    `)
+    await pool.query(
+      `INSERT INTO citext_auth_users
+       (user_id, username, contact_email, password_hash, active, created_at, updated_at)
+       VALUES ('citext-1', 'CaseUser', 'case@example.com', $1, true, now(), now())`,
+      ['$2b$10$rIv/DSLLlVci6r6U.W.N.e0DggFleAwndNLWyGmpJvbsVP//5EQaK'],
+    )
+
+    const auth = new PostgresAuth({
+      connectionString,
+      secureCookies: false,
+      trustedOrigins: ['http://doxa.test'],
+    })
+    auth.bindCompiledAuthentication(
+      mappedAuthentication({
+        mode: 'login-only',
+        table: 'citext_auth_users',
+        verification: { mode: 'trusted' },
+        write: {
+          destination: 'in-place',
+          format: 'doxa-argon2id',
+          table: 'citext_auth_users',
+          identityId: 'user_id',
+          password: 'password_hash',
+          updatedAt: 'updated_at',
+        },
+      }),
+    )
+    await auth.start(lifecycleContext())
+    try {
+      expect(
+        (await auth.login({ identifier: 'CASEUSER', password: 'legacy secure password' })).identity,
+      ).toEqual(expect.objectContaining({ id: 'citext-1', identifier: 'caseuser' }))
+    } finally {
+      await auth.dispose(lifecycleContext())
+    }
+  })
+
   it('maps first-party identities and passwords onto an existing user table', async () => {
     const auth = new PostgresAuth({
       connectionString,
@@ -3162,6 +3854,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
           table: 'legacy_auth_users',
           id: 'external_id',
           email: 'email_address',
+          contactEmail: 'email_address',
           emailVerifiedAt: 'verified_at',
           createdAt: 'created_on',
           updatedAt: 'updated_on',
@@ -3186,14 +3879,14 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     await auth.start(lifecycleContext())
     try {
       const identity = await auth.register({
-        email: 'legacy@example.com',
+        identifier: 'legacy@example.com',
         password: 'legacy secure password',
       })
       expect(identity).toEqual(
         expect.objectContaining({
           id: 'employee-42',
-          email: 'legacy@example.com',
-          emailVerified: false,
+          identifier: 'legacy@example.com',
+          verification: 'unverified',
         }),
       )
       const legacy = await pool.query<{
@@ -3214,7 +3907,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       expect((await pool.query(`SELECT 1 FROM doxa_auth_passwords`)).rowCount).toBe(0)
 
       const verification = await auth.issueEmailVerification(identity.id)
-      expect((await auth.verifyEmail(verification.token.reveal())).emailVerified).toBe(true)
+      expect((await auth.verifyEmail(verification.token.reveal())).verification).toBe('verified')
       expect(
         (
           await pool.query<{ verified_at: Date | null }>(
@@ -3224,7 +3917,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       ).toBeInstanceOf(Date)
 
       const grant = await auth.login({
-        email: 'legacy@example.com',
+        identifier: 'legacy@example.com',
         password: 'legacy secure password',
       })
       expect(grant.session.identityId).toBe('employee-42')
@@ -3258,11 +3951,15 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         'replacement secure password',
       )
       await expect(
-        auth.login({ email: 'legacy@example.com', password: 'legacy secure password' }),
+        auth.login({ identifier: 'legacy@example.com', password: 'legacy secure password' }),
       ).rejects.toMatchObject({ code: 'invalid_credentials' })
       expect(
-        (await auth.login({ email: 'legacy@example.com', password: 'replacement secure password' }))
-          .identity.id,
+        (
+          await auth.login({
+            identifier: 'legacy@example.com',
+            password: 'replacement secure password',
+          })
+        ).identity.id,
       ).toBe('employee-42')
       await auth.recordAuthorization(
         'profile.view',
@@ -3370,6 +4067,49 @@ async function temporaryDirectory(): Promise<string> {
   temporaryDirectories.push(directory)
   return directory
 }
+
+function mappedAuthentication(options: {
+  readonly mode: 'managed' | 'login-only'
+  readonly table?: string
+  readonly verification: CompiledAuthentication['verification']
+  readonly eligibility?: CompiledAuthentication['eligibility']
+  readonly readers?: CompiledAuthentication['credentials']['readers']
+  readonly write?: CompiledAuthentication['credentials']['write']
+}): CompiledAuthentication {
+  const table =
+    options.table ??
+    (options.mode === 'managed' ? 'legacy_managed_auth_users' : 'legacy_login_only_users')
+  return {
+    mode: options.mode,
+    source: options.mode === 'managed' ? 'model' : 'table',
+    ...(options.mode === 'managed' ? { modelId: 'model:accounts/user' } : {}),
+    table,
+    columns: {
+      id: 'user_id',
+      identifier: 'username',
+      contactEmail: 'contact_email',
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
+    },
+    identifier: { kind: 'username', normalization: { preset: 'lowercase' } },
+    verification: options.verification,
+    eligibility: options.eligibility ?? [{ column: 'active', equals: true }],
+    credentials: {
+      table,
+      identityId: 'user_id',
+      readers: options.readers ?? [{ preset: 'bcrypt', hash: 'password_hash' }],
+      write: options.write ?? { destination: 'sidecar', format: 'doxa-argon2id' },
+    },
+    routes: {
+      registration: options.mode === 'managed',
+      verification: options.mode === 'managed' && options.verification.mode !== 'trusted',
+      recovery: options.mode === 'managed',
+      passwordChange: options.mode === 'managed',
+    },
+  }
+}
+
+type CompiledAuthentication = Parameters<PostgresAuth['bindCompiledAuthentication']>[0]
 
 async function durableRowCounts(): Promise<{
   entities: number

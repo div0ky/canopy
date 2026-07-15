@@ -12,11 +12,11 @@ export class ResendVerificationRoute extends Route {
   private readonly execution = this.inject(CurrentExecution)
   async handle(_request: HttpRequest): Promise<Response> {
     const identity = await this.auth.findIdentity(this.execution.context.authentication.identityId!)
-    if (identity && !identity.emailVerified) {
+    if (identity?.contactEmail && identity.verification === 'unverified') {
       const grant = await this.auth.issueEmailVerification(identity.id)
       await this.actions.execute(SendAuthEmail, {
         kind: 'verification',
-        to: identity.email,
+        to: identity.contactEmail,
         token: grant.token.reveal(),
       })
     }

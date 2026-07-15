@@ -1,4 +1,4 @@
-import { PostgresAuth } from '@doxajs/auth-postgres'
+import { PostgresAuth } from '@doxajs/auth-postgres/framework'
 
 import { DatabaseConfig } from '../database/database-config.js'
 

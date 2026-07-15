@@ -71,7 +71,7 @@ export function FieldGuide() {
         if (identity)
           record({
             title: 'Session resolved',
-            detail: `Password session established for ${identity.identity.email}`,
+            detail: `Password session established for ${identity.identity.identifier}`,
             kind: 'session',
           })
       }),
@@ -159,7 +159,7 @@ export function FieldGuide() {
                     if (identity)
                       record({
                         title: 'Session resolved',
-                        detail: `Password session established for ${identity.identity.email}`,
+                        detail: `Password session established for ${identity.identity.identifier}`,
                         kind: 'session',
                       })
                     toast.success(

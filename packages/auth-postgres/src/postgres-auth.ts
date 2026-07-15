@@ -37,6 +37,10 @@ import {
   authSchema,
   authSessions,
 } from './schema.js'
+import type {
+  CompiledAuthenticationConfiguration,
+  CompiledCredentialReader,
+} from './compiled-auth.js'
 
 import {
   quoteIdentifier,
@@ -52,6 +56,7 @@ import {
   encodePasswordRecord,
   needsRehash,
   verifyPassword,
+  verifyEncodedPassword,
   type PasswordRecord,
 } from './passwords.js'
 import {
@@ -59,8 +64,7 @@ import {
   assertTrustedOrigin,
   cookieValue,
   digest,
-  normalizeEmail,
-  normalizeEmailForLogin,
+  normalizeIdentifier,
   normalizeOrigin,
   serializeCookie,
 } from './request-auth.js'
@@ -92,9 +96,14 @@ export interface AuthIdentityTableMapping {
   readonly table: string
   readonly id: string
   readonly email: string
-  readonly emailVerifiedAt: string
+  readonly contactEmail?: string
+  readonly emailVerifiedAt?: string
   readonly createdAt: string
   readonly updatedAt: string
+  readonly identifierKind?: 'email' | 'username' | 'custom'
+  readonly normalization?: CompiledAuthenticationConfiguration['identifier']['normalization']
+  readonly verificationMode?: 'mapped' | 'sidecar' | 'trusted' | 'unsupported'
+  readonly eligibility?: CompiledAuthenticationConfiguration['eligibility']
 }
 
 export interface AuthPasswordTableMapping {
@@ -103,9 +112,33 @@ export interface AuthPasswordTableMapping {
   /** One text column containing Doxa's versioned Argon2id record. */
   readonly password: string
   readonly updatedAt: string
+  readonly readers?: readonly CompiledCredentialReader[]
+  readonly mode?: 'managed' | 'login-only'
+  readonly ownership?: 'doxa' | 'external'
+  readonly legacy?: {
+    readonly table: string
+    readonly identityId: string
+    readonly password: string
+    readonly readers: readonly CompiledCredentialReader[]
+  }
 }
 
 type Queryable = Pick<Pool | PoolClient, 'query'>
+
+export interface ManagedIdentityRegistrationRequest {
+  readonly id: string
+  readonly identifier: string
+  readonly contactEmail?: string
+  readonly createdAt: Date
+  readonly updatedAt: Date
+  readonly persistAuthentication: (transaction: unknown, identityId: string) => Promise<void>
+}
+
+export interface CompiledAuthenticationRuntimeBinding {
+  readonly registerManagedIdentity?: (
+    request: ManagedIdentityRegistrationRequest,
+  ) => Promise<string>
+}
 
 export class PostgresAuth extends Auth implements Starts, Disposes {
   static readonly id = 'auth'
@@ -113,6 +146,11 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
   #pool: Pool | undefined
   #database: Database | undefined
   #dummyPassword: PasswordRecord | undefined
+  #compiledAuthentication: CompiledAuthenticationConfiguration | undefined
+  #compiledRuntime: CompiledAuthenticationRuntimeBinding | undefined
+  #databaseGeneratedIdentityId = false
+  #mappedIdentifierUsesDirectComparison = false
+  #mappedTables: NonNullable<PostgresAuthOptions['tables']> | undefined
   readonly #absoluteSessionSeconds: number
   readonly #idleSessionSeconds: number
   readonly #trustedOrigins: ReadonlySet<string>
@@ -130,18 +168,116 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     this.#sessionRenewalSeconds = options.sessionRenewalSeconds ?? 15 * 60
     this.#sessionRotationGraceSeconds = options.sessionRotationGraceSeconds ?? 30
     if (options.tables) validateAuthMappings(options.tables)
+    this.#mappedTables = options.tables
+  }
+
+  bindCompiledAuthentication(
+    configuration: CompiledAuthenticationConfiguration,
+    runtime?: CompiledAuthenticationRuntimeBinding,
+  ): void {
+    if (this.#pool)
+      throw new Error('PostgresAuth authentication mapping must be bound before start.')
+    this.#compiledAuthentication = configuration
+    this.#compiledRuntime = runtime
+    if (configuration.source === 'doxa-owned') {
+      this.#mappedTables = undefined
+      return
+    }
+    const write = configuration.credentials.write
+    this.#mappedTables = {
+      identities: {
+        table: configuration.table,
+        id: configuration.columns.id,
+        email: configuration.columns.identifier,
+        ...(configuration.columns.contactEmail
+          ? { contactEmail: configuration.columns.contactEmail }
+          : {}),
+        ...(configuration.verification.mode === 'mapped'
+          ? { emailVerifiedAt: configuration.verification.column }
+          : {}),
+        createdAt: configuration.columns.createdAt,
+        updatedAt: configuration.columns.updatedAt,
+        identifierKind: configuration.identifier.kind,
+        normalization: configuration.identifier.normalization,
+        verificationMode: configuration.columns.contactEmail
+          ? configuration.verification.mode
+          : 'unsupported',
+        eligibility: configuration.eligibility,
+      },
+      passwords:
+        write.destination === 'sidecar'
+          ? {
+              table: 'doxa_auth_mapped_passwords',
+              identityId: 'identity_id',
+              password: 'password_record',
+              updatedAt: 'updated_at',
+              readers: configuration.credentials.readers,
+              mode: configuration.mode === 'managed' ? 'managed' : 'login-only',
+              ownership: 'doxa',
+              legacy: {
+                table: configuration.credentials.table,
+                identityId: configuration.credentials.identityId,
+                password: configuration.credentials.readers[0]!.hash,
+                readers: configuration.credentials.readers,
+              },
+            }
+          : {
+              table: write.table,
+              identityId: write.identityId,
+              password: write.password,
+              updatedAt: write.updatedAt ?? configuration.columns.updatedAt,
+              readers: configuration.credentials.readers,
+              mode: configuration.mode === 'managed' ? 'managed' : 'login-only',
+              ownership: 'external',
+              ...(configuration.credentials.table !== write.table ||
+              configuration.credentials.identityId !== write.identityId ||
+              configuration.credentials.readers.some((reader) => reader.hash !== write.password)
+                ? {
+                    legacy: {
+                      table: configuration.credentials.table,
+                      identityId: configuration.credentials.identityId,
+                      password: configuration.credentials.readers[0]!.hash,
+                      readers: configuration.credentials.readers,
+                    },
+                  }
+                : {}),
+            },
+    }
+    validateAuthMappings(this.#mappedTables)
   }
 
   override storage(): AuthStorageDescription {
+    const compiled = this.#compiledAuthentication
     return Object.freeze({
-      kind: this.options.tables ? 'mapped' : 'doxa-owned',
+      kind: this.#mappedTables ? 'mapped' : 'doxa-owned',
+      ...(compiled
+        ? {
+            mapping: {
+              mode: compiled.mode,
+              source: compiled.source,
+              ...(compiled.modelId ? { modelId: compiled.modelId } : {}),
+              identifier: {
+                field: compiled.columns.identifier,
+                kind: compiled.identifier.kind,
+                normalization: compiled.identifier.normalization.preset,
+              },
+              ...(compiled.columns.contactEmail
+                ? { contactEmail: compiled.columns.contactEmail }
+                : {}),
+              verification: compiled.verification.mode,
+              eligibility: compiled.eligibility.map((predicate) => predicate.column),
+              hashers: compiled.credentials.readers.map((reader) => reader.preset),
+            },
+          }
+        : {}),
       identities: {
-        table: this.options.tables?.identities.table ?? 'doxa_auth_identities',
-        ownership: this.options.tables ? 'external' : 'doxa',
+        table: this.#mappedTables?.identities.table ?? 'doxa_auth_identities',
+        ownership: this.#mappedTables ? 'external' : 'doxa',
       },
       passwords: {
-        table: this.options.tables?.passwords.table ?? 'doxa_auth_passwords',
-        ownership: this.options.tables ? 'external' : 'doxa',
+        table: this.#mappedTables?.passwords.table ?? 'doxa_auth_passwords',
+        ownership:
+          this.#mappedTables?.passwords.ownership ?? (this.#mappedTables ? 'external' : 'doxa'),
       },
       sessions: { table: 'doxa_auth_sessions', ownership: 'doxa' },
       accessTokens: { table: 'doxa_auth_access_tokens', ownership: 'doxa' },
@@ -158,7 +294,11 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     })
     try {
       await pool.query('select 1')
-      if (this.options.tables) await validateMappedAuthTables(pool, this.options.tables)
+      if (this.#mappedTables) {
+        const validation = await validateMappedAuthTables(pool, this.#mappedTables)
+        this.#databaseGeneratedIdentityId = validation.databaseGeneratedIdentityId
+        this.#mappedIdentifierUsesDirectComparison = validation.identifierUsesDirectComparison
+      }
       this.#pool = pool
       this.#database = drizzle(pool, { schema: authSchema })
       this.#dummyPassword = await dummyPasswordRecord()
@@ -173,24 +313,70 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     this.#pool = undefined
     this.#database = undefined
     this.#dummyPassword = undefined
+    this.#databaseGeneratedIdentityId = false
+    this.#mappedIdentifierUsesDirectComparison = false
     if (pool) await pool.end()
   }
 
   async register(input: RegistrationInput): Promise<AuthIdentity> {
     const database = this.#requireDatabase()
-    const email = normalizeEmail(input.email)
+    const email = normalizeIdentifier(input.identifier, this.#normalization(), true)
+    const contactEmail = this.#mappedTables?.identities.contactEmail
+      ? normalizeIdentifier(
+          input.contactEmail ??
+            (this.#mappedTables.identities.contactEmail === this.#mappedTables.identities.email
+              ? email
+              : ''),
+          { preset: 'email' },
+          true,
+        )
+      : email
     await this.#assertPassword(input.password)
     await this.#rateLimit('register', email, 5, 60 * 60, 60 * 60)
     const password = await createPasswordRecord(input.password)
-    const id = this.options.identityId?.() ?? randomUUID()
+    const id = this.#databaseGeneratedIdentityId
+      ? `doxa-generated:${randomUUID()}`
+      : (this.options.identityId?.() ?? randomUUID())
     const now = new Date()
     try {
-      if (this.options.tables) {
+      if (this.#mappedTables) {
+        const tables = this.#mappedTables
+        if (
+          this.#compiledAuthentication?.source === 'model' &&
+          this.#compiledAuthentication.mode === 'managed' &&
+          this.#compiledRuntime?.registerManagedIdentity
+        ) {
+          const persistedId = await this.#compiledRuntime.registerManagedIdentity({
+            id,
+            identifier: email,
+            ...(contactEmail ? { contactEmail } : {}),
+            createdAt: now,
+            updatedAt: now,
+            persistAuthentication: async (participant, identityId) => {
+              const queryable = participant as Queryable
+              await updateMappedPassword(queryable, tables.passwords, identityId, password, now)
+              await queryable.query(
+                `INSERT INTO doxa_auth_audit_events
+                 (id, event_type, identity_id, metadata, occurred_at)
+                 VALUES ($1, 'identity.registered', $2, '{}'::jsonb, $3)`,
+                [randomUUID(), identityId, now],
+              )
+            },
+          })
+          const identity = await findMappedIdentity(
+            this.#requirePool(),
+            tables.identities,
+            'id',
+            persistedId,
+          )
+          if (!identity) throw new Error('Managed auth registration did not persist its identity.')
+          return identity
+        }
         await this.#mappedTransaction(async (transaction, client) => {
           await insertMappedRegistration(
             client,
-            this.options.tables!,
-            { id, email, emailVerifiedAt: null, createdAt: now, updatedAt: now },
+            tables,
+            { id, email, contactEmail, emailVerifiedAt: null, createdAt: now, updatedAt: now },
             password,
           )
           await transaction.insert(authAuditEvents).values({
@@ -201,7 +387,10 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
             occurredAt: now,
           })
         })
-        return Object.freeze({ id, email, emailVerified: false, createdAt: now })
+        return identityFromStored(
+          { id, email, contactEmail, emailVerifiedAt: null, createdAt: now, updatedAt: now },
+          tables.identities,
+        )
       }
       await database.transaction(async (transaction) => {
         await transaction.insert(authIdentities).values({
@@ -235,17 +424,20 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
       }
       throw error
     }
-    return Object.freeze({ id, email, emailVerified: false, createdAt: now })
+    return identityFromStored({ id, email, emailVerifiedAt: null, createdAt: now, updatedAt: now })
   }
 
   async findIdentity(identityId: string): Promise<AuthIdentity | undefined> {
-    if (this.options.tables)
-      return await findMappedIdentity(
+    if (this.#mappedTables) {
+      const identity = await findMappedIdentity(
         this.#requirePool(),
-        this.options.tables.identities,
+        this.#mappedTables.identities,
         'id',
         identityId,
       )
+      if (identity && !(await this.#ensureEligible(identityId))) return undefined
+      return identity
+    }
     const [identity] = await this.#requireDatabase()
       .select()
       .from(authIdentities)
@@ -256,13 +448,18 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
 
   async login(input: LoginInput, metadata: AuthRequestMetadata = {}): Promise<AuthSessionGrant> {
     const database = this.#requireDatabase()
-    const email = normalizeEmailForLogin(input.email)
+    const email = normalizeIdentifier(input.identifier, this.#normalization())
     const bucket = `${email}\0${metadata.ipAddress ?? ''}`
     await this.#rateLimit('login', bucket, 5, 15 * 60, 15 * 60)
-    const mappedRow = this.options.tables
-      ? await findMappedLogin(this.#requirePool(), this.options.tables, email)
+    const mappedRow = this.#mappedTables
+      ? await findMappedLogin(
+          this.#requirePool(),
+          this.#mappedTables,
+          email,
+          this.#mappedIdentifierUsesDirectComparison,
+        )
       : undefined
-    const [defaultRow] = this.options.tables
+    const [defaultRow] = this.#mappedTables
       ? []
       : await database
           .select({
@@ -276,43 +473,41 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     const row = mappedRow ?? defaultRow
     const candidate = row?.password ?? this.#dummyPassword
     if (!candidate) throw new Error('PostgresAuth is not started.')
-    const valid = await verifyPassword(input.password, candidate)
+    const mappedVerification = isMappedPassword(candidate)
+      ? await verifyEncodedPassword(input.password, candidate.encoded, candidate.readers)
+      : undefined
+    const weakLoginOnly = Boolean(
+      mappedVerification?.weak && this.#mappedTables?.passwords.mode === 'login-only',
+    )
+    const valid = weakLoginOnly
+      ? false
+      : (mappedVerification?.valid ??
+        (await verifyPassword(input.password, candidate as PasswordRecord)))
     if (!row || !valid) {
       await this.#audit('authentication.failed', undefined, undefined, {
         emailDigest: digest(email),
       })
       throw new AuthenticationError(
         'invalid_credentials',
-        'The supplied email or password is invalid.',
+        'The supplied identifier or password is invalid.',
+      )
+    }
+    if (!(await this.#ensureEligible(row.identity.id))) {
+      throw new AuthenticationError(
+        'invalid_credentials',
+        'The supplied identifier or password is invalid.',
       )
     }
     await this.#clearRateLimit('login', bucket)
 
-    if (needsRehash(row.password)) {
-      const upgraded = await createPasswordRecord(input.password)
-      if (this.options.tables)
-        await updateMappedPassword(
-          this.#requirePool(),
-          this.options.tables.passwords,
-          row.identity.id,
-          upgraded,
-          new Date(),
+    const shouldUpgrade = isMappedPassword(row.password)
+      ? Boolean(
+          mappedVerification?.needsUpgrade && this.#mappedTables?.passwords.mode === 'managed',
         )
-      else
-        await database
-          .update(authPasswords)
-          .set({
-            version: upgraded.version,
-            salt: upgraded.salt,
-            hash: upgraded.hash,
-            parameters: upgraded.parameters,
-            updatedAt: new Date(),
-          })
-          .where(eq(authPasswords.identityId, row.identity.id))
-    }
-
+      : needsRehash(row.password)
     const token = randomBytes(32).toString('base64url')
     const now = new Date()
+    const upgraded = shouldUpgrade ? await createPasswordRecord(input.password) : undefined
     const session = Object.freeze({
       id: randomUUID(),
       identityId: row.identity.id,
@@ -320,7 +515,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
       authenticatedAt: now,
       expiresAt: new Date(now.getTime() + this.#absoluteSessionSeconds * 1_000),
     })
-    await database.transaction(async (transaction) => {
+    const persistSession = async (transaction: Database): Promise<void> => {
       await transaction.insert(authSessions).values({
         ...session,
         tokenDigest: digest(token),
@@ -337,9 +532,31 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
         metadata: {},
         occurredAt: now,
       })
-    })
+    }
+    if (this.#mappedTables && upgraded) {
+      await this.#mappedTransaction(async (transaction, client) => {
+        await updateMappedPassword(
+          client,
+          this.#mappedTables!.passwords,
+          row.identity.id,
+          upgraded,
+          now,
+        )
+        await persistSession(transaction)
+      })
+    } else {
+      await database.transaction(async (transaction) => {
+        if (upgraded) {
+          await transaction
+            .update(authPasswords)
+            .set({ ...upgraded, updatedAt: now })
+            .where(eq(authPasswords.identityId, row.identity.id))
+        }
+        await persistSession(transaction as unknown as Database)
+      })
+    }
     return Object.freeze({
-      identity: identityFrom(row.identity),
+      identity: identityFromStored(row.identity, this.#mappedTables?.identities),
       session,
       token: SecretString.from(token),
     })
@@ -347,9 +564,10 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
 
   async issueEmailVerification(identityId: string): Promise<AuthChallengeGrant> {
     const identity = await this.findIdentity(identityId)
-    if (!identity)
-      throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
-    return await this.#issueChallenge(identityId, 'email_verification')
+    if (!identity?.contactEmail || identity.verification === 'unsupported') {
+      throw new AuthenticationError('invalid_credentials', 'Email verification is unavailable.')
+    }
+    return await this.#issueChallenge(identityId, 'email_verification', identity.contactEmail)
   }
 
   async verifyEmail(token: string): Promise<AuthIdentity> {
@@ -370,12 +588,16 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
             gt(authChallenges.expiresAt, now),
           ),
         )
-        .returning({ identityId: authChallenges.identityId })
+        .returning({
+          identityId: authChallenges.identityId,
+          recipientDigest: authChallenges.recipientDigest,
+        })
       if (!challenge)
         throw new AuthenticationError(
           'invalid_token',
           'The verification token is invalid or expired.',
         )
+      await this.#assertChallengeRecipient(challenge.identityId, challenge.recipientDigest)
       await updateIdentity(challenge.identityId)
       await transaction.insert(authAuditEvents).values({
         id: randomUUID(),
@@ -386,10 +608,10 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
       })
       return challenge.identityId
     }
-    const identityId = this.options.tables
+    const identityId = this.#mappedTables
       ? await this.#mappedTransaction((transaction, client) =>
           verify(transaction, (id) =>
-            updateMappedIdentityVerification(client, this.options.tables!.identities, id, now),
+            updateMappedIdentityVerification(client, this.#mappedTables!.identities, id, now),
           ),
         )
       : await database.transaction((transaction) =>
@@ -405,10 +627,10 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
   }
 
   async issuePasswordReset(
-    emailInput: string,
+    identifierInput: string,
     metadata: AuthRequestMetadata = {},
   ): Promise<AuthChallengeGrant | undefined> {
-    const email = normalizeEmailForLogin(emailInput)
+    const email = normalizeIdentifier(identifierInput, this.#normalization())
     await this.#rateLimit(
       'password_reset',
       `${email}\0${metadata.ipAddress ?? ''}`,
@@ -416,12 +638,13 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
       60 * 60,
       60 * 60,
     )
-    const identity = this.options.tables
+    const identity = this.#mappedTables
       ? await findMappedIdentity(
           this.#requirePool(),
-          this.options.tables.identities,
+          this.#mappedTables.identities,
           'email',
           email,
+          this.#mappedIdentifierUsesDirectComparison,
         )
       : (
           await this.#requireDatabase()
@@ -436,7 +659,15 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
             .where(eq(authIdentities.email, email))
             .limit(1)
         )[0]
-    return identity ? await this.#issueChallenge(identity.id, 'password_reset') : undefined
+    const contactEmail = identity
+      ? 'identifier' in identity
+        ? identity.contactEmail
+        : identity.email
+      : undefined
+    if (identity && !(await this.#ensureEligible(identity.id))) return undefined
+    return identity && contactEmail
+      ? await this.#issueChallenge(identity.id, 'password_reset', contactEmail)
+      : undefined
   }
 
   async resetPassword(token: string, newPassword: string): Promise<void> {
@@ -458,12 +689,16 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
             gt(authChallenges.expiresAt, now),
           ),
         )
-        .returning({ identityId: authChallenges.identityId })
+        .returning({
+          identityId: authChallenges.identityId,
+          recipientDigest: authChallenges.recipientDigest,
+        })
       if (!challenge)
         throw new AuthenticationError(
           'invalid_token',
           'The password reset token is invalid or expired.',
         )
+      await this.#assertChallengeRecipient(challenge.identityId, challenge.recipientDigest)
       await updatePassword(challenge.identityId)
       await transaction
         .update(authSessions)
@@ -479,10 +714,10 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
         occurredAt: now,
       })
     }
-    if (this.options.tables) {
+    if (this.#mappedTables) {
       await this.#mappedTransaction((transaction, client) =>
         reset(transaction, (id) =>
-          updateMappedPassword(client, this.options.tables!.passwords, id, password, now),
+          updateMappedPassword(client, this.#mappedTables!.passwords, id, password, now),
         ),
       )
     } else {
@@ -503,9 +738,12 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     currentPassword: string,
     newPassword: string,
   ): Promise<void> {
+    if (!(await this.#ensureEligible(identityId))) {
+      throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
+    }
     await this.#assertPassword(newPassword)
-    const current = this.options.tables
-      ? await findMappedPassword(this.#requirePool(), this.options.tables.passwords, identityId)
+    const current = this.#mappedTables
+      ? await findMappedPassword(this.#requirePool(), this.#mappedTables.passwords, identityId)
       : (
           await this.#requireDatabase()
             .select()
@@ -513,7 +751,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
             .where(eq(authPasswords.identityId, identityId))
             .limit(1)
         )[0]
-    if (!current || !(await verifyPassword(currentPassword, current)))
+    if (!current || !(await verifyPasswordCandidate(currentPassword, current)))
       throw new AuthenticationError('invalid_credentials', 'The current password is invalid.')
     const password = await createPasswordRecord(newPassword)
     const now = new Date()
@@ -534,10 +772,10 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
         occurredAt: now,
       })
     }
-    if (this.options.tables)
+    if (this.#mappedTables)
       await this.#mappedTransaction((transaction, client) =>
         change(transaction, () =>
-          updateMappedPassword(client, this.options.tables!.passwords, identityId, password, now),
+          updateMappedPassword(client, this.#mappedTables!.passwords, identityId, password, now),
         ),
       )
     else
@@ -558,6 +796,9 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     password: string,
     metadata: AuthRequestMetadata = {},
   ): Promise<Date> {
+    if (!(await this.#ensureEligible(identityId))) {
+      throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
+    }
     await this.#rateLimit(
       'reauthenticate',
       `${identityId}\0${metadata.ipAddress ?? ''}`,
@@ -565,8 +806,8 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
       15 * 60,
       15 * 60,
     )
-    const record = this.options.tables
-      ? await findMappedPassword(this.#requirePool(), this.options.tables.passwords, identityId)
+    const record = this.#mappedTables
+      ? await findMappedPassword(this.#requirePool(), this.#mappedTables.passwords, identityId)
       : (
           await this.#requireDatabase()
             .select()
@@ -574,7 +815,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
             .where(eq(authPasswords.identityId, identityId))
             .limit(1)
         )[0]
-    if (!record || !(await verifyPassword(password, record))) {
+    if (!record || !(await verifyPasswordCandidate(password, record))) {
       await this.#audit('session.reauthentication_failed', identityId, sessionId, {})
       throw new AuthenticationError('invalid_credentials', 'The current password is invalid.')
     }
@@ -634,6 +875,9 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
   }
 
   async listSessions(identityId: string): Promise<readonly AuthSession[]> {
+    if (!(await this.#ensureEligible(identityId))) {
+      throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
+    }
     const rows = await this.#requireDatabase()
       .select()
       .from(authSessions)
@@ -696,6 +940,9 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
   }
 
   async listAccessTokens(identityId: string): Promise<readonly AuthAccessToken[]> {
+    if (!(await this.#ensureEligible(identityId))) {
+      throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
+    }
     const rows = await this.#requireDatabase()
       .select()
       .from(authAccessTokens)
@@ -704,6 +951,9 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
   }
 
   async rotateAccessToken(identityId: string, tokenId: string): Promise<AuthAccessTokenGrant> {
+    if (!(await this.#ensureEligible(identityId))) {
+      throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
+    }
     const database = this.#requireDatabase()
     const [existing] = await database
       .select()
@@ -741,6 +991,9 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
   }
 
   async revokeAccessToken(identityId: string, tokenId: string): Promise<void> {
+    if (!(await this.#ensureEligible(identityId))) {
+      throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
+    }
     const now = new Date()
     await this.#requireDatabase().transaction(async (transaction) => {
       const [revoked] = await transaction
@@ -939,6 +1192,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
   async #issueChallenge(
     identityId: string,
     purpose: 'email_verification' | 'password_reset',
+    contactEmail: string,
   ): Promise<AuthChallengeGrant> {
     const token = randomBytes(32).toString('base64url')
     const now = new Date()
@@ -959,6 +1213,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
         identityId,
         purpose,
         tokenDigest: digest(token),
+        recipientDigest: digest(contactEmail),
         createdAt: now,
         expiresAt,
       })
@@ -974,6 +1229,16 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
       })
     })
     return Object.freeze({ identityId, token: SecretString.from(token), expiresAt })
+  }
+
+  async #assertChallengeRecipient(identityId: string, recipientDigest: string): Promise<void> {
+    const identity = await this.findIdentity(identityId)
+    if (!identity?.contactEmail || digest(identity.contactEmail) !== recipientDigest) {
+      throw new AuthenticationError(
+        'invalid_token',
+        'The authentication token is invalid or expired.',
+      )
+    }
   }
 
   async #assertPassword(password: string): Promise<void> {
@@ -1049,6 +1314,32 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
       })
   }
 
+  async #ensureEligible(identityId: string): Promise<boolean> {
+    const mapping = this.#mappedTables?.identities
+    if (!mapping?.eligibility?.length) return true
+    if (await mappedIdentityEligible(this.#requirePool(), mapping, identityId)) return true
+
+    const now = new Date()
+    await this.#requireDatabase().transaction(async (transaction) => {
+      await transaction
+        .update(authSessions)
+        .set({ revokedAt: now })
+        .where(and(eq(authSessions.identityId, identityId), isNull(authSessions.revokedAt)))
+      await transaction
+        .update(authAccessTokens)
+        .set({ revokedAt: now })
+        .where(and(eq(authAccessTokens.identityId, identityId), isNull(authAccessTokens.revokedAt)))
+      await transaction.insert(authAuditEvents).values({
+        id: randomUUID(),
+        eventType: 'identity.ineligible',
+        identityId,
+        metadata: {},
+        occurredAt: now,
+      })
+    })
+    return false
+  }
+
   async #mappedTransaction<Output>(
     work: (database: Database, client: PoolClient) => Promise<Output>,
   ): Promise<Output> {
@@ -1075,21 +1366,46 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     if (!this.#pool) throw new Error('PostgresAuth is not started.')
     return this.#pool
   }
+
+  #normalization(): CompiledAuthenticationConfiguration['identifier']['normalization'] {
+    return this.#compiledAuthentication?.identifier.normalization ?? { preset: 'email' }
+  }
 }
 
 interface StoredIdentity {
   readonly id: string
   readonly email: string
+  readonly contactEmail?: string
   readonly emailVerifiedAt: Date | null
   readonly createdAt: Date
   readonly updatedAt: Date
 }
 
 function validateAuthMappings(tables: NonNullable<PostgresAuthOptions['tables']>): void {
-  for (const mapping of [tables.identities, tables.passwords]) {
+  for (const mapping of [
+    tables.identities,
+    tables.passwords,
+    ...(tables.passwords.legacy ? [tables.passwords.legacy] : []),
+  ]) {
     if (!validQualifiedIdentifier(mapping.table))
       throw new Error(`Invalid mapped auth table name ${mapping.table}.`)
-    for (const [field, column] of Object.entries(mapping).filter(([field]) => field !== 'table')) {
+  }
+  for (const [field, column] of [
+    ['id', tables.identities.id],
+    ['email', tables.identities.email],
+    ['contactEmail', tables.identities.contactEmail],
+    ['emailVerifiedAt', tables.identities.emailVerifiedAt],
+    ['createdAt', tables.identities.createdAt],
+    ['updatedAt', tables.identities.updatedAt],
+    ['identityId', tables.passwords.identityId],
+    ['password', tables.passwords.password],
+    ['passwordUpdatedAt', tables.passwords.updatedAt],
+    ['legacyIdentityId', tables.passwords.legacy?.identityId],
+    ...(tables.passwords.legacy?.readers.map(
+      (reader) => ['legacyPassword', reader.hash] as const,
+    ) ?? []),
+  ] as const) {
+    if (column !== undefined) {
       if (typeof column !== 'string' || !validIdentifier(column))
         throw new Error(`Invalid mapped auth column ${field}.`)
     }
@@ -1099,19 +1415,261 @@ function validateAuthMappings(tables: NonNullable<PostgresAuthOptions['tables']>
 async function validateMappedAuthTables(
   queryable: Queryable,
   tables: NonNullable<PostgresAuthOptions['tables']>,
-): Promise<void> {
-  const identityColumns = Object.entries(tables.identities)
-    .filter(([field]) => field !== 'table')
-    .map(([, column]) => quoteIdentifier(column))
-  const passwordColumns = Object.entries(tables.passwords)
-    .filter(([field]) => field !== 'table')
-    .map(([, column]) => quoteIdentifier(column))
+): Promise<{
+  readonly databaseGeneratedIdentityId: boolean
+  readonly identifierUsesDirectComparison: boolean
+}> {
+  const identityColumns = [
+    tables.identities.id,
+    tables.identities.email,
+    tables.identities.contactEmail,
+    tables.identities.emailVerifiedAt,
+    tables.identities.createdAt,
+    tables.identities.updatedAt,
+    ...(tables.identities.eligibility?.map((predicate) => predicate.column) ?? []),
+  ]
+    .filter((column): column is string => Boolean(column))
+    .map(quoteIdentifier)
+  const passwordColumns = [
+    tables.passwords.identityId,
+    tables.passwords.password,
+    tables.passwords.updatedAt,
+  ]
+    .filter((column): column is string => Boolean(column))
+    .map(quoteIdentifier)
   await queryable.query(
     `SELECT ${identityColumns.join(', ')} FROM ${quoteQualified(tables.identities.table)} LIMIT 0`,
   )
   await queryable.query(
     `SELECT ${passwordColumns.join(', ')} FROM ${quoteQualified(tables.passwords.table)} LIMIT 0`,
   )
+  if (tables.passwords.legacy) {
+    const legacyColumns = [
+      tables.passwords.legacy.identityId,
+      ...tables.passwords.legacy.readers.map((reader) => reader.hash),
+    ]
+      .filter((column): column is string => Boolean(column))
+      .map(quoteIdentifier)
+    await queryable.query(
+      `SELECT ${legacyColumns.join(', ')} FROM ${quoteQualified(tables.passwords.legacy.table)} LIMIT 0`,
+    )
+  }
+
+  const identityMetadata = await mappedColumnMetadata(queryable, tables.identities.table)
+  const primaryKey = await mappedPrimaryKey(queryable, tables.identities.table)
+  if (primaryKey.length !== 1 || primaryKey[0] !== tables.identities.id) {
+    throw new Error(
+      `Mapped auth identities require the configured single-column primary key; found ${primaryKey.join(', ') || 'none'}.`,
+    )
+  }
+  assertMappedColumnType(identityMetadata, tables.identities.email, 'identifier', TEXT_TYPES)
+  if (tables.identities.contactEmail) {
+    assertMappedColumnType(
+      identityMetadata,
+      tables.identities.contactEmail,
+      'contact email',
+      TEXT_TYPES,
+    )
+  }
+  assertMappedColumnType(
+    identityMetadata,
+    tables.identities.createdAt,
+    'created timestamp',
+    TIME_TYPES,
+  )
+  assertMappedColumnType(
+    identityMetadata,
+    tables.identities.updatedAt,
+    'updated timestamp',
+    TIME_TYPES,
+  )
+  if (tables.identities.emailVerifiedAt) {
+    assertMappedColumnType(
+      identityMetadata,
+      tables.identities.emailVerifiedAt,
+      'verification timestamp',
+      TIME_TYPES,
+    )
+  }
+  if (tables.passwords.mode === 'managed') {
+    for (const column of [
+      tables.identities.email,
+      tables.identities.contactEmail,
+      tables.identities.createdAt,
+      tables.identities.updatedAt,
+      tables.identities.emailVerifiedAt,
+    ].filter((value): value is string => Boolean(value))) {
+      const metadata = identityMetadata.get(column)
+      if (!metadata || metadata.generated) {
+        throw new Error(`Managed auth identity column ${column} must be writable.`)
+      }
+    }
+    for (const timestamp of [tables.identities.createdAt, tables.identities.updatedAt]) {
+      if (!identityMetadata.get(timestamp)?.notNull) {
+        throw new Error(`Managed auth timestamp column ${timestamp} must be NOT NULL.`)
+      }
+    }
+  }
+  const passwordMetadata = await mappedColumnMetadata(queryable, tables.passwords.table)
+  assertMappedColumnType(passwordMetadata, tables.passwords.password, 'credential', TEXT_TYPES)
+  assertMappedColumnType(
+    passwordMetadata,
+    tables.passwords.updatedAt,
+    'credential timestamp',
+    TIME_TYPES,
+  )
+  if (
+    tables.passwords.mode === 'managed' &&
+    [tables.passwords.password, tables.passwords.updatedAt].some(
+      (column) => passwordMetadata.get(column)?.generated,
+    )
+  ) {
+    throw new Error('Managed auth credential columns must be writable.')
+  }
+  if (tables.passwords.legacy) {
+    const legacyMetadata = await mappedColumnMetadata(queryable, tables.passwords.legacy.table)
+    for (const reader of tables.passwords.legacy.readers) {
+      assertMappedColumnType(legacyMetadata, reader.hash, 'credential reader', TEXT_TYPES)
+    }
+  }
+  await assertIdentifierUnique(queryable, tables.identities, identityMetadata)
+  await assertCredentialRowsUnique(queryable, tables.passwords)
+  return {
+    databaseGeneratedIdentityId:
+      identityMetadata.get(tables.identities.id)?.databaseGenerated === true,
+    identifierUsesDirectComparison:
+      tables.identities.normalization?.preset === 'exact' ||
+      identityMetadata.get(tables.identities.email)?.type === 'citext',
+  }
+}
+
+const TEXT_TYPES = new Set(['text', 'varchar', 'bpchar', 'citext'])
+const TIME_TYPES = new Set(['timestamp', 'timestamptz'])
+
+interface MappedColumnMetadata {
+  readonly type: string
+  readonly notNull: boolean
+  readonly generated: boolean
+  readonly databaseGenerated: boolean
+}
+
+async function mappedColumnMetadata(
+  queryable: Queryable,
+  table: string,
+): Promise<ReadonlyMap<string, MappedColumnMetadata>> {
+  const result = await queryable.query<
+    {
+      name: string
+      type: string
+      not_null: boolean
+      generated: string
+      identity: string
+      has_default: boolean
+    } & QueryResultRow
+  >(
+    `SELECT a.attname AS name, t.typname AS type, a.attnotnull AS not_null,
+            a.attgenerated AS generated, a.attidentity AS identity, a.atthasdef AS has_default
+     FROM pg_attribute a
+     JOIN pg_type t ON t.oid = a.atttypid
+     WHERE a.attrelid = to_regclass($1) AND a.attnum > 0 AND NOT a.attisdropped`,
+    [quoteQualified(table)],
+  )
+  return new Map(
+    result.rows.map((row) => [
+      row.name,
+      {
+        type: row.type,
+        notNull: row.not_null,
+        generated: Boolean(row.generated),
+        databaseGenerated: Boolean(row.identity) || row.has_default,
+      },
+    ]),
+  )
+}
+
+async function mappedPrimaryKey(queryable: Queryable, table: string): Promise<readonly string[]> {
+  const result = await queryable.query<{ column_name: string } & QueryResultRow>(
+    `SELECT a.attname AS column_name
+     FROM pg_index i
+     JOIN pg_attribute a
+       ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey::smallint[])
+     WHERE i.indrelid = to_regclass($1) AND i.indisprimary
+     ORDER BY array_position(i.indkey::smallint[], a.attnum)`,
+    [quoteQualified(table)],
+  )
+  return result.rows.map((row) => row.column_name)
+}
+
+function assertMappedColumnType(
+  metadata: ReadonlyMap<string, MappedColumnMetadata>,
+  column: string,
+  role: string,
+  accepted: ReadonlySet<string>,
+): void {
+  const actual = metadata.get(column)
+  if (!actual || !accepted.has(actual.type)) {
+    throw new Error(`Mapped auth ${role} column ${column} has an incompatible PostgreSQL type.`)
+  }
+}
+
+async function assertIdentifierUnique(
+  queryable: Queryable,
+  mapping: AuthIdentityTableMapping,
+  metadata: ReadonlyMap<string, MappedColumnMetadata>,
+): Promise<void> {
+  const indexes = await queryable.query<
+    { key_expression: string; key_count: number } & QueryResultRow
+  >(
+    `SELECT pg_get_indexdef(indexrelid, 1, true) AS key_expression,
+            indnkeyatts AS key_count
+     FROM pg_index
+     WHERE indrelid = to_regclass($1)
+       AND indisunique
+       AND indisvalid
+       AND indpred IS NULL`,
+    [quoteQualified(mapping.table)],
+  )
+  const normalization = mapping.normalization?.preset ?? 'email'
+  const compatible = indexes.rows.some(({ key_expression: expression, key_count: keyCount }) => {
+    if (Number(keyCount) !== 1) return false
+    const normalizedExpression = expression.replaceAll('"', '').replace(/\s+/g, '').toLowerCase()
+    const column = mapping.email.toLowerCase()
+    const direct = normalizedExpression === column
+    const lowered =
+      normalizedExpression === `lower(${column})` ||
+      normalizedExpression === `lower((${column})::text)`
+    return normalization === 'exact'
+      ? direct
+      : metadata.get(mapping.email)?.type === 'citext'
+        ? direct
+        : lowered
+  })
+  if (!compatible) {
+    throw new Error(
+      normalization === 'exact'
+        ? 'Exact auth identifiers require a direct unique index.'
+        : 'Normalized auth identifiers require citext uniqueness or a unique lower(column) index.',
+    )
+  }
+}
+
+async function assertCredentialRowsUnique(
+  queryable: Queryable,
+  mapping: AuthPasswordTableMapping,
+): Promise<void> {
+  const sources = [
+    { table: mapping.table, identityId: mapping.identityId },
+    ...(mapping.legacy
+      ? [{ table: mapping.legacy.table, identityId: mapping.legacy.identityId }]
+      : []),
+  ]
+  for (const source of sources) {
+    const result = await queryable.query(
+      `SELECT 1 FROM ${quoteQualified(source.table)}
+       GROUP BY ${quoteIdentifier(source.identityId)} HAVING count(*) > 1 LIMIT 1`,
+    )
+    if (result.rowCount) throw new Error('Mapped auth credentials contain duplicate identity rows.')
+  }
 }
 
 async function insertMappedRegistration(
@@ -1123,10 +1681,13 @@ async function insertMappedRegistration(
   const identityValues = new Map<string, unknown>([
     [tables.identities.id, identity.id],
     [tables.identities.email, identity.email],
-    [tables.identities.emailVerifiedAt, identity.emailVerifiedAt],
     [tables.identities.createdAt, identity.createdAt],
     [tables.identities.updatedAt, identity.updatedAt],
   ])
+  if (tables.identities.contactEmail)
+    identityValues.set(tables.identities.contactEmail, identity.contactEmail ?? identity.email)
+  if (tables.identities.emailVerifiedAt)
+    identityValues.set(tables.identities.emailVerifiedAt, identity.emailVerifiedAt)
   if (tables.identities.table === tables.passwords.table) {
     identityValues.set(tables.passwords.identityId, identity.id)
     identityValues.set(tables.passwords.password, encodePasswordRecord(password))
@@ -1165,78 +1726,174 @@ async function findMappedIdentity(
   mapping: AuthIdentityTableMapping,
   by: 'id' | 'email',
   value: string,
+  identifierUsesDirectComparison = false,
 ): Promise<AuthIdentity | undefined> {
   const rows = await queryable.query<MappedIdentityRow>(
     `
     SELECT
-      ${quoteIdentifier(mapping.id)}::text AS id,
-      ${quoteIdentifier(mapping.email)} AS email,
-      ${quoteIdentifier(mapping.emailVerifiedAt)} AS email_verified_at,
-      ${quoteIdentifier(mapping.createdAt)} AS created_at,
-      ${quoteIdentifier(mapping.updatedAt)} AS updated_at
-    FROM ${quoteQualified(mapping.table)}
-    WHERE ${quoteIdentifier(mapping[by])} = $1
+      i.${quoteIdentifier(mapping.id)}::text AS id,
+      i.${quoteIdentifier(mapping.email)} AS email,
+      ${mapping.contactEmail ? `i.${quoteIdentifier(mapping.contactEmail)} AS contact_email` : 'NULL::text AS contact_email'},
+      ${verificationSelect(mapping, 'i')},
+      ${verificationDigestSelect(mapping)},
+      i.${quoteIdentifier(mapping.createdAt)} AS created_at,
+      i.${quoteIdentifier(mapping.updatedAt)} AS updated_at
+    FROM ${quoteQualified(mapping.table)} i
+    ${verificationJoin(mapping, 'i')}
+    WHERE ${
+      by === 'email'
+        ? mappedIdentifierPredicate(mapping, 'i', identifierUsesDirectComparison)
+        : `i.${quoteIdentifier(mapping.id)}::text = $1`
+    }
     LIMIT 1
   `,
     [value],
   )
   const row = rows.rows[0]
-  return row ? identityFrom(mappedIdentity(row)) : undefined
+  return row ? identityFromStored(mappedIdentity(row), mapping) : undefined
+}
+
+async function mappedIdentityEligible(
+  queryable: Queryable,
+  mapping: AuthIdentityTableMapping,
+  identityId: string,
+): Promise<boolean> {
+  const values: unknown[] = [identityId]
+  const predicates = (mapping.eligibility ?? []).map((predicate) => {
+    const column = `i.${quoteIdentifier(predicate.column)}`
+    if ('null' in predicate) return `${column} IS NULL`
+    if ('notNull' in predicate) return `${column} IS NOT NULL`
+    if ('equals' in predicate) {
+      values.push(predicate.equals)
+      return `${column} IS NOT DISTINCT FROM $${values.length}`
+    }
+    if (predicate.in.length === 0) return 'FALSE'
+    const alternatives = predicate.in.map((value) => {
+      values.push(value)
+      return `${column} IS NOT DISTINCT FROM $${values.length}`
+    })
+    return `(${alternatives.join(' OR ')})`
+  })
+  const result = await queryable.query<{ eligible: boolean } & QueryResultRow>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM ${quoteQualified(mapping.table)} i
+       WHERE i.${quoteIdentifier(mapping.id)}::text = $1
+         ${predicates.length ? `AND ${predicates.join(' AND ')}` : ''}
+     ) AS eligible`,
+    values,
+  )
+  return result.rows[0]?.eligible === true
 }
 
 interface MappedIdentityRow extends QueryResultRow {
   readonly id: string
   readonly email: string
+  readonly contact_email: string | null
   readonly email_verified_at: Date | null
+  readonly verification_contact_digest: string | null
   readonly created_at: Date
   readonly updated_at: Date
 }
 
 function mappedIdentity(row: MappedIdentityRow): StoredIdentity {
+  const contactEmail = row.contact_email ?? row.email
   return {
     id: String(row.id),
     email: row.email,
-    emailVerifiedAt: row.email_verified_at,
+    ...(row.contact_email ? { contactEmail: row.contact_email } : {}),
+    emailVerifiedAt:
+      row.verification_contact_digest && row.verification_contact_digest !== digest(contactEmail)
+        ? null
+        : row.email_verified_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
+}
+
+interface MappedPasswordCredential {
+  readonly encoded: string
+  readonly readers: readonly CompiledCredentialReader[]
+}
+
+function isMappedPassword(
+  value: PasswordRecord | MappedPasswordCredential,
+): value is MappedPasswordCredential {
+  return 'encoded' in value
+}
+
+async function verifyPasswordCandidate(
+  password: string,
+  candidate: PasswordRecord | MappedPasswordCredential,
+): Promise<boolean> {
+  return isMappedPassword(candidate)
+    ? (await verifyEncodedPassword(password, candidate.encoded, candidate.readers)).valid
+    : await verifyPassword(password, candidate)
 }
 
 async function findMappedLogin(
   queryable: Queryable,
   tables: NonNullable<PostgresAuthOptions['tables']>,
   email: string,
-): Promise<{ identity: StoredIdentity; password: PasswordRecord } | undefined> {
+  identifierUsesDirectComparison = false,
+): Promise<{ identity: StoredIdentity; password: MappedPasswordCredential } | undefined> {
   const identity = tables.identities
   const password = tables.passwords
-  const rows = await queryable.query<MappedIdentityRow & { password_record: string }>(
+  const legacy = password.legacy
+  const legacySelections = legacy
+    ? [...new Set(legacy.readers.map((reader) => reader.hash))].map(
+        (column, index) =>
+          `lp.${quoteIdentifier(column)} AS ${quoteIdentifier(`legacy_password_record_${index}`)}`,
+      )
+    : []
+  const rows = await queryable.query<MappedIdentityRow & { password_record: string | null }>(
     `
     SELECT
       i.${quoteIdentifier(identity.id)}::text AS id,
       i.${quoteIdentifier(identity.email)} AS email,
-      i.${quoteIdentifier(identity.emailVerifiedAt)} AS email_verified_at,
+      ${identity.contactEmail ? `i.${quoteIdentifier(identity.contactEmail)} AS contact_email` : 'NULL::text AS contact_email'},
+      ${verificationSelect(identity, 'i')},
+      ${verificationDigestSelect(identity)},
       i.${quoteIdentifier(identity.createdAt)} AS created_at,
       i.${quoteIdentifier(identity.updatedAt)} AS updated_at,
       p.${quoteIdentifier(password.password)} AS password_record
+      ${legacySelections.length ? `, ${legacySelections.join(', ')}` : ''}
     FROM ${quoteQualified(identity.table)} i
-    INNER JOIN ${quoteQualified(password.table)} p
+    ${verificationJoin(identity, 'i')}
+    ${legacy ? 'LEFT' : 'INNER'} JOIN ${quoteQualified(password.table)} p
       ON p.${quoteIdentifier(password.identityId)}::text = i.${quoteIdentifier(identity.id)}::text
-    WHERE i.${quoteIdentifier(identity.email)} = $1
+    ${legacy ? `LEFT JOIN ${quoteQualified(legacy.table)} lp ON lp.${quoteIdentifier(legacy.identityId)}::text = i.${quoteIdentifier(identity.id)}::text` : ''}
+    WHERE ${mappedIdentifierPredicate(identity, 'i', identifierUsesDirectComparison)}
     LIMIT 1
   `,
     [email],
   )
   const row = rows.rows[0]
-  return row
-    ? { identity: mappedIdentity(row), password: decodePasswordRecord(row.password_record) }
-    : undefined
+  if (!row) return undefined
+  const legacyColumns = legacy ? [...new Set(legacy.readers.map((reader) => reader.hash))] : []
+  const legacyIndex = legacyColumns.findIndex(
+    (_column, index) => typeof row[`legacy_password_record_${index}`] === 'string',
+  )
+  const encoded =
+    row.password_record ??
+    (legacyIndex >= 0 ? String(row[`legacy_password_record_${legacyIndex}`]) : undefined)
+  if (!encoded) return undefined
+  return {
+    identity: mappedIdentity(row),
+    password: {
+      encoded,
+      readers: row.password_record
+        ? currentPasswordReaders(password)
+        : (legacy?.readers.filter((reader) => reader.hash === legacyColumns[legacyIndex]) ?? []),
+    },
+  }
 }
 
 async function findMappedPassword(
   queryable: Queryable,
   mapping: AuthPasswordTableMapping,
   identityId: string,
-): Promise<PasswordRecord | undefined> {
+): Promise<MappedPasswordCredential | undefined> {
   const result = await queryable.query<{ password_record: string } & QueryResultRow>(
     `
     SELECT ${quoteIdentifier(mapping.password)} AS password_record
@@ -1247,7 +1904,37 @@ async function findMappedPassword(
     [identityId],
   )
   const encoded = result.rows[0]?.password_record
-  return encoded ? decodePasswordRecord(encoded) : undefined
+  if (encoded)
+    return {
+      encoded,
+      readers: currentPasswordReaders(mapping),
+    }
+  if (!mapping.legacy) return undefined
+  const legacyColumns = [...new Set(mapping.legacy.readers.map((reader) => reader.hash))]
+  const legacy = await queryable.query<QueryResultRow>(
+    `SELECT ${legacyColumns
+      .map(
+        (column, index) =>
+          `${quoteIdentifier(column)} AS ${quoteIdentifier(`password_record_${index}`)}`,
+      )
+      .join(', ')}
+     FROM ${quoteQualified(mapping.legacy.table)}
+     WHERE ${quoteIdentifier(mapping.legacy.identityId)}::text = $1
+     LIMIT 1`,
+    [identityId],
+  )
+  const legacyRow = legacy.rows[0]
+  const legacyIndex = legacyColumns.findIndex(
+    (_column, index) => typeof legacyRow?.[`password_record_${index}`] === 'string',
+  )
+  return legacyIndex >= 0
+    ? {
+        encoded: String(legacyRow![`password_record_${legacyIndex}`]),
+        readers: mapping.legacy.readers.filter(
+          (reader) => reader.hash === legacyColumns[legacyIndex],
+        ),
+      }
+    : undefined
 }
 
 async function updateMappedPassword(
@@ -1257,6 +1944,27 @@ async function updateMappedPassword(
   password: PasswordRecord,
   now: Date,
 ): Promise<void> {
+  if (mapping.legacy) {
+    const encoded = encodePasswordRecord(password)
+    const updated = await queryable.query(
+      `UPDATE ${quoteQualified(mapping.table)}
+       SET ${quoteIdentifier(mapping.password)} = $1,
+           ${quoteIdentifier(mapping.updatedAt)} = $2
+       WHERE ${quoteIdentifier(mapping.identityId)}::text = $3`,
+      [encoded, now, identityId],
+    )
+    if (updated.rowCount === 0) {
+      await queryable.query(
+        `INSERT INTO ${quoteQualified(mapping.table)} (
+           ${quoteIdentifier(mapping.identityId)},
+           ${quoteIdentifier(mapping.password)},
+           ${quoteIdentifier(mapping.updatedAt)}
+         ) VALUES ($1, $2, $3)`,
+        [identityId, encoded, now],
+      )
+    }
+    return
+  }
   const result = await queryable.query(
     `
     UPDATE ${quoteQualified(mapping.table)}
@@ -1275,6 +1983,32 @@ async function updateMappedIdentityVerification(
   identityId: string,
   now: Date,
 ): Promise<void> {
+  if (mapping.verificationMode === 'trusted') return
+  if (mapping.verificationMode === 'sidecar') {
+    const result = await queryable.query<{ contact_email: string } & QueryResultRow>(
+      `SELECT ${quoteIdentifier(mapping.contactEmail ?? mapping.email)} AS contact_email
+       FROM ${quoteQualified(mapping.table)}
+       WHERE ${quoteIdentifier(mapping.id)}::text = $1
+       LIMIT 1`,
+      [identityId],
+    )
+    const contactEmail = result.rows[0]?.contact_email
+    if (!contactEmail)
+      throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
+    await queryable.query(
+      `INSERT INTO doxa_auth_mapped_verifications (
+         identity_id, contact_email_digest, verified_at
+       ) VALUES ($1, $2, $3)
+       ON CONFLICT (identity_id) DO UPDATE SET
+         contact_email_digest = EXCLUDED.contact_email_digest,
+         verified_at = EXCLUDED.verified_at`,
+      [identityId, digest(contactEmail), now],
+    )
+    return
+  }
+  if (!mapping.emailVerifiedAt) {
+    throw new AuthenticationError('invalid_credentials', 'Email verification is unavailable.')
+  }
   const result = await queryable.query(
     `
     UPDATE ${quoteQualified(mapping.table)}
@@ -1288,12 +2022,73 @@ async function updateMappedIdentityVerification(
 }
 
 function identityFrom(row: typeof authIdentities.$inferSelect): AuthIdentity {
+  return identityFromStored(row)
+}
+
+function identityFromStored(row: StoredIdentity, mapping?: AuthIdentityTableMapping): AuthIdentity {
+  const verificationMode = mapping?.verificationMode ?? 'mapped'
   return Object.freeze({
     id: row.id,
-    email: row.email,
-    emailVerified: row.emailVerifiedAt !== null,
+    identifier: mapping
+      ? normalizeIdentifier(row.email, mapping.normalization ?? { preset: 'email' })
+      : row.email,
+    identifierKind: mapping?.identifierKind ?? 'email',
+    ...(!mapping
+      ? { contactEmail: row.email }
+      : mapping.contactEmail && (row.contactEmail ?? row.email)
+        ? { contactEmail: row.contactEmail ?? row.email }
+        : {}),
+    verification:
+      verificationMode === 'unsupported'
+        ? 'unsupported'
+        : verificationMode === 'trusted' || row.emailVerifiedAt !== null
+          ? 'verified'
+          : 'unverified',
     createdAt: row.createdAt,
   })
+}
+
+function currentPasswordReaders(
+  mapping: AuthPasswordTableMapping,
+): readonly CompiledCredentialReader[] {
+  const readers = [
+    { preset: 'doxa-argon2id' as const, hash: mapping.password },
+    ...(mapping.legacy ? [] : (mapping.readers ?? [])),
+  ]
+  return readers.filter(
+    (reader, index) =>
+      readers.findIndex((candidate) => candidate.preset === reader.preset) === index,
+  )
+}
+
+function mappedIdentifierPredicate(
+  mapping: AuthIdentityTableMapping,
+  alias: string,
+  identifierUsesDirectComparison: boolean,
+): string {
+  const column = `${alias}.${quoteIdentifier(mapping.email)}`
+  return mapping.normalization?.preset === 'exact' || identifierUsesDirectComparison
+    ? `${column} = $1`
+    : `lower(${column}) = $1`
+}
+
+function verificationSelect(mapping: AuthIdentityTableMapping, alias?: string): string {
+  if (mapping.verificationMode === 'trusted') return 'CURRENT_TIMESTAMP AS email_verified_at'
+  if (mapping.verificationMode === 'sidecar') return 'av.verified_at AS email_verified_at'
+  if (!mapping.emailVerifiedAt) return 'NULL::timestamptz AS email_verified_at'
+  return `${alias ? `${alias}.` : ''}${quoteIdentifier(mapping.emailVerifiedAt)} AS email_verified_at`
+}
+
+function verificationDigestSelect(mapping: AuthIdentityTableMapping): string {
+  return mapping.verificationMode === 'sidecar'
+    ? 'av.contact_email_digest AS verification_contact_digest'
+    : 'NULL::text AS verification_contact_digest'
+}
+
+function verificationJoin(mapping: AuthIdentityTableMapping, alias: string): string {
+  return mapping.verificationMode === 'sidecar'
+    ? `LEFT JOIN doxa_auth_mapped_verifications av ON av.identity_id = ${alias}.${quoteIdentifier(mapping.id)}::text`
+    : ''
 }
 
 function accessTokenMaterial(

@@ -183,6 +183,48 @@ export function describeModel(manifest: DoxaManifest, id: string): Readonly<Mode
   return sanitizeInspectionValue(model) as Readonly<ModelManifestEntry>
 }
 
+export function describeAuthentication(manifest: DoxaManifest): Readonly<Record<string, unknown>> {
+  assertCurrentManifest(manifest)
+  const authentication = manifest.authentication
+  return Object.freeze({
+    mode: authentication.mode,
+    source: authentication.source,
+    ...(authentication.modelId ? { modelId: authentication.modelId } : {}),
+    table: authentication.table,
+    identifier: Object.freeze({
+      kind: authentication.identifier.kind,
+      field: authentication.columns.identifier,
+      normalization: authentication.identifier.normalization,
+    }),
+    ...(authentication.columns.contactEmail
+      ? { contactEmail: authentication.columns.contactEmail }
+      : {}),
+    verification: authentication.verification,
+    eligibility: Object.freeze(
+      authentication.eligibility.map((predicate) =>
+        Object.freeze({
+          column: predicate.column,
+          operation:
+            'equals' in predicate
+              ? 'equals'
+              : 'in' in predicate
+                ? 'in'
+                : 'null' in predicate
+                  ? 'null'
+                  : 'notNull',
+        }),
+      ),
+    ),
+    hashers: Object.freeze(authentication.credentials.readers.map((reader) => reader.preset)),
+    credentialOwnership:
+      authentication.source === 'doxa-owned' ||
+      authentication.credentials.write.destination === 'sidecar'
+        ? 'doxa'
+        : 'external',
+    routes: authentication.routes,
+  })
+}
+
 export function safeManifest(manifest: DoxaManifest): Readonly<Record<string, unknown>> {
   assertCurrentManifest(manifest)
   const sanitized = sanitizeInspectionValue(manifest) as Readonly<Record<string, unknown>>

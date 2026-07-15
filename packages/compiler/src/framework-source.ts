@@ -54,6 +54,7 @@ export function prepareFrameworkSource(fileName: string, sourceText: string): Pr
   const framework = objectProperty(application, 'framework')
   const database = framework ? nestedObject(framework, 'database') : undefined
   const auth = framework ? nestedObject(framework, 'auth') : undefined
+  const identity = auth ? nestedObject(auth, 'identity') : undefined
   const queue = framework ? nestedObject(framework, 'queue') : undefined
   const localConcurrency = queue ? optionalPositiveNumber(queue, 'localConcurrency') : undefined
   const outboxPollingMilliseconds = queue
@@ -67,6 +68,11 @@ export function prepareFrameworkSource(fileName: string, sourceText: string): Pr
     trustedOrigins: auth
       ? (optionalStringArray(auth, 'trustedOrigins') ?? ['http://127.0.0.1:3000'])
       : ['http://127.0.0.1:3000'],
+    identityMode: identity ? requiredNestedString(identity, 'mode') : 'doxa-owned',
+    hasContactEmail: identity ? hasObjectProperty(identity, 'contactEmail') : true,
+    verificationMode: identity
+      ? requiredNestedString(nestedObject(identity, 'verification')!, 'mode')
+      : 'mapped',
     ...(localConcurrency === undefined ? {} : { localConcurrency }),
     ...(outboxPollingMilliseconds === undefined ? {} : { outboxPollingMilliseconds }),
   }
@@ -85,6 +91,9 @@ function renderFrameworkSource(
     readonly applicationName: string
     readonly secureCookies: boolean
     readonly trustedOrigins: readonly string[]
+    readonly identityMode: string
+    readonly hasContactEmail: boolean
+    readonly verificationMode: string
     readonly localConcurrency?: number
     readonly outboxPollingMilliseconds?: number
   },
@@ -100,6 +109,10 @@ function renderFrameworkSource(
   const configs = ['DatabaseConfig', 'AuthConfig']
   const providers = ['Transactions', 'Queues', 'ApplicationAuth', 'ApplicationCache']
   const providerSources: string[] = []
+  const managedIdentity = configuration.identityMode !== 'login-only'
+  const verificationRoutes =
+    managedIdentity && configuration.hasContactEmail && configuration.verificationMode !== 'trusted'
+  const recoveryRoutes = managedIdentity && configuration.hasContactEmail
 
   if (sendgrid) {
     configs.push('SendGridConfig')
@@ -192,7 +205,7 @@ import {
   deny,
   isRecentPasswordAuthentication,
 } from '@doxajs/core'
-import { PostgresAuth } from '@doxajs/auth-postgres'
+import { PostgresAuth } from '@doxajs/auth-postgres/framework'
 import { PostgresCache, PostgresTransactionManager } from '@doxajs/postgres-drizzle'
 import { PgBossQueueManager } from '@doxajs/queue-pg-boss'
 ${optionalImports.join('\n')}
@@ -246,12 +259,26 @@ export class HealthRoute extends Route {
   handle(_request: HttpRequest) { return { status: 'ok' } }
 }
 
-async function credentials(request: HttpRequest): Promise<{ email: string; password: string }> {
-  const body = await request.json<{ email?: unknown; password?: unknown }>()
-  if (typeof body.email !== 'string' || typeof body.password !== 'string') {
-    throw new HttpError(422, 'validation_failed', 'email and password are required')
+async function credentials(request: HttpRequest): Promise<{ identifier: string; contactEmail?: string; password: string }> {
+  const body = await request.json<{ identifier?: unknown; contactEmail?: unknown; password?: unknown }>()
+  if (typeof body.identifier !== 'string' || typeof body.password !== 'string') {
+    throw new HttpError(422, 'validation_failed', 'identifier and password are required')
   }
-  return { email: body.email, password: body.password }
+  return {
+    identifier: body.identifier,
+    ...(typeof body.contactEmail === 'string' ? { contactEmail: body.contactEmail } : {}),
+    password: body.password,
+  }
+}
+
+function publicIdentity(identity: import('@doxajs/core').AuthIdentity) {
+  return {
+    id: identity.id,
+    identifier: identity.identifier,
+    identifierKind: identity.identifierKind,
+    ...(identity.contactEmail ? { contactEmail: identity.contactEmail } : {}),
+    verification: identity.verification,
+  }
 }
 
 export class SendAuthEmail extends Action<{ kind: 'verification' | 'password-reset'; to: string; token: string }, void> {
@@ -279,9 +306,11 @@ export class RegisterRoute extends Route {
   async handle(request: HttpRequest): Promise<Response> {
     const input = await credentials(request)
     const identity = await this.auth.register(input)
-    const challenge = await this.auth.issueEmailVerification(identity.id)
-    await this.actions.execute(SendAuthEmail, { kind: 'verification', to: identity.email, token: challenge.token.reveal() })
-    return Http.created({ identity: { id: identity.id, email: identity.email, emailVerified: identity.emailVerified } })
+    if (identity.contactEmail && identity.verification === 'unverified') {
+      const challenge = await this.auth.issueEmailVerification(identity.id)
+      await this.actions.execute(SendAuthEmail, { kind: 'verification', to: identity.contactEmail, token: challenge.token.reveal() })
+    }
+    return Http.created({ identity: publicIdentity(identity) })
   }
 }
 
@@ -294,7 +323,7 @@ export class LoginRoute extends Route {
   async handle(request: HttpRequest): Promise<Response> {
     const grant = await this.auth.login(await credentials(request), { userAgent: request.header('user-agent') ?? 'unknown' })
     return Http.json(
-      { identity: { id: grant.identity.id, email: grant.identity.email, emailVerified: grant.identity.emailVerified } },
+      { identity: publicIdentity(grant.identity) },
       200,
       { 'set-cookie': this.auth.sessionCookie(grant) },
     )
@@ -346,7 +375,7 @@ export class VerifyEmailRoute extends Route {
     const body = await request.json<{ token?: unknown }>()
     if (typeof body.token !== 'string') throw new HttpError(422, 'validation_failed', 'token is required')
     const identity = await this.auth.verifyEmail(body.token)
-    return { identity: { id: identity.id, email: identity.email, emailVerified: identity.emailVerified } }
+    return { identity: publicIdentity(identity) }
   }
 }
 
@@ -524,9 +553,9 @@ export class ResendVerificationRoute extends Route {
     const identityId = this.execution.context.authentication.identityId
     if (!identityId) throw new HttpError(401, 'authentication_required', 'Authentication is required.')
     const identity = await this.auth.findIdentity(identityId)
-    if (identity && !identity.emailVerified) {
+    if (identity?.contactEmail && identity.verification === 'unverified') {
       const grant = await this.auth.issueEmailVerification(identity.id)
-      await this.actions.execute(SendAuthEmail, { kind: 'verification', to: identity.email, token: grant.token.reveal() })
+      await this.actions.execute(SendAuthEmail, { kind: 'verification', to: identity.contactEmail, token: grant.token.reveal() })
     }
     return Http.accepted(null)
   }
@@ -540,10 +569,11 @@ export class RequestPasswordResetRoute extends Route {
   private readonly auth = this.inject(Auth)
   private readonly actions = this.inject(ActionBus)
   async handle(request: HttpRequest): Promise<Response> {
-    const body = await request.json<{ email?: unknown }>()
-    if (typeof body.email === 'string') {
-      const challenge = await this.auth.issuePasswordReset(body.email)
-      if (challenge) await this.actions.execute(SendAuthEmail, { kind: 'password-reset', to: body.email, token: challenge.token.reveal() })
+    const body = await request.json<{ identifier?: unknown }>()
+    if (typeof body.identifier === 'string') {
+      const challenge = await this.auth.issuePasswordReset(body.identifier)
+      const identity = challenge ? await this.auth.findIdentity(challenge.identityId) : undefined
+      if (challenge && identity?.contactEmail) await this.actions.execute(SendAuthEmail, { kind: 'password-reset', to: identity.contactEmail, token: challenge.token.reveal() })
     }
     return new Response(null, { status: 202 })
   }
@@ -594,8 +624,8 @@ export class DoxaCoreFeature extends Feature {
   id = 'doxa'
   configs = [${configs.join(', ')}]
   providers = [${providers.join(', ')}]
-  actions = [SendAuthEmail]
-  routes = [HealthRoute, RegisterRoute, LoginRoute, LogoutRoute, ReauthenticateRoute, MeRoute, VerifyEmailRoute, ResendVerificationRoute, TokenRoute, ListAccessTokensRoute, RotateAccessTokenRoute, RevokeAccessTokenRoute, ChangePasswordRoute, ListSessionsRoute, RevokeSessionRoute, RequestPasswordResetRoute, ResetPasswordRoute]
+  actions = [${verificationRoutes || recoveryRoutes ? 'SendAuthEmail' : ''}]
+  routes = [HealthRoute, ${managedIdentity ? 'RegisterRoute, ' : ''}LoginRoute, LogoutRoute, ReauthenticateRoute, MeRoute, ${verificationRoutes ? 'VerifyEmailRoute, ResendVerificationRoute, ' : ''}TokenRoute, ListAccessTokensRoute, RotateAccessTokenRoute, RevokeAccessTokenRoute, ${managedIdentity ? 'ChangePasswordRoute, ' : ''}ListSessionsRoute, RevokeSessionRoute${recoveryRoutes ? ', RequestPasswordResetRoute, ResetPasswordRoute' : ''}]
   policies = [AccountPolicy]
 }
 `
@@ -683,6 +713,16 @@ function optionalString(object: ts.ObjectLiteralExpression, name: string): strin
     throw new DoxaCompilationError(`${name} must be a non-empty string literal.`)
   }
   return property.initializer.text
+}
+
+function requiredNestedString(object: ts.ObjectLiteralExpression, name: string): string {
+  const value = optionalString(object, name)
+  if (!value) throw new DoxaCompilationError(`${name} must be a non-empty string literal.`)
+  return value
+}
+
+function hasObjectProperty(object: ts.ObjectLiteralExpression, name: string): boolean {
+  return objectPropertyAssignment(object, name) !== undefined
 }
 
 function optionalBoolean(object: ts.ObjectLiteralExpression, name: string): boolean | undefined {

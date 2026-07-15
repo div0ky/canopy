@@ -24,8 +24,9 @@ export class LoginRoute extends Route {
       {
         identity: {
           id: grant.identity.id,
-          email: grant.identity.email,
-          emailVerified: grant.identity.emailVerified,
+          identifier: grant.identity.identifier,
+          contactEmail: grant.identity.contactEmail,
+          verification: grant.identity.verification,
         },
       },
       200,

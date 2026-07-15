@@ -330,8 +330,10 @@ export class TestAuth extends Auth {
     if (actor.kind === 'user' && actor.id && !this.#identities.has(actor.id)) {
       this.#identities.set(actor.id, {
         id: actor.id,
-        email: `${actor.id}@doxajs.test`,
-        emailVerified: true,
+        identifier: `${actor.id}@doxajs.test`,
+        identifierKind: 'email',
+        contactEmail: `${actor.id}@doxajs.test`,
+        verification: 'verified',
         createdAt: new Date(),
       })
     }
@@ -343,8 +345,10 @@ export class TestAuth extends Auth {
   async register(input: RegistrationInput): Promise<AuthIdentity> {
     const identity = {
       id: randomUUID(),
-      email: input.email.toLowerCase(),
-      emailVerified: true,
+      identifier: input.identifier.toLowerCase(),
+      identifierKind: 'email' as const,
+      contactEmail: input.contactEmail?.toLowerCase() ?? input.identifier.toLowerCase(),
+      verification: 'verified' as const,
       createdAt: new Date(),
     }
     this.#identities.set(identity.id, identity)
@@ -355,8 +359,9 @@ export class TestAuth extends Auth {
   }
   async login(input: LoginInput, _metadata?: AuthRequestMetadata): Promise<AuthSessionGrant> {
     const identity =
-      [...this.#identities.values()].find((value) => value.email === input.email.toLowerCase()) ??
-      (await this.register({ ...input }))
+      [...this.#identities.values()].find(
+        (value) => value.identifier === input.identifier.toLowerCase(),
+      ) ?? (await this.register({ ...input }))
     const now = new Date()
     const session = {
       id: randomUUID(),
@@ -379,13 +384,13 @@ export class TestAuth extends Auth {
     const id = token.replace(/^test-verify-/, '')
     const identity = this.#identities.get(id)
     if (!identity) throw new Error('Invalid test verification token.')
-    const verified = { ...identity, emailVerified: true }
+    const verified = { ...identity, verification: 'verified' as const }
     this.#identities.set(id, verified)
     return verified
   }
-  async issuePasswordReset(email: string): Promise<AuthChallengeGrant | undefined> {
+  async issuePasswordReset(identifier: string): Promise<AuthChallengeGrant | undefined> {
     const identity = [...this.#identities.values()].find(
-      (value) => value.email === email.toLowerCase(),
+      (value) => value.identifier === identifier.toLowerCase(),
     )
     return identity
       ? {

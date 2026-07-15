@@ -10,6 +10,7 @@ import {
   IntrospectionError,
   applicationInfo,
   assertCurrentManifest,
+  describeAuthentication,
   inspectSurface,
   sanitizeInspectionValue,
 } from '@doxajs/introspection'
@@ -59,7 +60,7 @@ describe('Gnosis read-only local engineering server', () => {
   })
 
   it('compiles model relationships into the canonical manifest', () => {
-    expect(manifest.formatVersion).toBe(3)
+    expect(manifest.formatVersion).toBe(4)
     expect(manifest.frameworkVersion).toBe(compilerVersion)
     expect(manifest.models.find((model) => model.id.endsWith('/counter'))?.relationships).toEqual([
       {
@@ -96,7 +97,7 @@ describe('Gnosis read-only local engineering server', () => {
     expect(applicationInfo(manifest)).toEqual(
       expect.objectContaining({
         applicationId: 'persistence-reference-app',
-        manifestFormatVersion: 3,
+        manifestFormatVersion: 4,
         frameworkVersion: compilerVersion,
       }),
     )
@@ -123,6 +124,14 @@ describe('Gnosis read-only local engineering server', () => {
         ) as object,
       ),
     ).toHaveLength(100)
+    expect(describeAuthentication(manifest)).toEqual(
+      expect.objectContaining({
+        mode: 'doxa-owned',
+        source: 'doxa-owned',
+        hashers: ['doxa-argon2id'],
+        credentialOwnership: 'doxa',
+      }),
+    )
     expect(
       sanitizeInspectionValue(
         'primary postgres://doxa:first@localhost/doxa fallback https://user:second@example.test/',
@@ -204,6 +213,7 @@ describe('Gnosis read-only local engineering server', () => {
           'inspect_graph',
           'list_routes',
           'describe_model',
+          'describe_authentication',
           'query_models',
           'search_docs',
         ]),
@@ -214,6 +224,12 @@ describe('Gnosis read-only local engineering server', () => {
 
       const routes = await client.callTool({ name: 'list_routes', arguments: {} })
       expect(routes.structuredContent).toEqual(inspectSurface(manifest, 'routes'))
+
+      const authentication = await client.callTool({
+        name: 'describe_authentication',
+        arguments: {},
+      })
+      expect(authentication.structuredContent).toEqual(describeAuthentication(manifest))
 
       const model = await client.callTool({
         name: 'describe_model',
@@ -403,7 +419,7 @@ describe('Gnosis read-only local engineering server', () => {
       expect(result.structuredContent).toEqual(
         expect.objectContaining({
           applicationId: 'garden',
-          manifestFormatVersion: 3,
+          manifestFormatVersion: 4,
           gnosisVersion,
         }),
       )

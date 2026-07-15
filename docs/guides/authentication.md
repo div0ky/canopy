@@ -2,8 +2,51 @@
 
 Doxa Auth owns identities, password credentials, opaque browser sessions, opaque bearer access
 tokens, verification and recovery challenges, abuse controls, and security audit records. Feature
-code depends on `Auth` from `@doxajs/core`; PostgreSQL storage remains behind
-`@doxajs/auth-postgres`.
+code depends only on `Auth` from `@doxajs/core`; PostgreSQL authentication is generated framework
+infrastructure.
+
+With no auth identity configuration, Doxa owns the email identity and Argon2id credential tables. An
+application can instead select one existing table-backed Model in root `app.config.ts`:
+
+```ts
+framework = {
+  auth: {
+    identity: {
+      mode: 'managed',
+      model: User,
+      identifier: {
+        kind: 'email',
+        attribute: 'email',
+        normalize: { preset: 'email-or-domain', domain: 'example.com' },
+      },
+      contactEmail: 'email',
+      timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
+      verification: { mode: 'mapped', attribute: 'emailVerifiedAt' },
+      eligibility: [{ attribute: 'active', equals: true }],
+      credentials: {
+        table: 'users',
+        identityId: 'id',
+        readers: [{ preset: 'bcrypt', hash: 'password' }],
+        write: { format: 'doxa-argon2id', destination: 'sidecar' },
+      },
+    },
+  },
+} as const
+```
+
+Model fields use logical attributes; credential fields deliberately use physical columns and never
+enter ordinary Model state. `login-only` may use either a selected Model or a raw table mapping and
+omits registration, verification, recovery, reset, and password-change routes. Use
+`doxa auth:storage` or Gnosis `describe_authentication` to inspect the compiled mapping safely.
+
+The public credential API uses `identifier` rather than an `email` alias. Identifiers can be exact,
+lowercase, validated email, or email-with-default-domain normalized. Mapped readiness fails closed
+unless keys, columns, types, writability, timestamps, credential cardinality, and normalization-
+compatible uniqueness are valid.
+
+The `email` identifier kind requires `email` or `email-or-domain` normalization; `username` and
+`custom` identifiers use `exact` or `lowercase`. When `contactEmail` is absent, the compiled
+identity reports email verification as `unsupported` and omits verification and recovery routes.
 
 Cookie-authenticated unsafe requests and WebSocket upgrades require a configured trusted `Origin`.
 Bearer and cookie credentials may not be combined. Stored session, token, verification, and reset

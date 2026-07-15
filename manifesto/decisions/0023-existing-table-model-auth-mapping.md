@@ -3,7 +3,8 @@
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
 - **Amended:** 2026-07-14
-- **Implementation:** Complete for the MVP common path
+- **Implementation:** Config-driven identity contract in progress; direct table mapping remains
+  proven
 - **Decision owners:** Doxa maintainers
 
 ## Decision
@@ -59,33 +60,51 @@ ceremony imposed on every model.
 
 ## Authentication experience
 
-Auth mapping belongs in authentication configuration rather than an application `User` model. Doxa
-Auth must remain usable without a domain user class, and it must know the exact security meaning of
-every configured field:
+Auth mapping belongs in the declaration-only `framework.auth.identity` configuration rather than an
+application `User` model appointing itself globally. When the key is absent, Doxa uses its owned
+email/password identity tables. When present, the compiler resolves one model-backed or raw-table
+identity source into the canonical manifest and the generated PostgreSQL provider consumes only that
+artifact. Application Features continue to depend on `Auth`; `PostgresAuth` remains framework
+infrastructure.
+
+The model-backed common path names logical attributes while credentials remain a separate,
+security-owned mapping and never become ordinary model attributes:
 
 ```ts
-super({
-  connectionString: config.connectionString.reveal(),
-  trustedOrigins: config.trustedOrigins,
-  secureCookies: config.secureCookies,
-  tables: {
-    identities: {
-      table: 'users',
-      id: 'user_id',
-      email: 'email_address',
-      emailVerifiedAt: 'verified_at',
-      createdAt: 'created_at',
-      updatedAt: 'updated_at',
-    },
-    passwords: {
-      table: 'user_credentials',
-      identityId: 'user_id',
-      password: 'password_hash',
-      updatedAt: 'updated_at',
+framework = {
+  auth: {
+    identity: {
+      mode: 'managed',
+      model: User,
+      identifier: {
+        kind: 'email',
+        attribute: 'email',
+        normalize: { preset: 'email-or-domain', domain: 'example.com' },
+      },
+      contactEmail: 'email',
+      timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
+      verification: { mode: 'mapped', attribute: 'emailVerifiedAt' },
+      eligibility: [{ attribute: 'active', equals: true }],
+      credentials: {
+        table: 'users',
+        identityId: 'user_id',
+        readers: [{ preset: 'bcrypt', hash: 'password_hash' }],
+        write: { format: 'doxa-argon2id', destination: 'sidecar' },
+      },
     },
   },
-})
+}
 ```
+
+A raw `{ table, columns }` source remains a login-only escape hatch. Managed identity creation
+requires a selected Doxa model, uses its normal persistence lifecycle, and may name a registration
+factory for extra non-auth attributes. Identity IDs reuse the mapped single-column primary key.
+
+The public credential input is `identifier`, not `email`. One configured identifier kind and
+normalization preset governs login, registration, recovery, rate-limit buckets, and uniqueness.
+Contact email is separately mapped and may be absent; email verification and recovery routes are
+then omitted. Verification is a three-state contract (`verified`, `unverified`, `unsupported`) and
+may use a mapped attribute, Doxa-owned sidecar, or explicitly trusted external state.
 
 Session, bearer-token, challenge, abuse, and audit tables continue using Doxa defaults unless they
 are explicitly mapped. An application may therefore reuse its existing user and password records
@@ -95,15 +114,23 @@ Auth configuration must validate required columns, uniqueness, nullability, hash
 compatibility, and writable operations before readiness. It must never infer password, verification,
 revocation, or authority fields merely because a column has a familiar name.
 
-The mapped password column stores a versioned Doxa Argon2id record. Existing non-Doxa password
-formats remain a deferred adapter boundary: they require an explicit password-hasher adapter and a
-reviewed upgrade strategy, normally verification with the legacy format followed by Argon2id rehash
-on successful login. The MVP fails closed when it encounters an unknown stored format; it never
-relabels that format or silently weakens password policy.
+Credential readers are reviewed first-party presets. Doxa supports its versioned Argon2id record,
+bcrypt variants used by Laravel, Argon2id PHC records, and an explicitly weak lowercase SHA-256
+legacy reader. New writes always use Doxa Argon2id. Weak SHA-256 succeeds only when the same
+transaction can persist its replacement before issuing a session; login-only mappings therefore
+reject it. Upgrades explicitly target validated in-place storage or a Doxa-owned sidecar. Once a
+sidecar credential exists it is authoritative and verification never falls back to the legacy hash.
+
+Mapped verification attributes are Auth-owned. Ordinary model code may read but not write them.
+Identifier and contact-email changes are normalized through the compiled contract, and contact-email
+changes invalidate verification and outstanding challenges. Eligibility predicates are checked for
+every cookie, bearer, password, and sensitive credential resolution; an ineligible identity fails
+closed and revokes all Doxa sessions and tokens.
 
 ## Migration and ownership rules
 
-- Praxis migrations create only unmapped Doxa-owned tables.
+- Praxis migrations create always-owned session, token, challenge, abuse, and audit tables plus only
+  the identity, credential, or sidecar tables selected by the compiled storage contract.
 - Praxis reports mapped tables as externally owned and never alters them implicitly.
 - Mapping validation is read-only during build and readiness checks.
 - Destructive or lossy conversion requires an explicit generated migration or import command.
@@ -115,13 +142,17 @@ relabels that format or silently weakens password policy.
 2. Key, column, timestamp, version, and optional-attribute overrides retain observer, dirty-state,
    and concurrency semantics.
 3. Advanced multi-record mappers remain an explicit post-MVP extension point.
-4. Auth can register and authenticate against mapped identity and credential tables.
+4. Auth can register through a mapped model and authenticate against mapped identity and credential
+   tables without exposing credential columns as model attributes.
 5. Auth can map identities while retaining default Doxa session, token, challenge, and audit tables.
-6. Unknown password formats fail closed; legacy hash adapters remain deferred.
-7. Missing mapped columns and invalid identifiers fail before readiness; deeper type and uniqueness
-   diagnostics remain a future hardening layer.
+6. Unknown password formats fail closed; bcrypt, Argon2id PHC, and mandatory-upgrade SHA-256 readers
+   have known-answer and negative-path proof.
+7. Missing mapped columns, invalid identifiers, incompatible types/nullability, non-unique
+   normalized identifiers, and non-writable managed mappings fail before readiness.
 8. Praxis migration status and diagnostics distinguish owned from externally mapped tables.
 9. First-party memory fakes reproduce the mapped attribute contract.
+10. Login-only route generation omits unsupported identity and credential mutation flows.
+11. Praxis and Gnosis expose safe mapping metadata but never credential values.
 
 ## Relationship to permissions
 

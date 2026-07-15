@@ -8,8 +8,10 @@ import type {
 
 export interface AuthIdentity {
   readonly id: string
-  readonly email: string
-  readonly emailVerified: boolean
+  readonly identifier: string
+  readonly identifierKind: 'email' | 'username' | 'custom'
+  readonly contactEmail?: string
+  readonly verification: 'verified' | 'unverified' | 'unsupported'
   readonly createdAt: Date
 }
 
@@ -53,13 +55,26 @@ export interface IssueAccessTokenInput {
 }
 
 export interface RegistrationInput {
-  readonly email: string
+  readonly identifier: string
+  readonly contactEmail?: string
   readonly password: string
 }
 
 export interface LoginInput {
-  readonly email: string
+  readonly identifier: string
   readonly password: string
+}
+
+export interface AuthIdentityRegistrationInput {
+  readonly identifier: string
+  readonly contactEmail?: string
+}
+
+/** Supplies non-auth model attributes for managed external-identity registration. */
+export interface AuthIdentityRegistrationFactory {
+  defaults(
+    input: AuthIdentityRegistrationInput,
+  ): Readonly<Record<string, unknown>> | Promise<Readonly<Record<string, unknown>>>
 }
 
 export interface AuthChallengeGrant {
@@ -100,6 +115,20 @@ export function isRecentPasswordAuthentication(
 
 export interface AuthStorageDescription {
   readonly kind: 'doxa-owned' | 'mapped' | 'custom'
+  readonly mapping?: {
+    readonly mode: 'doxa-owned' | 'managed' | 'login-only'
+    readonly source: 'doxa-owned' | 'model' | 'table'
+    readonly modelId?: string
+    readonly identifier: {
+      readonly field: string
+      readonly kind: 'email' | 'username' | 'custom'
+      readonly normalization: string
+    }
+    readonly contactEmail?: string
+    readonly verification: 'mapped' | 'sidecar' | 'trusted' | 'unsupported'
+    readonly eligibility: readonly string[]
+    readonly hashers: readonly string[]
+  }
   readonly identities?: { readonly table: string; readonly ownership: 'doxa' | 'external' }
   readonly passwords?: { readonly table: string; readonly ownership: 'doxa' | 'external' }
   readonly sessions?: { readonly table: string; readonly ownership: 'doxa' | 'external' }
@@ -144,7 +173,7 @@ export abstract class Auth {
   abstract issueEmailVerification(identityId: string): Promise<AuthChallengeGrant>
   abstract verifyEmail(token: string): Promise<AuthIdentity>
   abstract issuePasswordReset(
-    email: string,
+    identifier: string,
     metadata?: AuthRequestMetadata,
   ): Promise<AuthChallengeGrant | undefined>
   abstract resetPassword(token: string, newPassword: string): Promise<void>

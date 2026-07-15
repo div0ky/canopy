@@ -1,7 +1,9 @@
 export interface Identity {
   readonly id: string
-  readonly email: string
-  readonly emailVerified: boolean
+  readonly identifier: string
+  readonly identifierKind: 'email' | 'username' | 'custom'
+  readonly contactEmail?: string
+  readonly verification: 'verified' | 'unverified' | 'unsupported'
 }
 
 export interface CurrentIdentityResponse {

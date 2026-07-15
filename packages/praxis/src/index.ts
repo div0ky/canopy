@@ -930,6 +930,7 @@ interface MigrationFile {
 
 async function discoverMigrations(cwd: string): Promise<readonly MigrationFile[]> {
   const framework = ['postgres-drizzle', 'auth-postgres', 'queue-pg-boss']
+  const authMigrations = await compiledAuthMigrations(cwd)
   if (await packageDeclares(cwd, '@doxajs/theoria')) framework.push('theoria')
   const roots: Array<{ prefix: string; directory: string }> = []
   for (const name of framework) {
@@ -950,6 +951,7 @@ async function discoverMigrations(cwd: string): Promise<readonly MigrationFile[]
       continue
     }
     for (const name of names) {
+      if (root.prefix === 'framework/auth-postgres' && !authMigrations.has(name)) continue
       const sql = await readFile(path.join(root.directory, name), 'utf8')
       migrations.push({
         id: `${root.prefix}/${name}`,
@@ -959,6 +961,34 @@ async function discoverMigrations(cwd: string): Promise<readonly MigrationFile[]
     }
   }
   return migrations
+}
+
+async function compiledAuthMigrations(cwd: string): Promise<ReadonlySet<string>> {
+  try {
+    const manifest = JSON.parse(
+      await readFile(path.join(cwd, '.doxa', 'manifest.json'), 'utf8'),
+    ) as {
+      authentication?: {
+        source?: string
+        verification?: { mode?: string }
+        credentials?: { write?: { destination?: string } }
+      }
+    }
+    const authentication = manifest.authentication
+    if (!authentication || authentication.source === 'doxa-owned') {
+      return new Set(['0001_doxa_auth.sql', '0003_challenge_recipient_binding.sql'])
+    }
+    const selected = new Set(['0000_auth_infrastructure.sql'])
+    if (
+      authentication.verification?.mode === 'sidecar' ||
+      authentication.credentials?.write?.destination === 'sidecar'
+    ) {
+      selected.add('0002_mapped_auth_sidecars.sql')
+    }
+    return selected
+  } catch {
+    return new Set(['0001_doxa_auth.sql', '0003_challenge_recipient_binding.sql'])
+  }
 }
 
 async function packageDeclares(cwd: string, dependency: string): Promise<boolean> {
@@ -1682,8 +1712,20 @@ async function describeAuthStorage(
   try {
     const storage = runtime.authenticationStorage()
     io.out(`authentication ${storage.kind}`)
+    if (storage.mapping) {
+      const mapping = storage.mapping
+      io.out(`mode           ${mapping.mode}`)
+      io.out(`source         ${mapping.modelId ?? mapping.source}`)
+      io.out(
+        `identifier     ${mapping.identifier.field} (${mapping.identifier.kind}, ${mapping.identifier.normalization})`,
+      )
+      if (mapping.contactEmail) io.out(`contact email  ${mapping.contactEmail}`)
+      io.out(`verification   ${mapping.verification}`)
+      io.out(`eligibility    ${mapping.eligibility.join(', ') || 'none'}`)
+      io.out(`hashers        ${mapping.hashers.join(', ')}`)
+    }
     for (const [name, entry] of Object.entries(storage)) {
-      if (name === 'kind' || !entry || typeof entry !== 'object') continue
+      if (name === 'kind' || name === 'mapping' || !entry || typeof entry !== 'object') continue
       const table = entry as { table: string; ownership: string }
       io.out(`${name.padEnd(14)} ${table.ownership.padEnd(8)} ${table.table}`)
     }

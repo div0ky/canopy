@@ -19,8 +19,9 @@ export class MeRoute extends Route {
     return {
       identity: {
         id: identity.id,
-        email: identity.email,
-        emailVerified: identity.emailVerified,
+        identifier: identity.identifier,
+        contactEmail: identity.contactEmail,
+        verification: identity.verification,
       },
       actor: this.execution.context.actor,
       authentication: {

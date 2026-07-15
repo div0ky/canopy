@@ -6,6 +6,8 @@ import ts from 'typescript'
 import {
   MANIFEST_FORMAT_VERSION,
   canonicalJson,
+  type AuthenticationEligibilityPredicate,
+  type AuthenticationManifestEntry,
   type DoxaManifest,
   type CommandManifestEntry,
   type ConfigurationDefault,
@@ -322,6 +324,8 @@ export async function compileApplication(
   for (const [handler, root] of signalHandlerRoots) registerSignalHandler(handler, root.ownerId)
   for (const [command, root] of commandRoots) registerCommand(command, root.ownerId)
 
+  const authentication = compileAuthentication()
+
   assertUnique(providers, (provider) => provider.id, 'provider ID')
   assertUnique(actions, (operation) => operation.id, 'action ID')
   assertUnique(queries, (operation) => operation.id, 'query ID')
@@ -427,7 +431,6 @@ export async function compileApplication(
       `Applications with jobs, schedules, queued listeners, or queued broadcasts require exactly one queue provider; found ${queueProviders.length}.`,
     )
   }
-
   const application = {
     id: applicationId,
     name: applicationName,
@@ -441,6 +444,7 @@ export async function compileApplication(
     frameworkVersion: compilerVersion,
     compilerVersion,
     application,
+    authentication,
     plugins: [...plugins].sort(byId),
     features: [...features].sort(byId),
     configurations: [...configurations].sort(byId),
@@ -536,6 +540,375 @@ export async function compileApplication(
   )
 
   return { manifest, manifestPath, registryPath }
+
+  function compileAuthentication(): AuthenticationManifestEntry {
+    const framework = instanceObject(applicationDeclaration, 'framework')
+    const auth = framework ? objectFieldObject(framework, 'auth') : undefined
+    const identity = auth ? objectFieldObject(auth, 'identity') : undefined
+    if (!identity) {
+      return {
+        mode: 'doxa-owned',
+        source: 'doxa-owned',
+        table: 'doxa_auth_identities',
+        columns: {
+          id: 'id',
+          identifier: 'email',
+          contactEmail: 'email',
+          createdAt: 'created_at',
+          updatedAt: 'updated_at',
+        },
+        identifier: { kind: 'email', normalization: { preset: 'email' } },
+        verification: { mode: 'mapped', column: 'email_verified_at' },
+        eligibility: [],
+        credentials: {
+          table: 'doxa_auth_passwords',
+          identityId: 'identity_id',
+          readers: [{ preset: 'doxa-argon2id', hash: 'hash' }],
+          write: {
+            destination: 'in-place',
+            format: 'doxa-argon2id',
+            table: 'doxa_auth_passwords',
+            identityId: 'identity_id',
+            password: 'hash',
+            updatedAt: 'updated_at',
+          },
+        },
+        routes: {
+          registration: true,
+          verification: true,
+          recovery: true,
+          passwordChange: true,
+        },
+      }
+    }
+
+    const mode = requiredObjectString(identity, 'mode')
+    if (mode !== 'managed' && mode !== 'login-only') {
+      fail(identity, 'framework.auth.identity.mode must be "managed" or "login-only".')
+    }
+    const identifierObject = requiredObjectFieldObject(identity, 'identifier')
+    const kind = requiredObjectString(identifierObject, 'kind')
+    if (kind !== 'email' && kind !== 'username' && kind !== 'custom') {
+      fail(identifierObject, 'Auth identifier kind must be email, username, or custom.')
+    }
+    const normalization = compileNormalization(
+      requiredObjectFieldObject(identifierObject, 'normalize'),
+    )
+    const emailNormalization =
+      normalization.preset === 'email' || normalization.preset === 'email-or-domain'
+    if ((kind === 'email') !== emailNormalization) {
+      fail(
+        identifierObject,
+        kind === 'email'
+          ? 'Email auth identifiers require email or email-or-domain normalization.'
+          : 'Email normalization requires the email auth identifier kind.',
+      )
+    }
+    const credentials = compileCredentials(requiredObjectFieldObject(identity, 'credentials'))
+    const eligibilityObject = objectField(identity, 'eligibility')
+    const modelProperty = objectField(identity, 'model')
+
+    if (modelProperty) {
+      const modelDeclaration = resolveClassReference(modelProperty.initializer, checker)
+      const model = modelDeclaration ? modelByDeclaration.get(modelDeclaration) : undefined
+      if (!model || model.storage.kind !== 'table') {
+        fail(
+          modelProperty,
+          'Auth identity model must be a table-backed Model selected by a Feature.',
+        )
+      }
+      const identifierAttribute = requiredObjectString(identifierObject, 'attribute')
+      const contactEmail = optionalObjectString(identity, 'contactEmail')
+      const timestamps = requiredObjectFieldObject(identity, 'timestamps')
+      const createdAt = requiredObjectString(timestamps, 'createdAt')
+      const updatedAt = requiredObjectString(timestamps, 'updatedAt')
+      const configuredVerification = compileModelVerification(
+        requiredObjectFieldObject(identity, 'verification'),
+        model,
+      )
+      const verification = contactEmail
+        ? configuredVerification
+        : ({ mode: 'unsupported' } as const)
+      const attributes = new Set(model.attributes)
+      const credentialColumns = new Set([
+        ...credentials.readers.map((reader) => reader.hash),
+        ...(credentials.write.destination === 'in-place' ? [credentials.write.password] : []),
+      ])
+      const credentialAttribute = model.attributes.find((attribute) =>
+        credentialColumns.has(physicalModelColumn(model, attribute)),
+      )
+      if (credentialAttribute) {
+        fail(
+          identity,
+          `Auth credential column for ${credentialAttribute} cannot be part of ordinary Model state.`,
+        )
+      }
+      for (const attribute of [identifierAttribute, contactEmail, createdAt, updatedAt].filter(
+        (value): value is string => Boolean(value),
+      )) {
+        if (!attributes.has(attribute)) {
+          fail(identity, `Auth identity attribute ${attribute} is not declared by ${model.name}.`)
+        }
+      }
+      const eligibility = compileEligibility(eligibilityObject, 'attribute', (attribute) => {
+        if (!attributes.has(attribute)) {
+          fail(
+            identity,
+            `Auth eligibility attribute ${attribute} is not declared by ${model.name}.`,
+          )
+        }
+        return physicalModelColumn(model, attribute)
+      })
+      const registrationFactoryProperty = objectField(identity, 'registrationFactory')
+      let registrationFactoryId: string | undefined
+      if (registrationFactoryProperty) {
+        if (mode !== 'managed') {
+          fail(
+            registrationFactoryProperty,
+            'registrationFactory is available only in managed mode.',
+          )
+        }
+        const declaration = resolveClassReference(registrationFactoryProperty.initializer, checker)
+        if (!declaration) {
+          fail(registrationFactoryProperty, 'registrationFactory must reference a concrete class.')
+        }
+        const provider =
+          providerByDeclaration.get(declaration) ??
+          registerProvider(declaration, model.ownerId, 'service')
+        registrationFactoryId = provider.id
+      }
+      if (mode === 'login-only' && verification.mode === 'sidecar') {
+        fail(identity, 'Login-only identity mappings cannot use writable sidecar verification.')
+      }
+      return {
+        mode,
+        source: 'model',
+        modelId: model.id,
+        table: model.storage.table,
+        columns: {
+          id: model.storage.primaryKey,
+          identifier: physicalModelColumn(model, identifierAttribute),
+          ...(contactEmail ? { contactEmail: physicalModelColumn(model, contactEmail) } : {}),
+          createdAt: physicalModelColumn(model, createdAt),
+          updatedAt: physicalModelColumn(model, updatedAt),
+        },
+        attributes: {
+          identifier: identifierAttribute,
+          ...(contactEmail ? { contactEmail } : {}),
+          createdAt,
+          updatedAt,
+          ...(verification.mode === 'mapped'
+            ? {
+                verification: requiredObjectString(
+                  requiredObjectFieldObject(identity, 'verification'),
+                  'attribute',
+                ),
+              }
+            : {}),
+        },
+        identifier: { kind, normalization },
+        verification,
+        eligibility,
+        credentials,
+        ...(registrationFactoryId ? { registrationFactoryId } : {}),
+        routes: {
+          registration: mode === 'managed',
+          verification:
+            mode === 'managed' && Boolean(contactEmail) && verification.mode !== 'trusted',
+          recovery: mode === 'managed' && Boolean(contactEmail),
+          passwordChange: mode === 'managed',
+        },
+      }
+    }
+
+    if (mode !== 'login-only') {
+      fail(identity, 'Raw auth table mappings are available only in login-only mode.')
+    }
+    const table = requiredObjectString(identity, 'table')
+    if (!validQualifiedIdentifier(table)) fail(identity, 'Auth identity table is invalid.')
+    const columns = requiredObjectFieldObject(identity, 'columns')
+    const id = requiredDatabaseIdentifier(columns, 'id')
+    const identifierColumn = requiredDatabaseIdentifier(columns, 'identifier')
+    const contactEmail = optionalDatabaseIdentifier(columns, 'contactEmail')
+    const createdAt = requiredDatabaseIdentifier(columns, 'createdAt')
+    const updatedAt = requiredDatabaseIdentifier(columns, 'updatedAt')
+    const verificationObject = requiredObjectFieldObject(identity, 'verification')
+    const verificationMode = requiredObjectString(verificationObject, 'mode')
+    const verification =
+      verificationMode === 'trusted'
+        ? ({ mode: 'trusted' } as const)
+        : verificationMode === 'mapped'
+          ? ({
+              mode: 'mapped',
+              column:
+                optionalDatabaseIdentifier(columns, 'verification') ??
+                fail(columns, 'Mapped raw verification requires columns.verification.'),
+            } as const)
+          : fail(verificationObject, 'Raw verification mode must be mapped or trusted.')
+    return {
+      mode: 'login-only',
+      source: 'table',
+      table,
+      columns: {
+        id,
+        identifier: identifierColumn,
+        ...(contactEmail ? { contactEmail } : {}),
+        createdAt,
+        updatedAt,
+      },
+      identifier: { kind, normalization },
+      verification,
+      eligibility: compileEligibility(eligibilityObject, 'column', (column) => column),
+      credentials,
+      routes: {
+        registration: false,
+        verification: false,
+        recovery: false,
+        passwordChange: false,
+      },
+    }
+  }
+
+  function compileNormalization(
+    object: ts.ObjectLiteralExpression,
+  ): AuthenticationManifestEntry['identifier']['normalization'] {
+    const preset = requiredObjectString(object, 'preset')
+    if (preset === 'email-or-domain') {
+      const domain = requiredObjectString(object, 'domain').trim().toLowerCase()
+      if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)) {
+        fail(object, 'email-or-domain normalization requires a valid domain literal.')
+      }
+      return { preset, domain }
+    }
+    if (preset !== 'exact' && preset !== 'lowercase' && preset !== 'email') {
+      fail(object, 'Auth normalization preset must be exact, lowercase, email, or email-or-domain.')
+    }
+    return { preset }
+  }
+
+  function compileModelVerification(
+    object: ts.ObjectLiteralExpression,
+    model: ModelManifestEntry,
+  ): AuthenticationManifestEntry['verification'] {
+    const mode = requiredObjectString(object, 'mode')
+    if (mode === 'trusted' || mode === 'sidecar') return { mode }
+    if (mode !== 'mapped') {
+      fail(object, 'Auth verification mode must be mapped, sidecar, or trusted.')
+    }
+    const attribute = requiredObjectString(object, 'attribute')
+    if (!model.attributes.includes(attribute)) {
+      fail(object, `Auth verification attribute ${attribute} is not declared by ${model.name}.`)
+    }
+    return { mode, column: physicalModelColumn(model, attribute) }
+  }
+
+  function compileEligibility(
+    property: ts.PropertyAssignment | undefined,
+    key: 'attribute' | 'column',
+    columnFor: (value: string) => string,
+  ): readonly AuthenticationEligibilityPredicate[] {
+    if (!property) return []
+    const initializer = unwrapLiteralExpression(property.initializer)
+    if (!ts.isArrayLiteralExpression(initializer)) {
+      fail(property, 'Auth eligibility must be a literal predicate array.')
+    }
+    return initializer.elements.map((element) => {
+      const object = unwrapLiteralExpression(element as ts.Expression)
+      if (!ts.isObjectLiteralExpression(object)) {
+        fail(element, 'Auth eligibility predicates must be literal objects.')
+      }
+      const source = requiredObjectString(object, key)
+      const column = columnFor(source)
+      if (!validIdentifier(column)) fail(object, `Auth eligibility column ${column} is invalid.`)
+      const equals = objectField(object, 'equals')
+      if (equals) return { column, equals: scalarJson(equals.initializer, equals) }
+      const values = objectField(object, 'in')
+      if (values) {
+        const parsed = readJsonLiteral(values.initializer)
+        if (!Array.isArray(parsed) || parsed.length === 0 || !parsed.every(isScalarJson)) {
+          fail(values, 'Auth eligibility in must be a non-empty scalar literal array.')
+        }
+        return { column, in: parsed }
+      }
+      if (objectBoolean(object, 'null') === true) return { column, null: true }
+      if (objectBoolean(object, 'notNull') === true) return { column, notNull: true }
+      fail(object, 'Auth eligibility requires equals, in, null: true, or notNull: true.')
+    })
+  }
+
+  function compileCredentials(
+    object: ts.ObjectLiteralExpression,
+  ): AuthenticationManifestEntry['credentials'] {
+    const table = requiredObjectString(object, 'table')
+    if (!validQualifiedIdentifier(table)) fail(object, 'Auth credential table is invalid.')
+    const identityId = requiredDatabaseIdentifier(object, 'identityId')
+    const readersProperty = objectField(object, 'readers')
+    const readersExpression = readersProperty
+      ? unwrapLiteralExpression(readersProperty.initializer)
+      : undefined
+    if (
+      !readersExpression ||
+      !ts.isArrayLiteralExpression(readersExpression) ||
+      readersExpression.elements.length === 0
+    ) {
+      fail(object, 'Auth credentials require at least one literal reader.')
+    }
+    const readers = readersExpression.elements.map((element) => {
+      const reader = unwrapLiteralExpression(element as ts.Expression)
+      if (!ts.isObjectLiteralExpression(reader))
+        fail(element, 'Credential readers must be literal objects.')
+      const preset = requiredObjectString(reader, 'preset')
+      if (!['doxa-argon2id', 'bcrypt', 'argon2id-phc', 'sha256-hex'].includes(preset)) {
+        fail(reader, `Unsupported credential reader ${preset}.`)
+      }
+      return {
+        preset: preset as AuthenticationManifestEntry['credentials']['readers'][number]['preset'],
+        hash: requiredDatabaseIdentifier(reader, 'hash'),
+      }
+    })
+    const write = requiredObjectFieldObject(object, 'write')
+    if (requiredObjectString(write, 'format') !== 'doxa-argon2id') {
+      fail(write, 'Doxa Argon2id is the only supported credential write format.')
+    }
+    const destinationProperty = objectField(write, 'destination')
+    if (!destinationProperty) fail(write, 'Credential write destination is required.')
+    const destination = unwrapLiteralExpression(destinationProperty.initializer)
+    if (ts.isStringLiteral(destination) && destination.text === 'sidecar') {
+      return {
+        table,
+        identityId,
+        readers,
+        write: { destination: 'sidecar', format: 'doxa-argon2id' },
+      }
+    }
+    if (!ts.isObjectLiteralExpression(destination)) {
+      fail(destination, 'Credential destination must be sidecar or an in-place mapping object.')
+    }
+    const writeTable = optionalObjectString(destination, 'table') ?? table
+    const writeIdentityId = optionalDatabaseIdentifier(destination, 'identityId') ?? identityId
+    return {
+      table,
+      identityId,
+      readers,
+      write: {
+        destination: 'in-place',
+        format: 'doxa-argon2id',
+        table: writeTable,
+        identityId: writeIdentityId,
+        password: requiredDatabaseIdentifier(destination, 'password'),
+        ...(optionalDatabaseIdentifier(destination, 'updatedAt')
+          ? { updatedAt: optionalDatabaseIdentifier(destination, 'updatedAt')! }
+          : {}),
+      },
+    }
+  }
+
+  function physicalModelColumn(model: ModelManifestEntry, attribute: string): string {
+    if (model.storage.kind !== 'table')
+      fail(applicationDeclaration, `${model.name} is not table-backed.`)
+    if (attribute === 'id') return model.storage.primaryKey
+    return model.storage.columns[attribute] ?? attribute
+  }
 
   function registerConfigurations(
     declarations: readonly ts.ClassDeclaration[],
@@ -2221,6 +2594,105 @@ function readRequiredInstanceString(declaration: ts.ClassDeclaration, name: stri
     )
   }
   return property.initializer.text
+}
+
+function instanceObject(
+  declaration: ts.ClassDeclaration,
+  name: string,
+): ts.ObjectLiteralExpression | undefined {
+  const property = findInstanceProperty(declaration, name)
+  if (!property) return undefined
+  const initializer = property.initializer
+    ? unwrapLiteralExpression(property.initializer)
+    : undefined
+  if (!initializer || !ts.isObjectLiteralExpression(initializer)) {
+    fail(property, `${requiredClassName(declaration)}.${name} must be a literal object.`)
+  }
+  return initializer
+}
+
+function objectField(
+  object: ts.ObjectLiteralExpression,
+  name: string,
+): ts.PropertyAssignment | undefined {
+  return object.properties.find(
+    (property): property is ts.PropertyAssignment =>
+      ts.isPropertyAssignment(property) && propertyName(property.name) === name,
+  )
+}
+
+function objectFieldObject(
+  object: ts.ObjectLiteralExpression,
+  name: string,
+): ts.ObjectLiteralExpression | undefined {
+  const property = objectField(object, name)
+  if (!property) return undefined
+  const initializer = unwrapLiteralExpression(property.initializer)
+  if (!ts.isObjectLiteralExpression(initializer))
+    fail(property, `${name} must be a literal object.`)
+  return initializer
+}
+
+function requiredObjectFieldObject(
+  object: ts.ObjectLiteralExpression,
+  name: string,
+): ts.ObjectLiteralExpression {
+  return objectFieldObject(object, name) ?? fail(object, `${name} is required.`)
+}
+
+function requiredObjectString(object: ts.ObjectLiteralExpression, name: string): string {
+  const value = optionalObjectString(object, name)
+  if (!value) fail(object, `${name} must be a non-empty string literal.`)
+  return value
+}
+
+function optionalObjectString(
+  object: ts.ObjectLiteralExpression,
+  name: string,
+): string | undefined {
+  const property = objectField(object, name)
+  if (!property) return undefined
+  const initializer = unwrapLiteralExpression(property.initializer)
+  if (!ts.isStringLiteral(initializer) || initializer.text.length === 0) {
+    fail(property, `${name} must be a non-empty string literal.`)
+  }
+  return initializer.text
+}
+
+function requiredDatabaseIdentifier(object: ts.ObjectLiteralExpression, name: string): string {
+  const value = requiredObjectString(object, name)
+  if (!validIdentifier(value)) fail(object, `${name} must be a PostgreSQL identifier.`)
+  return value
+}
+
+function optionalDatabaseIdentifier(
+  object: ts.ObjectLiteralExpression,
+  name: string,
+): string | undefined {
+  const value = optionalObjectString(object, name)
+  if (value !== undefined && !validIdentifier(value)) {
+    fail(object, `${name} must be a PostgreSQL identifier.`)
+  }
+  return value
+}
+
+function objectBoolean(object: ts.ObjectLiteralExpression, name: string): boolean | undefined {
+  const property = objectField(object, name)
+  if (!property) return undefined
+  const initializer = unwrapLiteralExpression(property.initializer)
+  if (initializer.kind === ts.SyntaxKind.TrueKeyword) return true
+  if (initializer.kind === ts.SyntaxKind.FalseKeyword) return false
+  fail(property, `${name} must be a boolean literal.`)
+}
+
+function isScalarJson(value: unknown): value is string | number | boolean | null {
+  return value === null || ['string', 'number', 'boolean'].includes(typeof value)
+}
+
+function scalarJson(expression: ts.Expression, source: ts.Node): string | number | boolean | null {
+  const value = readJsonLiteral(expression)
+  if (!isScalarJson(value)) fail(source, 'Expected a scalar literal value.')
+  return value
 }
 
 function readRequiredStaticString(declaration: ts.ClassDeclaration, name: string): string {

@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url'
 import {
   ActionBus,
   Auth,
+  type AuthIdentityRegistrationFactory,
   type BroadcastConnectionAdmission,
   type BroadcastDestination,
   type BroadcastMessage,
@@ -237,6 +238,22 @@ interface ExecutionStore {
   job?: import('@doxajs/core').CurrentJobContext
 }
 
+interface ManagedIdentityRegistrationRequest {
+  readonly id: string
+  readonly identifier: string
+  readonly contactEmail?: string
+  readonly createdAt: Date
+  readonly updatedAt: Date
+  readonly persistAuthentication: (transaction: unknown, identityId: string) => Promise<void>
+}
+
+interface FrameworkTransactionManager extends TransactionManager {
+  frameworkTransaction<Output>(
+    context: ExecutionContext,
+    work: (unitOfWork: UnitOfWork, transaction: unknown) => Promise<Output>,
+  ): Promise<Output>
+}
+
 export class DoxaRuntime {
   #state: RuntimeState = 'booting'
   #shutdownPromise?: Promise<void>
@@ -249,6 +266,9 @@ export class DoxaRuntime {
       readonly entityType: string
       readonly storage: import('@doxajs/core').ModelStorage
       readonly attributes?: ReadonlySet<string>
+      readonly attributeNormalizers?: ReadonlyMap<string, (value: unknown) => unknown>
+      readonly authOwnedAttributes?: ReadonlySet<string>
+      readonly clearAttributeOnChange?: ReadonlyMap<string, string>
     }
   >()
   readonly #modelsById = new Map<
@@ -329,10 +349,37 @@ export class DoxaRuntime {
     for (const model of manifest.models) {
       const Constructor = artifacts.registry.constructors[model.id]
       if (Constructor) {
+        const auth = manifest.authentication
+        const authAttributes = auth.modelId === model.id ? auth.attributes : undefined
+        const attributeNormalizers = new Map<string, (value: unknown) => unknown>()
+        const authOwnedAttributes = new Set<string>()
+        const clearAttributeOnChange = new Map<string, string>()
+        if (authAttributes) {
+          attributeNormalizers.set(authAttributes.identifier, (value) =>
+            normalizeAuthenticationAttribute(value, auth.identifier.normalization),
+          )
+          if (
+            authAttributes.contactEmail &&
+            authAttributes.contactEmail !== authAttributes.identifier
+          ) {
+            attributeNormalizers.set(authAttributes.contactEmail, (value) =>
+              normalizeAuthenticationAttribute(value, { preset: 'email' }),
+            )
+          }
+          if (auth.verification.mode === 'mapped' && authAttributes.verification) {
+            authOwnedAttributes.add(authAttributes.verification)
+            if (authAttributes.contactEmail) {
+              clearAttributeOnChange.set(authAttributes.contactEmail, authAttributes.verification)
+            }
+          }
+        }
         this.#modelsByConstructor.set(Constructor, {
           entityType: model.entityType,
           storage: model.storage,
           ...(model.attributes ? { attributes: new Set(model.attributes) } : {}),
+          ...(attributeNormalizers.size ? { attributeNormalizers } : {}),
+          ...(authOwnedAttributes.size ? { authOwnedAttributes } : {}),
+          ...(clearAttributeOnChange.size ? { clearAttributeOnChange } : {}),
         })
         this.#modelsById.set(model.id, {
           Constructor: Constructor as ModelConstructor<Model, ModelAttributes>,
@@ -533,6 +580,21 @@ export class DoxaRuntime {
       options.eventTestHook,
       logger,
     )
+    const compiledAuth = authentication as
+      | (Auth & {
+          bindCompiledAuthentication?: (
+            configuration: DoxaManifest['authentication'],
+            runtime: {
+              registerManagedIdentity: (
+                request: ManagedIdentityRegistrationRequest,
+              ) => Promise<string>
+            },
+          ) => void
+        })
+      | undefined
+    compiledAuth?.bindCompiledAuthentication?.(artifacts.manifest.authentication, {
+      registerManagedIdentity: (request) => runtime.registerManagedIdentity(request),
+    })
     queues?.selectRoles({
       worker: options.roles?.worker ?? true,
       scheduler: options.roles?.scheduler ?? true,
@@ -955,6 +1017,111 @@ export class DoxaRuntime {
 
   authenticationStorage(): import('@doxajs/core').AuthStorageDescription {
     return this.authentication?.storage() ?? { kind: 'custom' }
+  }
+
+  private async registerManagedIdentity(
+    request: ManagedIdentityRegistrationRequest,
+  ): Promise<string> {
+    const authentication = this.manifest.authentication
+    if (
+      authentication.mode !== 'managed' ||
+      authentication.source !== 'model' ||
+      !authentication.modelId ||
+      !authentication.attributes
+    ) {
+      throw new RuntimeIntegrityError('Managed authentication registration is not compiled.')
+    }
+    const model = this.#modelsById.get(authentication.modelId)
+    if (!model) {
+      throw new RuntimeIntegrityError(
+        `Managed authentication model ${authentication.modelId} is unavailable.`,
+      )
+    }
+    const transactions = this.transactions as FrameworkTransactionManager | undefined
+    if (!transactions?.frameworkTransaction) {
+      throw new RuntimeIntegrityError(
+        'Managed authentication requires the PostgreSQL transaction-participant boundary.',
+      )
+    }
+    const store = this.requireExecution('HTTP route')
+    const factory = authentication.registrationFactoryId
+      ? (store.scope.resolve(authentication.registrationFactoryId) as
+          AuthIdentityRegistrationFactory | undefined)
+      : undefined
+    const defaults = factory
+      ? await factory.defaults({
+          identifier: request.identifier,
+          ...(request.contactEmail ? { contactEmail: request.contactEmail } : {}),
+        })
+      : {}
+    if (typeof defaults !== 'object' || defaults === null || Array.isArray(defaults)) {
+      throw new RuntimeIntegrityError(
+        'Auth registration factory must return a plain attribute object.',
+      )
+    }
+    const reserved = new Set(
+      [
+        'id',
+        authentication.attributes.identifier,
+        authentication.attributes.contactEmail,
+        authentication.attributes.createdAt,
+        authentication.attributes.updatedAt,
+        authentication.attributes.verification,
+      ].filter((attribute): attribute is string => Boolean(attribute)),
+    )
+    for (const attribute of Object.keys(defaults)) {
+      if (reserved.has(attribute)) {
+        throw new RuntimeIntegrityError(
+          `Auth registration factory cannot override reserved attribute ${attribute}.`,
+        )
+      }
+      if (!model.attributes.has(attribute)) {
+        throw new RuntimeIntegrityError(
+          `Auth registration factory returned undeclared attribute ${attribute}.`,
+        )
+      }
+    }
+    const attributes: Record<string, unknown> = {
+      ...defaults,
+      id: request.id,
+      [authentication.attributes.identifier]: request.identifier,
+      [authentication.attributes.createdAt]: request.createdAt,
+      [authentication.attributes.updatedAt]: request.updatedAt,
+    }
+    if (authentication.attributes.contactEmail) {
+      attributes[authentication.attributes.contactEmail] = request.contactEmail
+    }
+    if (authentication.attributes.verification) {
+      attributes[authentication.attributes.verification] = null
+    }
+
+    return await transactions.frameworkTransaction(
+      store.context,
+      async (unitOfWork, participant) => {
+        const models = new ModelSession(
+          unitOfWork,
+          this.#modelsByConstructor,
+          this.modelObserverDispatcher(store),
+          true,
+          this.modelQueryDiagnosticRecorder(),
+        )
+        return await store.scope.withUnitOfWork(unitOfWork, async () =>
+          runWithModelSession(models, async () => {
+            try {
+              const identity = models.make(
+                model.Constructor,
+                attributes as unknown as ModelAttributes,
+              )
+              await identity.save()
+              await request.persistAuthentication(participant, identity.id)
+              return identity.id
+            } finally {
+              models.close()
+            }
+          }),
+        )
+      },
+    )
   }
 
   async dispatchAction<Input, Output>(
@@ -3302,6 +3469,27 @@ function validateActor(actor: ActorRef, label: string): void {
   if (actor.kind !== 'anonymous' && !actor.id) {
     throw new ExecutionAdmissionError(`${label} kind ${actor.kind} requires an opaque ID.`)
   }
+}
+
+function normalizeAuthenticationAttribute(
+  value: unknown,
+  normalization: DoxaManifest['authentication']['identifier']['normalization'],
+): string {
+  if (typeof value !== 'string') {
+    throw new RuntimeIntegrityError('Authentication identity attributes must be strings.')
+  }
+  if (normalization.preset === 'exact') return value.normalize('NFC')
+  let normalized = value.trim().normalize('NFC').toLowerCase()
+  if (normalization.preset === 'email-or-domain' && !normalized.includes('@')) {
+    normalized = `${normalized}@${normalization.domain}`
+  }
+  if (
+    (normalization.preset === 'email' || normalization.preset === 'email-or-domain') &&
+    (normalized.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized))
+  ) {
+    throw new RuntimeIntegrityError('Authentication identity email is invalid.')
+  }
+  return normalized
 }
 
 async function loadDotenv(dotenvPath: string): Promise<Readonly<Record<string, string>>> {

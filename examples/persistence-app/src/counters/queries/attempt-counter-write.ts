@@ -6,11 +6,12 @@ export class AttemptCounterWrite extends Query<string, number> {
 
   private readonly unitOfWork = this.inject(UnitOfWork)
 
-  handle(id: string): Promise<number> {
-    return this.unitOfWork.saveEntity({
+  async handle(id: string): Promise<number> {
+    const saved = await this.unitOfWork.saveEntity({
       type: 'counter',
       id,
       state: { value: 1 },
     })
+    return typeof saved === 'number' ? saved : saved.version
   }
 }
