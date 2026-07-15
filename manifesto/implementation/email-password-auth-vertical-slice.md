@@ -32,20 +32,16 @@ private storage mechanics.
 the Hono adapter knows only that the runtime can resolve a Request into an actor and authentication
 context.
 
-The reference application selects `PostgresAuth` through an ordinary infrastructure provider:
+The compiler generates the concrete PostgreSQL provider as hidden framework infrastructure.
+Application Features inject only `Auth`; root configuration supplies cookie and origin policy:
 
 ```ts
-export class DoxaAuth extends PostgresAuth {
-  static id = 'auth'
-
-  constructor(config: DatabaseConfig) {
-    super({
-      connectionString: config.connectionString.reveal(),
-      secureCookies: false,
-      trustedOrigins: ['http://127.0.0.1:3000'],
-    })
-  }
-}
+framework = {
+  auth: {
+    secureCookies: false,
+    trustedOrigins: ['http://127.0.0.1:3000'],
+  },
+} as const
 ```
 
 Production configuration must use secure cookies and explicit HTTPS origins. The insecure cookie

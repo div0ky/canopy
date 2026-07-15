@@ -2,7 +2,7 @@
 
 - **Status:** Implemented MVP common path
 - **Implemented:** 2026-07-10
-- **Manifest format:** 10
+- **Manifest format:** 4
 - **Decision:**
   [Map models and authentication to existing tables](../decisions/0023-existing-table-model-auth-mapping.md)
 
@@ -40,30 +40,31 @@ transactional commit, and optimistic-concurrency failures. It never copies mappe
 
 ## Authentication mapping
 
-First-party auth accepts explicit identity and credential mappings:
+Root application configuration selects an existing identity Model and logical attributes:
 
 ```ts
-new PostgresAuth({
-  connectionString,
-  trustedOrigins: ['https://example.com'],
-  secureCookies: true,
-  tables: {
-    identities: {
-      table: 'users',
-      id: 'user_id',
-      email: 'email_address',
-      emailVerifiedAt: 'verified_at',
-      createdAt: 'created_at',
-      updatedAt: 'updated_at',
-    },
-    passwords: {
-      table: 'user_credentials',
-      identityId: 'user_id',
-      password: 'password_record',
-      updatedAt: 'updated_at',
+framework = {
+  auth: {
+    identity: {
+      mode: 'managed',
+      model: User,
+      identifier: {
+        kind: 'email',
+        attribute: 'email',
+        normalize: { preset: 'email' },
+      },
+      contactEmail: 'email',
+      timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
+      verification: { mode: 'mapped', attribute: 'emailVerifiedAt' },
+      credentials: {
+        table: 'user_credentials',
+        identityId: 'user_id',
+        readers: [{ preset: 'bcrypt', hash: 'password_hash' }],
+        write: { format: 'doxa-argon2id', destination: 'sidecar' },
+      },
     },
   },
-})
+} as const
 ```
 
 Identity IDs are opaque text rather than assumed UUIDs. Identity and password data may share one
@@ -71,10 +72,10 @@ external table or use separate external tables. Browser sessions, bearer tokens,
 controls, and audit records remain in Doxa-owned tables, preserving secure framework semantics
 without forcing an established application to replace its users table.
 
-Mapped columns are checked during lifecycle readiness. Identifiers are validated before any SQL is
-issued, missing columns prevent readiness, unknown password record formats fail closed, and
-registration across separate identity and password tables uses one PostgreSQL transaction. Doxa
-never migrates the external tables implicitly.
+The compiler resolves logical attributes to physical storage in the authentication artifact. Mapped
+columns are checked during lifecycle readiness. Missing or incompatible columns, composite keys,
+unsafe uniqueness, unwritable managed fields, and duplicate credential rows prevent readiness. Doxa
+never migrates an external table implicitly.
 
 ## Inspection and AI knowledge
 
@@ -96,5 +97,5 @@ The PostgreSQL conformance suite proves:
 6. The first-party memory transaction manager preserves the logical mapped-model contract.
 7. Praxis and Gnosis expose storage ownership and mapping metadata.
 
-Advanced multi-record model mappers, legacy password-hasher adapters, deeper database type and
-uniqueness diagnostics, and first-party permission storage remain explicit future work.
+Multiple identity realms, separate auth databases, permission mapping, OAuth, MFA, and application-
+defined hashers remain explicit future work.
