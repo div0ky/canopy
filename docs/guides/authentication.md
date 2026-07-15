@@ -44,6 +44,10 @@ lowercase, validated email, or email-with-default-domain normalized. Mapped read
 unless keys, columns, types, writability, timestamps, credential cardinality, and normalization-
 compatible uniqueness are valid.
 
+The `email` identifier kind requires `email` or `email-or-domain` normalization; `username` and
+`custom` identifiers use `exact` or `lowercase`. When `contactEmail` is absent, the compiled
+identity reports email verification as `unsupported` and omits verification and recovery routes.
+
 Cookie-authenticated unsafe requests and WebSocket upgrades require a configured trusted `Origin`.
 Bearer and cookie credentials may not be combined. Stored session, token, verification, and reset
 credentials are digests; raw values are visible only when first issued.

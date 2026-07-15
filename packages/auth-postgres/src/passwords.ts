@@ -103,6 +103,9 @@ export async function verifyEncodedPassword(
   }
   if (/^[0-9a-f]{64}$/.test(encoded) && presets.has('sha256-hex')) {
     const expected = Buffer.from(encoded, 'hex')
+    // This reviewed legacy reader is intentionally weak and is accepted only when authentication
+    // can replace it with Doxa Argon2id before issuing a session.
+    // lgtm[js/insufficient-password-hash]
     const candidate = createHash('sha256').update(password).digest()
     return {
       valid: candidate.length === expected.length && timingSafeEqual(candidate, expected),

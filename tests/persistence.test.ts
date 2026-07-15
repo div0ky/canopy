@@ -3461,7 +3461,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     await pool.query(
       `INSERT INTO legacy_managed_auth_users
        (user_id, username, contact_email, password_hash, active, created_at, updated_at)
-       VALUES ('managed-1', 'ada', 'ada@example.com', $1, true, now(), now())`,
+       VALUES ('managed-1', 'Ada', 'ada@example.com', $1, true, now(), now())`,
       ['$2b$10$rIv/DSLLlVci6r6U.W.N.e0DggFleAwndNLWyGmpJvbsVP//5EQaK'],
     )
 
@@ -3615,6 +3615,229 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       expect(
         (await auth.login({ identifier: 'encore', password: 'legacy password' })).identity.id,
       ).toBe('login-only-1')
+    } finally {
+      await auth.dispose(lifecycleContext())
+    }
+  })
+
+  it('upgrades and reuses a managed in-place bcrypt credential', async () => {
+    await pool.query(`
+      CREATE TABLE legacy_in_place_auth_users (
+        user_id text PRIMARY KEY,
+        username text NOT NULL,
+        contact_email text NOT NULL,
+        password_hash text NOT NULL,
+        active boolean NOT NULL,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+      )
+    `)
+    await pool.query(
+      `CREATE UNIQUE INDEX legacy_in_place_auth_username_lower_idx
+       ON legacy_in_place_auth_users (lower(username))`,
+    )
+    await pool.query(
+      `INSERT INTO legacy_in_place_auth_users
+       (user_id, username, contact_email, password_hash, active, created_at, updated_at)
+       VALUES ('in-place-1', 'Grace', 'grace@example.com', $1, true, now(), now())`,
+      ['$2b$10$rIv/DSLLlVci6r6U.W.N.e0DggFleAwndNLWyGmpJvbsVP//5EQaK'],
+    )
+
+    const auth = new PostgresAuth({
+      connectionString,
+      secureCookies: false,
+      trustedOrigins: ['http://doxa.test'],
+    })
+    auth.bindCompiledAuthentication(
+      mappedAuthentication({
+        mode: 'managed',
+        table: 'legacy_in_place_auth_users',
+        verification: { mode: 'trusted' },
+        write: {
+          destination: 'in-place',
+          format: 'doxa-argon2id',
+          table: 'legacy_in_place_auth_users',
+          identityId: 'user_id',
+          password: 'password_hash',
+          updatedAt: 'updated_at',
+        },
+      }),
+    )
+    await auth.start(lifecycleContext())
+    try {
+      expect(
+        (await auth.login({ identifier: 'GRACE', password: 'legacy secure password' })).identity,
+      ).toEqual(expect.objectContaining({ id: 'in-place-1', identifier: 'grace' }))
+      expect(
+        (
+          await pool.query<{ password_hash: string }>(
+            `SELECT password_hash FROM legacy_in_place_auth_users WHERE user_id = 'in-place-1'`,
+          )
+        ).rows[0]?.password_hash,
+      ).toMatch(/^doxa-argon2id:/)
+      expect(
+        (await auth.login({ identifier: 'grace', password: 'legacy secure password' })).identity.id,
+      ).toBe('in-place-1')
+    } finally {
+      await auth.dispose(lifecycleContext())
+    }
+  })
+
+  it('rolls back a mandatory credential upgrade when session issuance fails', async () => {
+    await pool.query(await readFile(DOXA_AUTH_SIDECAR_MIGRATION_URL, 'utf8'))
+    await pool.query(`
+      CREATE TABLE atomic_upgrade_auth_users (
+        user_id text PRIMARY KEY,
+        username text NOT NULL,
+        contact_email text NOT NULL,
+        password_hash text NOT NULL,
+        active boolean NOT NULL,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+      )
+    `)
+    await pool.query(
+      `CREATE UNIQUE INDEX atomic_upgrade_auth_username_lower_idx
+       ON atomic_upgrade_auth_users (lower(username))`,
+    )
+    await pool.query(
+      `INSERT INTO atomic_upgrade_auth_users
+       (user_id, username, contact_email, password_hash, active, created_at, updated_at)
+       VALUES ('atomic-upgrade-1', 'Atomic', 'atomic@example.com', $1, true, now(), now())`,
+      ['$2b$10$rIv/DSLLlVci6r6U.W.N.e0DggFleAwndNLWyGmpJvbsVP//5EQaK'],
+    )
+    await pool.query(`
+      CREATE FUNCTION reject_atomic_upgrade_session() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.identity_id = 'atomic-upgrade-1' THEN
+          RAISE EXCEPTION 'forced session failure';
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql
+    `)
+    await pool.query(`
+      CREATE TRIGGER reject_atomic_upgrade_session
+      BEFORE INSERT ON doxa_auth_sessions
+      FOR EACH ROW EXECUTE FUNCTION reject_atomic_upgrade_session()
+    `)
+
+    const auth = new PostgresAuth({
+      connectionString,
+      secureCookies: false,
+      trustedOrigins: ['http://doxa.test'],
+    })
+    auth.bindCompiledAuthentication(
+      mappedAuthentication({
+        mode: 'managed',
+        table: 'atomic_upgrade_auth_users',
+        verification: { mode: 'trusted' },
+      }),
+    )
+    await auth.start(lifecycleContext())
+    try {
+      await expect(
+        auth.login({ identifier: 'atomic', password: 'legacy secure password' }),
+      ).rejects.toThrow('Failed query: insert into "doxa_auth_sessions"')
+      expect(
+        (
+          await pool.query(
+            `SELECT 1 FROM doxa_auth_mapped_passwords WHERE identity_id = 'atomic-upgrade-1'`,
+          )
+        ).rowCount,
+      ).toBe(0)
+    } finally {
+      await auth.dispose(lifecycleContext())
+      await pool.query('DROP TRIGGER reject_atomic_upgrade_session ON doxa_auth_sessions')
+      await pool.query('DROP FUNCTION reject_atomic_upgrade_session()')
+    }
+  })
+
+  it('rejects composite and partial identifier uniqueness that leaves login ambiguous', async () => {
+    await pool.query(await readFile(DOXA_AUTH_SIDECAR_MIGRATION_URL, 'utf8'))
+    await pool.query(`
+      CREATE TABLE ambiguous_auth_users (
+        user_id text PRIMARY KEY,
+        tenant_id text NOT NULL,
+        username text NOT NULL,
+        contact_email text NOT NULL,
+        password_hash text NOT NULL,
+        active boolean NOT NULL,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+      )
+    `)
+    await pool.query(
+      `CREATE UNIQUE INDEX ambiguous_auth_username_tenant_idx
+       ON ambiguous_auth_users (lower(username), tenant_id)`,
+    )
+    await pool.query(
+      `CREATE UNIQUE INDEX ambiguous_auth_active_username_idx
+       ON ambiguous_auth_users (lower(username)) WHERE active`,
+    )
+
+    const auth = new PostgresAuth({
+      connectionString,
+      secureCookies: false,
+      trustedOrigins: ['http://doxa.test'],
+    })
+    auth.bindCompiledAuthentication(
+      mappedAuthentication({
+        mode: 'login-only',
+        table: 'ambiguous_auth_users',
+        verification: { mode: 'trusted' },
+      }),
+    )
+    await expect(auth.start(lifecycleContext())).rejects.toThrow(
+      'Normalized auth identifiers require citext uniqueness or a unique lower(column) index.',
+    )
+  })
+
+  it('uses direct case-insensitive lookup for a unique citext identifier', async () => {
+    await pool.query('CREATE EXTENSION IF NOT EXISTS citext')
+    await pool.query(`
+      CREATE TABLE citext_auth_users (
+        user_id text PRIMARY KEY,
+        username citext NOT NULL UNIQUE,
+        contact_email text NOT NULL,
+        password_hash text NOT NULL,
+        active boolean NOT NULL,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+      )
+    `)
+    await pool.query(
+      `INSERT INTO citext_auth_users
+       (user_id, username, contact_email, password_hash, active, created_at, updated_at)
+       VALUES ('citext-1', 'CaseUser', 'case@example.com', $1, true, now(), now())`,
+      ['$2b$10$rIv/DSLLlVci6r6U.W.N.e0DggFleAwndNLWyGmpJvbsVP//5EQaK'],
+    )
+
+    const auth = new PostgresAuth({
+      connectionString,
+      secureCookies: false,
+      trustedOrigins: ['http://doxa.test'],
+    })
+    auth.bindCompiledAuthentication(
+      mappedAuthentication({
+        mode: 'login-only',
+        table: 'citext_auth_users',
+        verification: { mode: 'trusted' },
+        write: {
+          destination: 'in-place',
+          format: 'doxa-argon2id',
+          table: 'citext_auth_users',
+          identityId: 'user_id',
+          password: 'password_hash',
+          updatedAt: 'updated_at',
+        },
+      }),
+    )
+    await auth.start(lifecycleContext())
+    try {
+      expect(
+        (await auth.login({ identifier: 'CASEUSER', password: 'legacy secure password' })).identity,
+      ).toEqual(expect.objectContaining({ id: 'citext-1', identifier: 'caseuser' }))
     } finally {
       await auth.dispose(lifecycleContext())
     }
@@ -3851,6 +4074,7 @@ function mappedAuthentication(options: {
   readonly verification: CompiledAuthentication['verification']
   readonly eligibility?: CompiledAuthentication['eligibility']
   readonly readers?: CompiledAuthentication['credentials']['readers']
+  readonly write?: CompiledAuthentication['credentials']['write']
 }): CompiledAuthentication {
   const table =
     options.table ??
@@ -3874,7 +4098,7 @@ function mappedAuthentication(options: {
       table,
       identityId: 'user_id',
       readers: options.readers ?? [{ preset: 'bcrypt', hash: 'password_hash' }],
-      write: { destination: 'sidecar', format: 'doxa-argon2id' },
+      write: options.write ?? { destination: 'sidecar', format: 'doxa-argon2id' },
     },
     routes: {
       registration: options.mode === 'managed',

@@ -188,6 +188,96 @@ describe('compiled authentication identity mappings', () => {
       `),
     ).rejects.toThrow('Auth identity attribute missingEmail is not declared')
   })
+
+  it('compiles identities without a contact email as unsupported for email verification', async () => {
+    const result = await compileFixture(`
+      import { DoxaApplication, Feature, Model, type ModelAttributes } from '@doxajs/core'
+      interface UserAttributes extends ModelAttributes {
+        id: string; username: string; createdAt: Date; updatedAt: Date
+      }
+      class User extends Model<UserAttributes> {
+        static override readonly id = 'user'
+        static override readonly table = 'users'
+      }
+      class AppFeature extends Feature { id = 'app'; models = [User] }
+      export class Application extends DoxaApplication {
+        id = 'contactless-auth'; features = [AppFeature]
+        framework = { auth: { identity: {
+          mode: 'login-only', model: User,
+          identifier: { kind: 'username', attribute: 'username', normalize: { preset: 'lowercase' } },
+          timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
+          verification: { mode: 'trusted' },
+          credentials: {
+            table: 'users', identityId: 'id', readers: [{ preset: 'bcrypt', hash: 'password' }],
+            write: { format: 'doxa-argon2id', destination: 'sidecar' },
+          },
+        } } } as const
+      }
+    `)
+
+    expect(result.manifest.authentication.verification).toEqual({ mode: 'unsupported' })
+    expect(result.manifest.authentication.routes).toEqual(
+      expect.objectContaining({ verification: false, recovery: false }),
+    )
+  })
+
+  it('rejects incompatible identifier kinds and normalization presets', async () => {
+    await expect(
+      compileFixture(`
+        import { DoxaApplication, Feature } from '@doxajs/core'
+        class AppFeature extends Feature { id = 'app' }
+        export class Application extends DoxaApplication {
+          id = 'invalid-normalization'; features = [AppFeature]
+          framework = { auth: { identity: {
+            mode: 'login-only', table: 'users',
+            columns: { id: 'id', identifier: 'email', createdAt: 'created_at', updatedAt: 'updated_at' },
+            identifier: { kind: 'email', normalize: { preset: 'lowercase' } },
+            verification: { mode: 'trusted' },
+            credentials: {
+              table: 'users', identityId: 'id', readers: [{ preset: 'bcrypt', hash: 'password' }],
+              write: { format: 'doxa-argon2id', destination: 'sidecar' },
+            },
+          } } } as const
+        }
+      `),
+    ).rejects.toThrow('Email auth identifiers require email or email-or-domain normalization')
+  })
+
+  it('checks registration-factory services for duplicate stable provider IDs', async () => {
+    await expect(
+      compileFixture(`
+        import { DoxaApplication, Feature, Model, type ModelAttributes } from '@doxajs/core'
+        interface UserAttributes extends ModelAttributes {
+          id: string; email: string; createdAt: Date; updatedAt: Date
+        }
+        class User extends Model<UserAttributes> {
+          static override readonly id = 'user'
+          static override readonly table = 'users'
+        }
+        class UserURL {}
+        class RootProvider { static readonly id = 'root'; constructor(_url: UserURL) {} }
+        class UserUrl { defaults() { return {} } }
+        class AppFeature extends Feature {
+          id = 'app'; providers = [RootProvider]; models = [User]
+        }
+        export class Application extends DoxaApplication {
+          id = 'duplicate-factory'; features = [AppFeature]
+          framework = { auth: { identity: {
+            mode: 'managed', model: User,
+            identifier: { kind: 'email', attribute: 'email', normalize: { preset: 'email' } },
+            contactEmail: 'email',
+            timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
+            verification: { mode: 'trusted' },
+            credentials: {
+              table: 'users', identityId: 'id', readers: [{ preset: 'bcrypt', hash: 'password' }],
+              write: { format: 'doxa-argon2id', destination: 'sidecar' },
+            },
+            registrationFactory: UserUrl,
+          } } } as const
+        }
+      `),
+    ).rejects.toThrow('Duplicate provider ID: service:app/user-url')
+  })
 })
 
 async function compileFixture(source: string) {

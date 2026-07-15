@@ -324,6 +324,8 @@ export async function compileApplication(
   for (const [handler, root] of signalHandlerRoots) registerSignalHandler(handler, root.ownerId)
   for (const [command, root] of commandRoots) registerCommand(command, root.ownerId)
 
+  const authentication = compileAuthentication()
+
   assertUnique(providers, (provider) => provider.id, 'provider ID')
   assertUnique(actions, (operation) => operation.id, 'action ID')
   assertUnique(queries, (operation) => operation.id, 'query ID')
@@ -362,7 +364,6 @@ export async function compileApplication(
       )
     }
   }
-  const authentication = compileAuthentication()
   assertAcyclicProviderGraph(providers)
   assertScopeSafety(providers)
   const transactionProviders = providers.filter((provider) =>
@@ -593,6 +594,16 @@ export async function compileApplication(
     const normalization = compileNormalization(
       requiredObjectFieldObject(identifierObject, 'normalize'),
     )
+    const emailNormalization =
+      normalization.preset === 'email' || normalization.preset === 'email-or-domain'
+    if ((kind === 'email') !== emailNormalization) {
+      fail(
+        identifierObject,
+        kind === 'email'
+          ? 'Email auth identifiers require email or email-or-domain normalization.'
+          : 'Email normalization requires the email auth identifier kind.',
+      )
+    }
     const credentials = compileCredentials(requiredObjectFieldObject(identity, 'credentials'))
     const eligibilityObject = objectField(identity, 'eligibility')
     const modelProperty = objectField(identity, 'model')
@@ -611,10 +622,13 @@ export async function compileApplication(
       const timestamps = requiredObjectFieldObject(identity, 'timestamps')
       const createdAt = requiredObjectString(timestamps, 'createdAt')
       const updatedAt = requiredObjectString(timestamps, 'updatedAt')
-      const verification = compileModelVerification(
+      const configuredVerification = compileModelVerification(
         requiredObjectFieldObject(identity, 'verification'),
         model,
       )
+      const verification = contactEmail
+        ? configuredVerification
+        : ({ mode: 'unsupported' } as const)
       const attributes = new Set(model.attributes)
       const credentialColumns = new Set([
         ...credentials.readers.map((reader) => reader.hash),

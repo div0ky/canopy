@@ -149,6 +149,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
   #compiledAuthentication: CompiledAuthenticationConfiguration | undefined
   #compiledRuntime: CompiledAuthenticationRuntimeBinding | undefined
   #databaseGeneratedIdentityId = false
+  #mappedIdentifierUsesDirectComparison = false
   #mappedTables: NonNullable<PostgresAuthOptions['tables']> | undefined
   readonly #absoluteSessionSeconds: number
   readonly #idleSessionSeconds: number
@@ -294,7 +295,9 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     try {
       await pool.query('select 1')
       if (this.#mappedTables) {
-        this.#databaseGeneratedIdentityId = await validateMappedAuthTables(pool, this.#mappedTables)
+        const validation = await validateMappedAuthTables(pool, this.#mappedTables)
+        this.#databaseGeneratedIdentityId = validation.databaseGeneratedIdentityId
+        this.#mappedIdentifierUsesDirectComparison = validation.identifierUsesDirectComparison
       }
       this.#pool = pool
       this.#database = drizzle(pool, { schema: authSchema })
@@ -311,6 +314,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     this.#database = undefined
     this.#dummyPassword = undefined
     this.#databaseGeneratedIdentityId = false
+    this.#mappedIdentifierUsesDirectComparison = false
     if (pool) await pool.end()
   }
 
@@ -448,7 +452,12 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     const bucket = `${email}\0${metadata.ipAddress ?? ''}`
     await this.#rateLimit('login', bucket, 5, 15 * 60, 15 * 60)
     const mappedRow = this.#mappedTables
-      ? await findMappedLogin(this.#requirePool(), this.#mappedTables, email)
+      ? await findMappedLogin(
+          this.#requirePool(),
+          this.#mappedTables,
+          email,
+          this.#mappedIdentifierUsesDirectComparison,
+        )
       : undefined
     const [defaultRow] = this.#mappedTables
       ? []
@@ -496,31 +505,9 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
           mappedVerification?.needsUpgrade && this.#mappedTables?.passwords.mode === 'managed',
         )
       : needsRehash(row.password)
-    if (shouldUpgrade) {
-      const upgraded = await createPasswordRecord(input.password)
-      if (this.#mappedTables)
-        await updateMappedPassword(
-          this.#requirePool(),
-          this.#mappedTables.passwords,
-          row.identity.id,
-          upgraded,
-          new Date(),
-        )
-      else
-        await database
-          .update(authPasswords)
-          .set({
-            version: upgraded.version,
-            salt: upgraded.salt,
-            hash: upgraded.hash,
-            parameters: upgraded.parameters,
-            updatedAt: new Date(),
-          })
-          .where(eq(authPasswords.identityId, row.identity.id))
-    }
-
     const token = randomBytes(32).toString('base64url')
     const now = new Date()
+    const upgraded = shouldUpgrade ? await createPasswordRecord(input.password) : undefined
     const session = Object.freeze({
       id: randomUUID(),
       identityId: row.identity.id,
@@ -528,7 +515,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
       authenticatedAt: now,
       expiresAt: new Date(now.getTime() + this.#absoluteSessionSeconds * 1_000),
     })
-    await database.transaction(async (transaction) => {
+    const persistSession = async (transaction: Database): Promise<void> => {
       await transaction.insert(authSessions).values({
         ...session,
         tokenDigest: digest(token),
@@ -545,7 +532,29 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
         metadata: {},
         occurredAt: now,
       })
-    })
+    }
+    if (this.#mappedTables && upgraded) {
+      await this.#mappedTransaction(async (transaction, client) => {
+        await updateMappedPassword(
+          client,
+          this.#mappedTables!.passwords,
+          row.identity.id,
+          upgraded,
+          now,
+        )
+        await persistSession(transaction)
+      })
+    } else {
+      await database.transaction(async (transaction) => {
+        if (upgraded) {
+          await transaction
+            .update(authPasswords)
+            .set({ ...upgraded, updatedAt: now })
+            .where(eq(authPasswords.identityId, row.identity.id))
+        }
+        await persistSession(transaction as unknown as Database)
+      })
+    }
     return Object.freeze({
       identity: identityFromStored(row.identity, this.#mappedTables?.identities),
       session,
@@ -630,7 +639,13 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
       60 * 60,
     )
     const identity = this.#mappedTables
-      ? await findMappedIdentity(this.#requirePool(), this.#mappedTables.identities, 'email', email)
+      ? await findMappedIdentity(
+          this.#requirePool(),
+          this.#mappedTables.identities,
+          'email',
+          email,
+          this.#mappedIdentifierUsesDirectComparison,
+        )
       : (
           await this.#requireDatabase()
             .select({
@@ -1367,7 +1382,11 @@ interface StoredIdentity {
 }
 
 function validateAuthMappings(tables: NonNullable<PostgresAuthOptions['tables']>): void {
-  for (const mapping of [tables.identities, tables.passwords]) {
+  for (const mapping of [
+    tables.identities,
+    tables.passwords,
+    ...(tables.passwords.legacy ? [tables.passwords.legacy] : []),
+  ]) {
     if (!validQualifiedIdentifier(mapping.table))
       throw new Error(`Invalid mapped auth table name ${mapping.table}.`)
   }
@@ -1381,6 +1400,10 @@ function validateAuthMappings(tables: NonNullable<PostgresAuthOptions['tables']>
     ['identityId', tables.passwords.identityId],
     ['password', tables.passwords.password],
     ['passwordUpdatedAt', tables.passwords.updatedAt],
+    ['legacyIdentityId', tables.passwords.legacy?.identityId],
+    ...(tables.passwords.legacy?.readers.map(
+      (reader) => ['legacyPassword', reader.hash] as const,
+    ) ?? []),
   ] as const) {
     if (column !== undefined) {
       if (typeof column !== 'string' || !validIdentifier(column))
@@ -1392,7 +1415,10 @@ function validateAuthMappings(tables: NonNullable<PostgresAuthOptions['tables']>
 async function validateMappedAuthTables(
   queryable: Queryable,
   tables: NonNullable<PostgresAuthOptions['tables']>,
-): Promise<boolean> {
+): Promise<{
+  readonly databaseGeneratedIdentityId: boolean
+  readonly identifierUsesDirectComparison: boolean
+}> {
   const identityColumns = [
     tables.identities.id,
     tables.identities.email,
@@ -1494,9 +1520,11 @@ async function validateMappedAuthTables(
   )
   if (
     tables.passwords.mode === 'managed' &&
-    passwordMetadata.get(tables.passwords.password)?.generated
+    [tables.passwords.password, tables.passwords.updatedAt].some(
+      (column) => passwordMetadata.get(column)?.generated,
+    )
   ) {
-    throw new Error(`Managed auth credential column ${tables.passwords.password} must be writable.`)
+    throw new Error('Managed auth credential columns must be writable.')
   }
   if (tables.passwords.legacy) {
     const legacyMetadata = await mappedColumnMetadata(queryable, tables.passwords.legacy.table)
@@ -1506,7 +1534,13 @@ async function validateMappedAuthTables(
   }
   await assertIdentifierUnique(queryable, tables.identities, identityMetadata)
   await assertCredentialRowsUnique(queryable, tables.passwords)
-  return identityMetadata.get(tables.identities.id)?.databaseGenerated === true
+  return {
+    databaseGeneratedIdentityId:
+      identityMetadata.get(tables.identities.id)?.databaseGenerated === true,
+    identifierUsesDirectComparison:
+      tables.identities.normalization?.preset === 'exact' ||
+      identityMetadata.get(tables.identities.email)?.type === 'citext',
+  }
 }
 
 const TEXT_TYPES = new Set(['text', 'varchar', 'bpchar', 'citext'])
@@ -1538,7 +1572,7 @@ async function mappedColumnMetadata(
      FROM pg_attribute a
      JOIN pg_type t ON t.oid = a.atttypid
      WHERE a.attrelid = to_regclass($1) AND a.attnum > 0 AND NOT a.attisdropped`,
-    [table],
+    [quoteQualified(table)],
   )
   return new Map(
     result.rows.map((row) => [
@@ -1561,7 +1595,7 @@ async function mappedPrimaryKey(queryable: Queryable, table: string): Promise<re
        ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey::smallint[])
      WHERE i.indrelid = to_regclass($1) AND i.indisprimary
      ORDER BY array_position(i.indkey::smallint[], a.attnum)`,
-    [table],
+    [quoteQualified(table)],
   )
   return result.rows.map((row) => row.column_name)
 }
@@ -1583,20 +1617,27 @@ async function assertIdentifierUnique(
   mapping: AuthIdentityTableMapping,
   metadata: ReadonlyMap<string, MappedColumnMetadata>,
 ): Promise<void> {
-  const indexes = await queryable.query<{ definition: string } & QueryResultRow>(
-    `SELECT pg_get_indexdef(indexrelid) AS definition
+  const indexes = await queryable.query<
+    { key_expression: string; key_count: number } & QueryResultRow
+  >(
+    `SELECT pg_get_indexdef(indexrelid, 1, true) AS key_expression,
+            indnkeyatts AS key_count
      FROM pg_index
-     WHERE indrelid = to_regclass($1) AND indisunique AND indisvalid`,
-    [mapping.table],
+     WHERE indrelid = to_regclass($1)
+       AND indisunique
+       AND indisvalid
+       AND indpred IS NULL`,
+    [quoteQualified(mapping.table)],
   )
   const normalization = mapping.normalization?.preset ?? 'email'
-  const compatible = indexes.rows.some(({ definition }) => {
-    const normalizedDefinition = definition.replaceAll('"', '').replace(/\s+/g, '').toLowerCase()
+  const compatible = indexes.rows.some(({ key_expression: expression, key_count: keyCount }) => {
+    if (Number(keyCount) !== 1) return false
+    const normalizedExpression = expression.replaceAll('"', '').replace(/\s+/g, '').toLowerCase()
     const column = mapping.email.toLowerCase()
-    const direct = normalizedDefinition.includes(`(${column})`)
+    const direct = normalizedExpression === column
     const lowered =
-      normalizedDefinition.includes(`lower(${column})`) ||
-      normalizedDefinition.includes(`lower((${column})::text)`)
+      normalizedExpression === `lower(${column})` ||
+      normalizedExpression === `lower((${column})::text)`
     return normalization === 'exact'
       ? direct
       : metadata.get(mapping.email)?.type === 'citext'
@@ -1685,6 +1726,7 @@ async function findMappedIdentity(
   mapping: AuthIdentityTableMapping,
   by: 'id' | 'email',
   value: string,
+  identifierUsesDirectComparison = false,
 ): Promise<AuthIdentity | undefined> {
   const rows = await queryable.query<MappedIdentityRow>(
     `
@@ -1698,7 +1740,11 @@ async function findMappedIdentity(
       i.${quoteIdentifier(mapping.updatedAt)} AS updated_at
     FROM ${quoteQualified(mapping.table)} i
     ${verificationJoin(mapping, 'i')}
-    WHERE i.${quoteIdentifier(mapping[by])} = $1
+    WHERE ${
+      by === 'email'
+        ? mappedIdentifierPredicate(mapping, 'i', identifierUsesDirectComparison)
+        : `i.${quoteIdentifier(mapping.id)}::text = $1`
+    }
     LIMIT 1
   `,
     [value],
@@ -1789,6 +1835,7 @@ async function findMappedLogin(
   queryable: Queryable,
   tables: NonNullable<PostgresAuthOptions['tables']>,
   email: string,
+  identifierUsesDirectComparison = false,
 ): Promise<{ identity: StoredIdentity; password: MappedPasswordCredential } | undefined> {
   const identity = tables.identities
   const password = tables.passwords
@@ -1816,7 +1863,7 @@ async function findMappedLogin(
     ${legacy ? 'LEFT' : 'INNER'} JOIN ${quoteQualified(password.table)} p
       ON p.${quoteIdentifier(password.identityId)}::text = i.${quoteIdentifier(identity.id)}::text
     ${legacy ? `LEFT JOIN ${quoteQualified(legacy.table)} lp ON lp.${quoteIdentifier(legacy.identityId)}::text = i.${quoteIdentifier(identity.id)}::text` : ''}
-    WHERE i.${quoteIdentifier(identity.email)} = $1
+    WHERE ${mappedIdentifierPredicate(identity, 'i', identifierUsesDirectComparison)}
     LIMIT 1
   `,
     [email],
@@ -1836,7 +1883,7 @@ async function findMappedLogin(
     password: {
       encoded,
       readers: row.password_record
-        ? [{ preset: 'doxa-argon2id', hash: password.password }]
+        ? currentPasswordReaders(password)
         : (legacy?.readers.filter((reader) => reader.hash === legacyColumns[legacyIndex]) ?? []),
     },
   }
@@ -1860,9 +1907,7 @@ async function findMappedPassword(
   if (encoded)
     return {
       encoded,
-      readers: mapping.legacy
-        ? [{ preset: 'doxa-argon2id', hash: mapping.password }]
-        : (mapping.readers ?? [{ preset: 'doxa-argon2id', hash: mapping.password }]),
+      readers: currentPasswordReaders(mapping),
     }
   if (!mapping.legacy) return undefined
   const legacyColumns = [...new Set(mapping.legacy.readers.map((reader) => reader.hash))]
@@ -1984,7 +2029,9 @@ function identityFromStored(row: StoredIdentity, mapping?: AuthIdentityTableMapp
   const verificationMode = mapping?.verificationMode ?? 'mapped'
   return Object.freeze({
     id: row.id,
-    identifier: row.email,
+    identifier: mapping
+      ? normalizeIdentifier(row.email, mapping.normalization ?? { preset: 'email' })
+      : row.email,
     identifierKind: mapping?.identifierKind ?? 'email',
     ...(!mapping
       ? { contactEmail: row.email }
@@ -1999,6 +2046,30 @@ function identityFromStored(row: StoredIdentity, mapping?: AuthIdentityTableMapp
           : 'unverified',
     createdAt: row.createdAt,
   })
+}
+
+function currentPasswordReaders(
+  mapping: AuthPasswordTableMapping,
+): readonly CompiledCredentialReader[] {
+  const readers = [
+    { preset: 'doxa-argon2id' as const, hash: mapping.password },
+    ...(mapping.legacy ? [] : (mapping.readers ?? [])),
+  ]
+  return readers.filter(
+    (reader, index) =>
+      readers.findIndex((candidate) => candidate.preset === reader.preset) === index,
+  )
+}
+
+function mappedIdentifierPredicate(
+  mapping: AuthIdentityTableMapping,
+  alias: string,
+  identifierUsesDirectComparison: boolean,
+): string {
+  const column = `${alias}.${quoteIdentifier(mapping.email)}`
+  return mapping.normalization?.preset === 'exact' || identifierUsesDirectComparison
+    ? `${column} = $1`
+    : `lower(${column}) = $1`
 }
 
 function verificationSelect(mapping: AuthIdentityTableMapping, alias?: string): string {
