@@ -119,6 +119,19 @@ export interface ModelQueryDiagnostic {
       }
 }
 
+export interface ModelOperationDiagnostic {
+  readonly operation: 'find' | 'save' | 'delete' | 'refresh' | 'query' | 'aggregate'
+  readonly entityType: string
+  readonly storage: ModelStorage['kind']
+}
+
+export interface ModelOperationObserver {
+  observe<Output>(
+    diagnostic: ModelOperationDiagnostic,
+    work: () => Promise<Output>,
+  ): Promise<Output>
+}
+
 export class ModelNotFoundError extends Error {
   override readonly name = 'ModelNotFoundError'
 
@@ -530,6 +543,7 @@ export class ModelSession {
     private readonly observers?: ModelObserverDispatcher,
     private readonly writable = true,
     private readonly queryDiagnostics?: (diagnostic: ModelQueryDiagnostic) => void | Promise<void>,
+    private readonly operations?: ModelOperationObserver,
   ) {}
 
   get active(): boolean {
@@ -546,7 +560,9 @@ export class ModelSession {
     const identity = `${type}/${id}`
     const existing = this.#identityMap.get(identity)
     if (existing) return existing as Instance
-    const persisted = await this.reader.findEntity(type, id, definition.storage)
+    const persisted = await this.observeOperation(definition, 'find', () =>
+      this.reader.findEntity(type, id, definition.storage),
+    )
     if (!persisted) return undefined
     const attributes = clone(persisted.state) as unknown as Attributes
     const model = new Constructor(attributes)
@@ -617,14 +633,16 @@ export class ModelSession {
       (attribute) => !Object.hasOwn(internals.attributes, attribute),
     )
     const pendingIdentity = model.id
-    const saved = await this.writer().saveEntity({
-      type,
-      id: model.id,
-      ...(internals.version !== undefined ? { expectedVersion: internals.version } : {}),
-      state: clone(internals.attributes) as unknown as JsonValue,
-      ...(removedAttributes.length > 0 ? { removedAttributes } : {}),
-      storage: definition.storage,
-    })
+    const saved = await this.observeOperation(definition, 'save', () =>
+      this.writer().saveEntity({
+        type,
+        id: model.id,
+        ...(internals.version !== undefined ? { expectedVersion: internals.version } : {}),
+        state: clone(internals.attributes) as unknown as JsonValue,
+        ...(removedAttributes.length > 0 ? { removedAttributes } : {}),
+        storage: definition.storage,
+      }),
+    )
     const version = typeof saved === 'number' ? saved : saved.version
     if (typeof saved !== 'number' && saved.id && saved.id !== pendingIdentity) {
       internals.generatedIdentity(saved.id)
@@ -664,7 +682,9 @@ export class ModelSession {
     }
     const definition = this.definitionFor(model.constructor as Function)
     const type = definition.entityType
-    await this.writer().deleteEntity(type, model.id, internals.version, definition.storage)
+    await this.observeOperation(definition, 'delete', () =>
+      this.writer().deleteEntity(type, model.id, internals.version!, definition.storage),
+    )
     for (const fact of internals.pendingJournal) {
       await this.writer().record({
         type: fact.type,
@@ -691,7 +711,9 @@ export class ModelSession {
     this.assertAttached(model)
     const definition = this.definitionFor(model.constructor as Function)
     const type = definition.entityType
-    const persisted = await this.reader.findEntity(type, model.id, definition.storage)
+    const persisted = await this.observeOperation(definition, 'refresh', () =>
+      this.reader.findEntity(type, model.id, definition.storage),
+    )
     if (!persisted) throw new ModelNotFoundError(model.constructor.name, model.id)
     model[MODEL_INTERNALS]().replace(
       clone(persisted.state) as unknown as Attributes,
@@ -713,10 +735,12 @@ export class ModelSession {
     const definition = this.definitionFor(Constructor)
     await this.diagnose(Constructor, definition, plan)
     const resolvedPlan = await this.resolveRelationshipConstraints(Constructor, plan)
-    const persisted = await this.reader.queryEntities<Attributes & JsonValue>(
-      definition.entityType,
-      definition.storage,
-      resolvedPlan,
+    const persisted = await this.observeOperation(definition, 'query', () =>
+      this.reader.queryEntities<Attributes & JsonValue>(
+        definition.entityType,
+        definition.storage,
+        resolvedPlan,
+      ),
     )
     const models: Instance[] = []
     for (const entity of persisted)
@@ -740,10 +764,11 @@ export class ModelSession {
     const definition = this.definitionFor(Constructor)
     await this.diagnose(Constructor, definition, plan)
     const resolvedPlan = await this.resolveRelationshipConstraints(Constructor, plan)
-    const persisted = await this.reader.queryEntities<Attributes & JsonValue>(
-      definition.entityType,
-      definition.storage,
-      { ...resolvedPlan, eagerLoads: [] },
+    const persisted = await this.observeOperation(definition, 'query', () =>
+      this.reader.queryEntities<Attributes & JsonValue>(definition.entityType, definition.storage, {
+        ...resolvedPlan,
+        eagerLoads: [],
+      }),
     )
     return persisted.map((entity) => (entity.state as Attributes)[attribute])
   }
@@ -762,12 +787,14 @@ export class ModelSession {
     const definition = this.definitionFor(Constructor)
     await this.diagnose(Constructor, definition, plan)
     const resolvedPlan = await this.resolveRelationshipConstraints(Constructor, plan)
-    return this.reader.aggregateEntities(
-      definition.entityType,
-      definition.storage,
-      { ...resolvedPlan, eagerLoads: [] },
-      operation,
-      attribute,
+    return this.observeOperation(definition, 'aggregate', () =>
+      this.reader.aggregateEntities(
+        definition.entityType,
+        definition.storage,
+        { ...resolvedPlan, eagerLoads: [] },
+        operation,
+        attribute,
+      ),
     )
   }
 
@@ -1131,6 +1158,22 @@ export class ModelSession {
       ...(pageSize === undefined ? {} : { pageSize }),
       storage,
     })
+  }
+
+  private async observeOperation<Output>(
+    definition: { readonly entityType: string; readonly storage: ModelStorage },
+    operation: ModelOperationDiagnostic['operation'],
+    work: () => Promise<Output>,
+  ): Promise<Output> {
+    if (!this.operations) return await work()
+    return await this.operations.observe(
+      {
+        operation,
+        entityType: definition.entityType,
+        storage: definition.storage.kind,
+      },
+      work,
+    )
   }
 
   private assertAttached(model: Model): void {

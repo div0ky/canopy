@@ -51,6 +51,7 @@ pnpm doxa graph
 pnpm doxa db:studio
 pnpm doxa add sendgrid
 pnpm doxa add twilio-sms
+pnpm doxa add opentelemetry
 pnpm doxa add theoria
 pnpm test
 ```

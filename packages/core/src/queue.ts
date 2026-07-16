@@ -1,6 +1,6 @@
 import { currentJobDispatcher } from './queue-context.js'
 import { DoxaRole } from './role.js'
-import type { ActorRef, JsonValue, TenantRef, TraceContext } from './index.js'
+import type { ActorRef, JsonValue, SpanLink, TenantRef, TraceContext } from './index.js'
 
 export interface JobDispatchOptions {
   readonly delaySeconds?: number
@@ -143,6 +143,9 @@ export abstract class QueueManager {
   abstract enqueue(envelope: QueueEnvelope): Promise<string>
   abstract flushOutbox(): Promise<number>
   abstract findJob(id: string): Promise<QueueJobRecord | undefined>
+  abstract findAttemptTrace(id: string, attempt: number): Promise<SpanLink | undefined>
+  abstract recordAttemptTrace(id: string, attempt: number, trace: SpanLink): Promise<void>
+  abstract clearAttemptTraces(id: string): Promise<void>
 }
 
 export interface QueueRuntimeRoles {

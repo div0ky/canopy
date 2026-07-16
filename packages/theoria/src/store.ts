@@ -6,6 +6,7 @@ export interface TheoriaQuery {
   readonly phase?: string
   readonly search?: string
   readonly limit?: number
+  readonly beforeSequence?: number
 }
 
 export interface TheoriaExecution {
@@ -32,6 +33,23 @@ export interface TheoriaEntry {
   readonly phase: string
   readonly occurredAt: string
   readonly durationMilliseconds?: number
+  readonly sequence: number
+}
+
+export interface TheoriaWaterfallSpan {
+  readonly traceId: string
+  readonly spanId: string
+  readonly parentSpanId?: string
+  readonly links?: Observation['context']['links']
+  readonly executionId?: string
+  readonly sourceExecutionId?: string
+  readonly name: string
+  readonly kind: string
+  readonly roleId?: string
+  readonly startedAt: string
+  readonly endedAt: string
+  readonly durationMilliseconds: number
+  readonly status: 'ok' | 'error'
 }
 
 export class TheoriaStore {
@@ -59,6 +77,10 @@ export class TheoriaStore {
         `(candidate.name ILIKE $${values.length} OR candidate.role_id ILIKE $${values.length} OR candidate.actor_id ILIKE $${values.length} OR candidate.execution_id::text ILIKE $${values.length} OR candidate.correlation_id::text ILIKE $${values.length})`,
       )
     }
+    if (query.beforeSequence !== undefined) {
+      values.push(query.beforeSequence)
+      conditions.push(`candidate.sequence < $${values.length}`)
+    }
     values.push(limit)
     const result = await this.#pool.query<{
       execution_id: string
@@ -74,7 +96,7 @@ export class TheoriaStore {
       `
       WITH eligible AS (
         SELECT DISTINCT candidate.execution_id
-        FROM doxa_theoria_observations candidate
+        FROM doxa_theoria_all_observations candidate
         WHERE ${conditions.join(' AND ')}
       ), ranked AS (
         SELECT observation.execution_id, observation.correlation_id, observation.source_execution_id,
@@ -93,7 +115,7 @@ export class TheoriaStore {
               observation.occurred_at DESC,
               observation.id DESC
           ) AS position
-        FROM doxa_theoria_observations observation
+        FROM doxa_theoria_all_observations observation
         JOIN eligible ON eligible.execution_id = observation.execution_id
       )
       SELECT execution_id, correlation_id, source_execution_id, name, transport, phase,
@@ -135,6 +157,10 @@ export class TheoriaStore {
         `(name ILIKE $${values.length} OR role_id ILIKE $${values.length} OR actor_id ILIKE $${values.length} OR execution_id::text ILIKE $${values.length} OR correlation_id::text ILIKE $${values.length})`,
       )
     }
+    if (query.beforeSequence !== undefined) {
+      values.push(query.beforeSequence)
+      conditions.push(`sequence < $${values.length}`)
+    }
     values.push(limit)
     const result = await this.#pool.query<{
       id: string
@@ -148,13 +174,14 @@ export class TheoriaStore {
       phase: string
       occurred_at: Date
       duration_ms: number | null
+      sequence: string
     }>(
       `
       SELECT id, execution_id, correlation_id, source_execution_id, name, kind, role_id,
-        transport, phase, occurred_at, duration_ms
-      FROM doxa_theoria_observations
+        transport, phase, occurred_at, duration_ms, sequence
+      FROM doxa_theoria_all_observations
       WHERE ${conditions.join(' AND ')}
-      ORDER BY occurred_at DESC, id DESC
+      ORDER BY sequence DESC NULLS LAST, occurred_at DESC, id DESC
       LIMIT $${values.length}
     `,
       values,
@@ -171,32 +198,95 @@ export class TheoriaStore {
       phase: row.phase,
       occurredAt: row.occurred_at.toISOString(),
       ...(row.duration_ms === null ? {} : { durationMilliseconds: row.duration_ms }),
+      sequence: Number(row.sequence),
     }))
   }
 
-  async timeline(executionId: string): Promise<readonly Observation[]> {
+  async timeline(
+    executionId: string,
+    query: Pick<TheoriaQuery, 'limit' | 'beforeSequence'> = {},
+  ): Promise<readonly Observation[]> {
     const correlation = await this.#pool.query<{ correlation_id: string | null }>(
       `
-      SELECT correlation_id FROM doxa_theoria_observations
+      SELECT correlation_id FROM doxa_theoria_all_observations
       WHERE execution_id = $1 ORDER BY sequence NULLS LAST, occurred_at, id LIMIT 1
     `,
       [executionId],
     )
     const correlationId = correlation.rows[0]?.correlation_id
+    const limit = Math.min(Math.max(query.limit ?? 5_000, 1), 10_000)
     const result = await this.#pool.query(
       `
-      SELECT * FROM doxa_theoria_observations
-      WHERE execution_id = $1 OR ($2::uuid IS NOT NULL AND correlation_id = $2::uuid)
+      SELECT * FROM (
+        SELECT * FROM doxa_theoria_all_observations
+        WHERE (execution_id = $1 OR ($2::text IS NOT NULL AND correlation_id = $2::text))
+          AND ($3::bigint IS NULL OR sequence < $3::bigint)
+        ORDER BY sequence DESC NULLS LAST, occurred_at DESC, id DESC
+        LIMIT $4
+      ) recent
       ORDER BY sequence NULLS LAST, occurred_at, id
     `,
-      [executionId, correlationId ?? null],
+      [executionId, correlationId ?? null, query.beforeSequence ?? null, limit],
     )
     return result.rows.map(toObservation)
+  }
+
+  async waterfall(
+    executionId: string,
+    query: Pick<TheoriaQuery, 'limit' | 'beforeSequence'> = {},
+  ): Promise<readonly TheoriaWaterfallSpan[]> {
+    const observations = await this.timeline(executionId, query)
+    const groups = new Map<string, Observation[]>()
+    for (const observation of observations) {
+      const traceId = observation.context.traceId
+      const spanId = observation.context.spanId
+      if (!traceId || !spanId || observation.phase === 'occurred') continue
+      const key = `${traceId}:${spanId}`
+      const group = groups.get(key) ?? []
+      group.push(observation)
+      groups.set(key, group)
+    }
+    return [...groups.values()]
+      .map(toWaterfallSpan)
+      .filter((span): span is TheoriaWaterfallSpan => span !== undefined)
+      .sort((left, right) => left.startedAt.localeCompare(right.startedAt))
   }
 
   async close(): Promise<void> {
     await this.#pool.end()
   }
+}
+
+function toWaterfallSpan(observations: readonly Observation[]): TheoriaWaterfallSpan | undefined {
+  const started = observations.find((observation) => observation.phase === 'started')
+  const terminal = observations.findLast(
+    (observation) => observation.phase === 'completed' || observation.phase === 'failed',
+  )
+  if (!terminal) return undefined
+  const traceId = terminal.context.traceId
+  const spanId = terminal.context.spanId
+  if (!traceId || !spanId) return undefined
+  const durationMilliseconds = terminal.durationMilliseconds ?? 0
+  const endedAt = terminal.occurredAt
+  const startedAt =
+    started?.occurredAt ?? new Date(Date.parse(endedAt) - durationMilliseconds).toISOString()
+  return Object.freeze({
+    traceId,
+    spanId,
+    ...(terminal.context.parentSpanId ? { parentSpanId: terminal.context.parentSpanId } : {}),
+    ...(terminal.context.links?.length ? { links: terminal.context.links } : {}),
+    ...(terminal.context.executionId ? { executionId: terminal.context.executionId } : {}),
+    ...(terminal.context.sourceExecutionId
+      ? { sourceExecutionId: terminal.context.sourceExecutionId }
+      : {}),
+    name: terminal.name,
+    kind: terminal.kind,
+    ...(terminal.roleId ? { roleId: terminal.roleId } : {}),
+    startedAt,
+    endedAt,
+    durationMilliseconds,
+    status: terminal.phase === 'failed' ? 'error' : 'ok',
+  })
 }
 
 function toObservation(row: Record<string, unknown>): Observation {
@@ -227,6 +317,12 @@ function toObservation(row: Record<string, unknown>): Observation {
         : {}),
       ...(optional<string>('trace_id') ? { traceId: optional<string>('trace_id')! } : {}),
       ...(optional<string>('span_id') ? { spanId: optional<string>('span_id')! } : {}),
+      ...(optional<string>('parent_span_id')
+        ? { parentSpanId: optional<string>('parent_span_id')! }
+        : {}),
+      ...(Array.isArray(row.span_links) && row.span_links.length > 0
+        ? { links: row.span_links as NonNullable<Observation['context']['links']> }
+        : {}),
       ...(optional<Observation['context']['actorKind']>('actor_kind')
         ? { actorKind: optional<Observation['context']['actorKind']>('actor_kind')! }
         : {}),
@@ -237,6 +333,9 @@ function toObservation(row: Record<string, unknown>): Observation {
         ? { transportName: optional<string>('transport_name')! }
         : {}),
     },
+    ...(row.resource && Object.keys(row.resource as object).length > 0
+      ? { resource: row.resource as NonNullable<Observation['resource']> }
+      : {}),
     attributes: row.attributes as Observation['attributes'],
     ...(row.error ? { error: row.error as NonNullable<Observation['error']> } : {}),
   }

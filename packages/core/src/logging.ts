@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 
 import type { JsonValue } from './index.js'
+import { safeDiagnosticError } from './privacy-error.js'
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'fatal'
 
@@ -13,6 +14,7 @@ export interface LogContext {
   readonly tenantId?: string
   readonly traceId?: string
   readonly spanId?: string
+  readonly parentSpanId?: string
   readonly transport?: string
 }
 
@@ -291,6 +293,7 @@ function sanitizeValue(value: unknown, seen: WeakSet<object>, depth: number): Js
 }
 
 function sanitizeError(error: unknown, seen = new Set<unknown>()): LogError {
+  error = safeDiagnosticError(error)
   if (!(error instanceof Error)) return { name: 'Error', message: redactText(String(error)) }
   if (seen.has(error)) return { name: error.name, message: '[CIRCULAR CAUSE]' }
   seen.add(error)

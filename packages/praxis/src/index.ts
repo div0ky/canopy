@@ -65,7 +65,7 @@ Build and inspect:
   gnosis                Generate Gnosis-readable application knowledge
   gnosis:install        Register Gnosis with project MCP clients [--agent=codex,claude,cursor,vscode|all]
   mcp                   Gnosis stdio entrypoint (normally launched by an MCP client)
-  add <plugin>          Install sendgrid, twilio-sms, or theoria
+  add <plugin>          Install opentelemetry, sendgrid, twilio-sms, or theoria
   delivery:list         List durable mail and SMS deliveries
   delivery:retry <id>   Redrive a failed or undelivered delivery
   queue:list            List durable queue jobs
@@ -126,7 +126,7 @@ Runtime:
   migrate               Apply pending forward migrations
   migrate:status        Show migration state
   db:studio             Browse PostgreSQL with Drizzle Studio [--host=127.0.0.1] [--port=4983] [--verbose]
-  theoria               Explore correlated runtime evidence [--host=127.0.0.1] [--port=4400]
+  theoria               Explore correlated runtime evidence [--host=127.0.0.1] [--port=4400] [--operator=id]
   theoria:prune         Enforce Theoria retention [--days=7] [--maximum=50000]
 
 Framework:
@@ -541,17 +541,37 @@ async function runTheoria(cwd: string, args: readonly string[], io: PraxisIo): P
     if (
       argument.startsWith('--database=') ||
       argument.startsWith('--host=') ||
-      argument.startsWith('--port=')
+      argument.startsWith('--port=') ||
+      argument.startsWith('--operator=')
     )
       continue
     throw new PraxisCommandError(`Unknown theoria option ${argument}.`)
   }
   const host = option(args, 'host') ?? '127.0.0.1'
   const port = integerOption(args, 'port', 4_400)
+  const loopback = host === '127.0.0.1' || host === 'localhost' || host === '::1'
+  const environment = { ...(await dotenvEnvironment(cwd)), ...process.env }
+  const token = environment.THEORIA_ACCESS_TOKEN
+  const operatorId = option(args, 'operator') ?? environment.THEORIA_OPERATOR_ID ?? 'doxa:operator'
+  if (!loopback && !token) {
+    throw new PraxisCommandError(
+      'Non-loopback Theoria requires THEORIA_ACCESS_TOKEN with at least 32 characters.',
+    )
+  }
   const service = await listenTheoria({
     connectionString: await databaseConnection(cwd, args),
     host,
     port,
+    ...(loopback
+      ? {}
+      : {
+          profile: 'production-diagnostics' as const,
+          access: { mode: 'bearer' as const, token: token!, operatorId },
+          audit: (event) =>
+            io.out(
+              `Theoria operator access ${event.outcome}: ${event.operatorId ?? 'unknown'} ${event.method} ${event.path}`,
+            ),
+        }),
   })
   io.out(`Theoria is revealing ${service.url.toString()}`)
   await new Promise<void>((resolve) => {
@@ -570,16 +590,18 @@ async function runTheoria(cwd: string, args: readonly string[], io: PraxisIo): P
 
 async function addPlugin(cwd: string, name: string): Promise<void> {
   const packageName =
-    name === 'sendgrid'
-      ? '@doxajs/sendgrid'
-      : name === 'twilio-sms'
-        ? '@doxajs/twilio-sms'
-        : name === 'theoria'
-          ? '@doxajs/theoria'
-          : undefined
+    name === 'opentelemetry'
+      ? '@doxajs/opentelemetry'
+      : name === 'sendgrid'
+        ? '@doxajs/sendgrid'
+        : name === 'twilio-sms'
+          ? '@doxajs/twilio-sms'
+          : name === 'theoria'
+            ? '@doxajs/theoria'
+            : undefined
   if (!packageName) {
     throw new PraxisCommandError(
-      `Unknown Doxa plugin ${name}. Supported plugins: sendgrid, twilio-sms, theoria.`,
+      `Unknown Doxa plugin ${name}. Supported plugins: opentelemetry, sendgrid, twilio-sms, theoria.`,
     )
   }
   const packagePath = path.join(cwd, 'package.json')

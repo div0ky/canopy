@@ -12,6 +12,7 @@
 - `@doxajs/postgres-drizzle`
 - `@doxajs/auth-postgres`
 - `@doxajs/queue-pg-boss`
+- `@doxajs/opentelemetry` — first-party OpenTelemetry tracing and metrics adapter.
 - `@doxajs/sendgrid`
 - `@doxajs/twilio-sms`
 - `@doxajs/theoria`

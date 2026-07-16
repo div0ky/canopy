@@ -73,6 +73,7 @@ describe('Doxa HTTP response envelopes', () => {
 
     const failure = await http.fetch(new Request('http://doxa.test/failure'))
     expect(failure.status).toBe(409)
+    expect(failure.headers.get('traceparent')).toBe(`00-${'1'.repeat(32)}-${'2'.repeat(16)}-01`)
     expect(await failure.json()).toEqual({
       ok: false,
       code: 'conflict',

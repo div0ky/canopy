@@ -8,6 +8,8 @@ Doxa documentation is organized by what a developer is trying to accomplish:
   work.
 - [Authentication](guides/authentication.md) covers sessions, bearer tokens, trusted origins, and
   sensitive-operation reauthentication.
+- [Observability, OpenTelemetry, and Theoria](guides/observability.md) covers distributed traces,
+  semantic debugging, production diagnostics, and privacy-safe AI evidence.
 - [Deployment](operations/deployment.md) describes production roles and release ordering.
 - [Packages](reference/packages.md) identifies supported public and framework-internal surfaces.
 - [Upgrading](upgrading/index.md) defines pre-1.0 compatibility and migration expectations.

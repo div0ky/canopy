@@ -11,7 +11,7 @@ artifacts, framework-owned identifiers, environment variables, and persistence n
 **Doxa.js** identity. The framework is called **Doxa** in code and conversation.
 
 The canonical npm scope is `@doxajs`, and the canonical web identity is `doxajs.com`. Praxis is the
-command and generator suite, Theoria is the development debugger, and Gnosis is the AI-assisted
+command and generator suite, Theoria is the execution debugger, and Gnosis is the AI-assisted
 engineering product. The earlier Caffeine name is retired.
 
 ## Context

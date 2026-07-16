@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { CronExpressionParser } from 'cron-parser'
 import type { PoolClient } from 'pg'
 import { Pool } from 'pg'
@@ -15,6 +15,7 @@ import {
   type QueueRuntimeRoles,
   QueueManager,
   type ScheduleDefinition,
+  type SpanLink,
   type Starts,
   type Stops,
 } from '@doxajs/core'
@@ -92,6 +93,8 @@ export class PgBossQueueManager extends QueueManager implements Starts, Drains, 
       await boss.createQueue(QUEUE_NAME)
       await boss.createQueue(SERIAL_SCHEDULE_QUEUE, { policy: 'singleton' })
       await boss.createQueue(PARALLEL_SCHEDULE_QUEUE)
+      this.#boss = boss
+      this.#pool = pool
       const workOptions = {
         includeMetadata: true,
         localConcurrency: this.options.localConcurrency ?? 2,
@@ -129,8 +132,6 @@ export class PgBossQueueManager extends QueueManager implements Starts, Drains, 
           )
           this.#scheduleWorkerIds.push({ queue, id })
         }
-      this.#boss = boss
-      this.#pool = pool
       this.#started = true
       if (this.#roles.scheduler) {
         await this.#loadScheduleControls()
@@ -143,6 +144,8 @@ export class PgBossQueueManager extends QueueManager implements Starts, Drains, 
         this.#scheduleOutboxPoll()
       }
     } catch (error) {
+      this.#boss = undefined
+      this.#pool = undefined
       await boss.stop({ graceful: false }).catch(() => undefined)
       await pool.end().catch(() => undefined)
       throw error
@@ -181,6 +184,34 @@ export class PgBossQueueManager extends QueueManager implements Starts, Drains, 
       retryLimit: job.retryLimit,
       ...(job.output === undefined ? {} : { output: job.output }),
     }
+  }
+
+  async findAttemptTrace(id: string, attempt: number): Promise<SpanLink | undefined> {
+    const result = await this.#requirePool().query<{ trace_id: string; span_id: string }>(
+      `SELECT trace_id, span_id FROM doxa_queue_attempt_traces
+       WHERE job_id = $1 AND attempt = $2`,
+      [id, attempt],
+    )
+    const row = result.rows[0]
+    return row ? Object.freeze({ traceId: row.trace_id, spanId: row.span_id }) : undefined
+  }
+
+  async recordAttemptTrace(id: string, attempt: number, trace: SpanLink): Promise<void> {
+    const pool = this.#requirePool()
+    await pool.query(
+      `INSERT INTO doxa_queue_attempt_traces (job_id, attempt, trace_id, span_id, updated_at)
+       VALUES ($1, $2, $3, $4, now())
+       ON CONFLICT (job_id, attempt) DO UPDATE
+       SET trace_id = excluded.trace_id, span_id = excluded.span_id, updated_at = now()`,
+      [id, attempt, trace.traceId, trace.spanId],
+    )
+    await pool.query(
+      `DELETE FROM doxa_queue_attempt_traces WHERE updated_at < now() - interval '30 days'`,
+    )
+  }
+
+  async clearAttemptTraces(id: string): Promise<void> {
+    await this.#requirePool().query('DELETE FROM doxa_queue_attempt_traces WHERE job_id = $1', [id])
   }
 
   async drain(_context: LifecycleContext): Promise<void> {
@@ -444,6 +475,11 @@ export class PgBossQueueManager extends QueueManager implements Starts, Drains, 
     if (!this.#boss) throw new Error('The Doxa pg-boss queue manager is not started.')
     return this.#boss
   }
+
+  #requirePool(): Pool {
+    if (!this.#pool) throw new Error('The Doxa pg-boss queue manager is not started.')
+    return this.#pool
+  }
 }
 
 export async function installQueueSchema(connectionString: string): Promise<void> {
@@ -452,12 +488,11 @@ export async function installQueueSchema(connectionString: string): Promise<void
   await boss.stop({ graceful: true })
   const pool = new Pool({ connectionString })
   try {
-    await pool.query(
-      await readFile(
-        new URL('../migrations/0001_doxa_schedule_controls.sql', import.meta.url),
-        'utf8',
-      ),
-    )
+    const directory = new URL('../migrations/', import.meta.url)
+    const migrations = (await readdir(directory)).filter((name) => name.endsWith('.sql')).sort()
+    for (const migration of migrations) {
+      await pool.query(await readFile(new URL(migration, directory), 'utf8'))
+    }
   } finally {
     await pool.end()
   }
@@ -500,6 +535,7 @@ export async function inspectQueueJob(
 export async function clearQueueJobs(connectionString: string): Promise<void> {
   const pool = new Pool({ connectionString })
   try {
+    await pool.query('DELETE FROM doxa_queue_attempt_traces')
     await pool.query('DELETE FROM pgboss.job WHERE name = ANY($1)', [
       [QUEUE_NAME, SERIAL_SCHEDULE_QUEUE, PARALLEL_SCHEDULE_QUEUE],
     ])

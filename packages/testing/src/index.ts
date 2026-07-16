@@ -49,6 +49,7 @@ import {
   type SaveEntity,
   SecretString,
   Signal,
+  type SpanLink,
   type StagedDelivery,
   TransactionManager,
   UnitOfWork,
@@ -482,6 +483,7 @@ export class TestAuth extends Auth {
 export class FakeQueueManager extends QueueManager {
   readonly queued: QueueEnvelope[] = []
   readonly schedules = new Map<string, ScheduleDefinition>()
+  readonly #attemptTraces = new Map<string, SpanLink>()
   #handler?: QueueDeliveryHandler
   bind(handler: QueueDeliveryHandler): void {
     this.#handler = handler
@@ -501,6 +503,18 @@ export class FakeQueueManager extends QueueManager {
     return this.queued.some((job) => job.id === id)
       ? { id, state: 'created', retryCount: 0, retryLimit: 0 }
       : undefined
+  }
+  async findAttemptTrace(id: string, attempt: number): Promise<SpanLink | undefined> {
+    const trace = this.#attemptTraces.get(`${id}:${attempt}`)
+    return trace ? structuredClone(trace) : undefined
+  }
+  async recordAttemptTrace(id: string, attempt: number, trace: SpanLink): Promise<void> {
+    this.#attemptTraces.set(`${id}:${attempt}`, structuredClone(trace))
+  }
+  async clearAttemptTraces(id: string): Promise<void> {
+    for (const key of this.#attemptTraces.keys()) {
+      if (key.startsWith(`${id}:`)) this.#attemptTraces.delete(key)
+    }
   }
   async runNext(attempt = 1): Promise<void> {
     const envelope = this.queued.shift()

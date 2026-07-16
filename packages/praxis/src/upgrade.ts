@@ -473,6 +473,7 @@ async function applyBuiltInRecipe(
 }
 
 const frameworkPluginPackages = [
+  '@doxajs/opentelemetry',
   '@doxajs/sendgrid',
   '@doxajs/theoria',
   '@doxajs/twilio-sms',

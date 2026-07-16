@@ -25,6 +25,13 @@ import {
   RuntimeIntegrityError,
 } from '@doxajs/runtime'
 import { PostgresTheoria } from '@doxajs/theoria'
+import { DoxaOpenTelemetry } from '@doxajs/opentelemetry'
+import { trace } from '@opentelemetry/api'
+import {
+  BasicTracerProvider,
+  InMemorySpanExporter,
+  SimpleSpanProcessor,
+} from '@opentelemetry/sdk-trace-base'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { Application } from '../examples/reference-app/dist/application.js'
@@ -32,9 +39,16 @@ import { FailCounter } from '../examples/reference-app/dist/fail-counter.js'
 import { IncrementCounter } from '../examples/reference-app/dist/increment-counter.js'
 import { lifecycleLog, resetLifecycleLog } from '../examples/reference-app/dist/lifecycle-log.js'
 import { NestedCounter } from '../examples/reference-app/dist/nested-counter.js'
+import { ObserveAi } from '../examples/reference-app/dist/observe-ai.js'
 import { MutateCounterQuery } from '../examples/reference-app/dist/mutate-counter-query.js'
 import { operationLog, resetOperationLog } from '../examples/reference-app/dist/operation-log.js'
 import { ReadCounter } from '../examples/reference-app/dist/read-counter.js'
+import {
+  referenceObservations,
+  referenceTelemetry,
+  resetReferenceObservability,
+} from '../examples/reference-app/dist/reference-observability.js'
+import { prepareFrameworkSource } from '../packages/compiler/src/framework-source.js'
 import { runWithModelSession } from '../packages/core/dist/model-session-context.js'
 import { assertManifest } from '../packages/manifest/dist/index.js'
 
@@ -46,6 +60,7 @@ describe('foundational compile-to-boot slice', () => {
   beforeEach(() => {
     resetLifecycleLog()
     resetOperationLog()
+    resetReferenceObservability()
   })
 
   afterEach(async () => {
@@ -64,6 +79,230 @@ describe('foundational compile-to-boot slice', () => {
     expect(String(secret)).toBe('[REDACTED]')
     expect(JSON.stringify({ secret })).toBe('{"secret":"[REDACTED]"}')
     expect(secret.reveal()).toBe('database-password')
+  })
+
+  it('compiles the public production Theoria profile and capture policy', () => {
+    const prepared = prepareFrameworkSource(
+      'app.config.ts',
+      `export class Application {
+        id = 'evergreen'
+        features = []
+        plugins = ['@doxajs/theoria']
+        framework = { theoria: {
+          profile: 'production-diagnostics', productionEnabled: true, sampleRate: 0.25,
+          includeKinds: ['execution', 'action', 'ai.operation'],
+          includePhases: ['started', 'completed', 'failed'],
+          includeNames: ['model.score'], minimumDurationMilliseconds: 5,
+          maximumPending: 5000, overflowPolicy: 'drop-oldest', batchSize: 200,
+          flushIntervalMilliseconds: 50, hotRetentionDays: 3, warmRetentionDays: 30,
+          maximumObservations: 5000000, poolMaximum: 4, serviceName: 'riley-worker',
+          environment: 'production', release: '2026.07.16', instanceId: 'worker-7'
+        } }
+      }`,
+    )
+    expect(prepared.source).toContain('profile = "production-diagnostics"')
+    expect(prepared.source).toContain('minimumDurationMilliseconds = 5')
+    expect(prepared.source).toContain('includeKinds = ["execution","action","ai.operation"]')
+    expect(prepared.source).toContain('application: "evergreen"')
+    expect(prepared.source).toContain('serviceName = "riley-worker"')
+    expect(prepared.source).toContain('release = "2026.07.16"')
+
+    expect(() =>
+      prepareFrameworkSource(
+        'app.config.ts',
+        `export class Application {
+          id = 'invalid-theoria'
+          features = []
+          plugins = ['@doxajs/theoria']
+          framework = { theoria: { maximumPending: 1.5 } }
+        }`,
+      ),
+    ).toThrow('maximumPending must be a positive safe integer literal')
+
+    expect(() =>
+      prepareFrameworkSource(
+        'app.config.ts',
+        `export class Application {
+          id = 'invalid-duration-filter'
+          features = []
+          plugins = ['@doxajs/theoria']
+          framework = { theoria: {
+            minimumDurationMilliseconds: 5,
+            includePhases: ['started', 'completed']
+          } }
+        }`,
+      ),
+    ).toThrow('duration filtering requires started, completed, and failed phases')
+  })
+
+  it('creates parented spans for executions and nested framework scopes', async () => {
+    const runtime = await bootRuntime()
+    const inboundTraceId = '1'.repeat(32)
+    const inboundSpanId = '2'.repeat(16)
+
+    await runtime.admit(
+      {
+        actor: { kind: 'system', id: 'trace-test' },
+        transport: { kind: 'test', name: 'trace-proof' },
+        trace: { traceId: inboundTraceId, spanId: inboundSpanId, traceFlags: 1 },
+      },
+      async (execution) => {
+        expect(execution.trace.parentSpanId).toBe(inboundSpanId)
+        await runtime.actions.execute(IncrementCounter, { amount: 1 })
+      },
+    )
+
+    const spans = referenceTelemetry.filter((record) => record.kind === 'span')
+    const executionSpan = spans.find((span) => span.name === 'trace-proof')
+    const actionSpan = spans.find((span) => span.name.endsWith('/increment-counter'))
+    const transactionSpan = spans.find((span) => span.name === 'action transaction')
+    expect(executionSpan).toEqual(
+      expect.objectContaining({
+        traceId: inboundTraceId,
+        parentSpanId: inboundSpanId,
+        status: 'ok',
+      }),
+    )
+    expect(actionSpan).toEqual(
+      expect.objectContaining({
+        traceId: inboundTraceId,
+        parentSpanId: executionSpan?.spanId,
+      }),
+    )
+    expect(transactionSpan).toEqual(
+      expect.objectContaining({
+        traceId: inboundTraceId,
+        parentSpanId: actionSpan?.spanId,
+      }),
+    )
+    expect(new Date(actionSpan!.endedAt).getTime()).toBeGreaterThanOrEqual(
+      new Date(actionSpan!.startedAt).getTime(),
+    )
+
+    const actionObservations = referenceObservations.filter((observation) =>
+      observation.name.endsWith('/increment-counter'),
+    )
+    expect(actionObservations.map((observation) => observation.context.spanId)).toEqual([
+      actionSpan?.spanId,
+      actionSpan?.spanId,
+    ])
+    expect(actionObservations[0]?.context.parentSpanId).toBe(executionSpan?.spanId)
+    await runtime.shutdown()
+  })
+
+  it('exports the same runtime span tree through OpenTelemetry', async () => {
+    const exporter = new InMemorySpanExporter()
+    const provider = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(exporter)],
+    })
+    expect(trace.setGlobalTracerProvider(provider)).toBe(true)
+    const artifactsDirectory = await temporaryDirectory()
+    await compile(artifactsDirectory)
+    const runtime = await Doxa.boot(Application, {
+      artifactsDirectory,
+      dotenvPath: false,
+      environment: {},
+      providerOverrides: {
+        'provider:operations/reference-telemetry': new DoxaOpenTelemetry({
+          instrumentationName: 'doxa-test',
+        }),
+      },
+    })
+    const traceId = '3'.repeat(32)
+    const parentSpanId = '4'.repeat(16)
+    await runtime.admit(
+      {
+        actor: { kind: 'system', id: 'otel-root-test' },
+        transport: { kind: 'test', name: 'otel-root-proof' },
+      },
+      () => undefined,
+    )
+    await runtime.admit(
+      {
+        actor: { kind: 'system', id: 'otel-test' },
+        transport: { kind: 'test', name: 'otel-proof' },
+        trace: { traceId, spanId: parentSpanId, isRemote: true, traceFlags: 1 },
+      },
+      () => runtime.actions.execute(IncrementCounter, { amount: 1 }),
+    )
+    await runtime.shutdown()
+    await provider.forceFlush()
+
+    const spans = exporter.getFinishedSpans()
+    const root = spans.find((span) => span.name === 'otel-root-proof')
+    const execution = spans.find((span) => span.name === 'otel-proof')
+    const action = spans.find((span) => span.name.endsWith('/increment-counter'))
+    const transaction = spans.find((span) => span.name === 'action transaction')
+    expect(root?.spanContext().traceId).toMatch(/^[0-9a-f]{32}$/)
+    expect(root?.parentSpanContext).toBeUndefined()
+    expect(execution?.spanContext().traceId).toBe(traceId)
+    expect(execution?.parentSpanContext?.spanId).toBe(parentSpanId)
+    expect(execution?.parentSpanContext?.isRemote).toBe(true)
+    expect(action?.parentSpanContext?.spanId).toBe(execution?.spanContext().spanId)
+    expect(transaction?.parentSpanContext?.spanId).toBe(action?.spanContext().spanId)
+    expect(
+      referenceObservations.find(
+        (observation) =>
+          observation.name.endsWith('/increment-counter') && observation.phase === 'completed',
+      )?.context.spanId,
+    ).toBe(action?.spanContext().spanId)
+    await provider.shutdown()
+  })
+
+  it('records privacy-safe AI operations with token and outcome metadata', async () => {
+    const runtime = await bootRuntime()
+    await runtime.admit(
+      { actor: { kind: 'system', id: 'ai-test' }, transport: { kind: 'test' } },
+      () => runtime.actions.execute(ObserveAi, undefined),
+    )
+
+    const observations = referenceObservations.filter((entry) =>
+      entry.name.startsWith('reference.classify'),
+    )
+    expect(observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'ai.operation', phase: 'started' }),
+        expect.objectContaining({
+          kind: 'ai.operation',
+          phase: 'occurred',
+          attributes: expect.objectContaining({
+            inputTokens: 12,
+            outputTokens: 3,
+            outcome: 'qualified',
+            reasonCode: 'reference-proof',
+          }),
+        }),
+        expect.objectContaining({ kind: 'ai.operation', phase: 'completed' }),
+      ]),
+    )
+    expect(new Set(observations.map((entry) => entry.context.spanId)).size).toBe(1)
+    expect(JSON.stringify(observations)).not.toMatch(
+      /prompt|completion|messageBody|sms|phone|customer/i,
+    )
+    expect(referenceTelemetry).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'span', name: 'reference.classify', status: 'ok' }),
+      ]),
+    )
+    await runtime.shutdown()
+  })
+
+  it('does not copy provider error content into AI observations', async () => {
+    const runtime = await bootRuntime()
+    await expect(
+      runtime.admit(
+        { actor: { kind: 'system', id: 'ai-error-test' }, transport: { kind: 'test' } },
+        () =>
+          runtime.ai.run({ kind: 'ai.operation', operationId: 'reference.failure' }, async () => {
+            throw new Error('prompt=customer secret; phone=3125550199')
+          }),
+      ),
+    ).rejects.toThrow('prompt=customer secret')
+
+    const recorded = JSON.stringify(referenceObservations)
+    expect(recorded).toContain('AI operation failed.')
+    expect(recorded).not.toMatch(/customer secret|3125550199/)
+    await runtime.shutdown()
   })
 
   it('fails closed for malformed model query plans before adapter execution', () => {
@@ -242,7 +481,7 @@ describe('foundational compile-to-boot slice', () => {
     )
   })
 
-  it('requires an explicit production override before Theoria can start', async () => {
+  it('requires explicit production diagnostics enablement before Theoria can start', async () => {
     const recorder = new PostgresTheoria({
       connectionString: 'postgresql://unused:unused@127.0.0.1:1/unused',
       environment: 'production',
@@ -252,7 +491,27 @@ describe('foundational compile-to-boot slice', () => {
         signal: new AbortController().signal,
         deadline: new Date(Date.now() + 1_000),
       }),
-    ).rejects.toThrow('disabled in production')
+    ).rejects.toThrow('production diagnostics require')
+  })
+
+  it('does not let recorder resource metadata bypass the production guard', async () => {
+    const previous = process.env.NODE_ENV
+    process.env.NODE_ENV = 'production'
+    try {
+      const recorder = new PostgresTheoria({
+        connectionString: 'postgresql://unused:unused@127.0.0.1:1/unused',
+        environment: 'development',
+      })
+      await expect(
+        recorder.start({
+          signal: new AbortController().signal,
+          deadline: new Date(Date.now() + 1_000),
+        }),
+      ).rejects.toThrow('production diagnostics require')
+    } finally {
+      if (previous === undefined) delete process.env.NODE_ENV
+      else process.env.NODE_ENV = previous
+    }
   })
 
   it('fails clearly when a role with required scoped dependencies is constructed directly', () => {
@@ -292,6 +551,8 @@ describe('foundational compile-to-boot slice', () => {
     ).toEqual(['APP_ENVIRONMENT', 'APP_PORT', 'WORKER_CONCURRENCY', 'WORKER_FAIL_STARTUP'])
     expect(first.manifest.providers.map((provider) => [provider.id, provider.scope])).toEqual([
       ['provider:operations/database-connection', 'singleton'],
+      ['provider:operations/reference-observations', 'singleton'],
+      ['provider:operations/reference-telemetry', 'singleton'],
       ['provider:operations/transactions', 'singleton'],
       ['provider:operations/worker', 'singleton'],
       ['service:operations/execution-counter', 'execution'],
@@ -301,6 +562,7 @@ describe('foundational compile-to-boot slice', () => {
       ['action:operations/fail-counter', true],
       ['action:operations/increment-counter', true],
       ['action:operations/nested-counter', true],
+      ['action:operations/observe-ai', true],
     ])
     expect(first.manifest.queries.map((query) => [query.id, query.transactional])).toEqual([
       ['query:operations/mutate-counter', false],

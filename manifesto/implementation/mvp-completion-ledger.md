@@ -81,15 +81,15 @@ applications and tools do not depend on undocumented behavior.
 
 ## Observability and operability
 
-| Capability                     | State    | Acceptance evidence                                                                                                                                                                                               |
-| ------------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Structured logs                | Complete | Automatic role-bound loggers, ordinary-service constructor injection, recursive redaction, contextual framework channels, colored TTY output, NDJSON output, and in-memory assertions are proven.                 |
-| W3C trace context              | Complete | HTTP validation/propagation plus durable queue, delivery, journal, and outbox correlation are proven.                                                                                                             |
-| Metrics                        | Complete | Lifecycle, execution/HTTP, persistence, auth, authorization, queue/schedule, and communications instruments are proven.                                                                                           |
-| Diagnostics                    | Complete | Graph, routes, policies, observers, listeners, jobs, schedules, auth, delivery, journal, outbox, and cache are inspectable through Praxis; `db:studio` provides safe local database browsing.                     |
-| Development execution debugger | Complete | Optional Theoria capture, redaction, causal PostgreSQL timelines, bounded retention, loopback UI, Praxis workflow, Gnosis knowledge, and an automatic test fake are proven.                                       |
-| Operator recovery              | Complete | Queue, delivery, schedule, session, token, cache, and auth-pruning operations are proven through Praxis.                                                                                                          |
-| Production topology            | Complete | One immutable image boots independent web and combined background roles from prebuilt artifacts; explicit migration, horizontal scheduling safety, advanced scheduler isolation, and bounded shutdown are proven. |
+| Capability            | State    | Acceptance evidence                                                                                                                                                                                               |
+| --------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Structured logs       | Complete | Automatic role-bound loggers, ordinary-service constructor injection, recursive redaction, contextual framework channels, colored TTY output, NDJSON output, and in-memory assertions are proven.                 |
+| W3C distributed spans | Complete | Inbound parentage, nested Doxa scopes, durable propagation, fan-out/retry links, and shared IDs across HTTP, logs, observations, and OpenTelemetry are proven.                                                    |
+| Metrics               | Complete | Lifecycle, execution/HTTP, persistence, auth, authorization, queue/schedule, and communications instruments are proven.                                                                                           |
+| Diagnostics           | Complete | Graph, routes, policies, observers, listeners, jobs, schedules, auth, delivery, journal, outbox, and cache are inspectable through Praxis; `db:studio` provides safe local database browsing.                     |
+| Execution diagnostics | Complete | Theoria proves causal timelines, hierarchical waterfalls, redaction, AI evidence, production sampling/filtering/buffering, resource identity, partitioned retention, protected audited access, and test fakes.    |
+| Operator recovery     | Complete | Queue, delivery, schedule, session, token, cache, and auth-pruning operations are proven through Praxis.                                                                                                          |
+| Production topology   | Complete | One immutable image boots independent web and combined background roles from prebuilt artifacts; explicit migration, horizontal scheduling safety, advanced scheduler isolation, and bounded shutdown are proven. |
 
 ## Developer experience
 

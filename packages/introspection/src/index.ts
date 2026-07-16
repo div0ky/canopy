@@ -283,7 +283,8 @@ export function createGnosisKnowledge(manifest: DoxaManifest): GnosisKnowledge {
       safety: Object.freeze([
         'recursive secret redaction',
         'bounded PostgreSQL retention',
-        'loopback-only host',
+        'loopback by default; protected audited operator access otherwise',
+        'bounded buffered production capture',
         'recording failure isolation',
       ]),
     }),

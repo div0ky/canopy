@@ -72,9 +72,9 @@ requirement to its implementation and acceptance evidence.
 23. [Development hot reload vertical slice](development-hot-reload-vertical-slice.md) — debounced
     source watching, fail-safe compilation, fresh-process runtime replacement, and recovery without
     manual server restarts.
-24. [Theoria development debugger vertical slice](theoria-vertical-slice.md) — typed and redacted
-    runtime observations, PostgreSQL causal ordering and retention, one-command Praxis installation,
-    Gnosis knowledge, a read-only loopback explorer, and testing fakes.
+24. [Distributed observability and Theoria vertical slice](theoria-vertical-slice.md) — nested W3C
+    spans, first-party OpenTelemetry, privacy-safe AI evidence, production-grade PostgreSQL capture,
+    causal navigation, and a hierarchical waterfall.
 25. [Container deployment vertical slice](container-deployment-vertical-slice.md) — one generated
     immutable image, prebuilt production boot, combined workers and schedules, explicit migrations,
     advanced scheduler isolation, Compose topology, and Gnosis deployment knowledge.

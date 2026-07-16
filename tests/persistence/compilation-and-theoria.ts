@@ -4,7 +4,7 @@ import type { CompileApplicationResult } from '@doxajs/compiler'
 import { type ActionClass, ObservationRecorder } from '@doxajs/core'
 import { HonoHttpEngine } from '@doxajs/http-hono'
 import { Doxa, type DoxaRuntime } from '@doxajs/runtime'
-import { listenTheoria, pruneTheoria, TheoriaStore } from '@doxajs/theoria'
+import { listenTheoria, PostgresTheoria, pruneTheoria, TheoriaStore } from '@doxajs/theoria'
 import type { Pool } from 'pg'
 import { expect, it } from 'vitest'
 
@@ -492,6 +492,48 @@ export function registerCompilationAndTheoriaTests(
     }
   })
 
+  it('persists opaque correlation IDs and trace parentage for the waterfall', async () => {
+    const runtime = await bootPersistenceRuntime()
+    const http = new HonoHttpEngine(runtime)
+    const traceId = '5'.repeat(32)
+    const parentSpanId = '6'.repeat(16)
+    const correlationId = 'everphone:incident:trace-proof'
+    const response = await http.fetch(
+      new Request('http://doxa.test/health', {
+        headers: {
+          'x-correlation-id': correlationId,
+          traceparent: `00-${traceId}-${parentSpanId}-01`,
+        },
+      }),
+    )
+    expect(response.status).toBe(200)
+    await waitFor(
+      async () =>
+        (
+          await pool().query(
+            `SELECT 1 FROM doxa_theoria_observations WHERE correlation_id = $1 AND phase = 'completed'`,
+            [correlationId],
+          )
+        ).rowCount !== 0,
+    )
+    const execution = await pool().query<{ execution_id: string }>(
+      `SELECT execution_id FROM doxa_theoria_observations WHERE correlation_id = $1 LIMIT 1`,
+      [correlationId],
+    )
+    const store = new TheoriaStore(connectionString())
+    try {
+      const waterfall = await store.waterfall(execution.rows[0]!.execution_id)
+      const root = waterfall.find((span) => span.name === 'GET /health')
+      const route = waterfall.find(
+        (span) => span.kind === 'http' && span.parentSpanId === root?.spanId,
+      )
+      expect(root).toEqual(expect.objectContaining({ traceId, parentSpanId, status: 'ok' }))
+      expect(route).toEqual(expect.objectContaining({ traceId, status: 'ok' }))
+    } finally {
+      await store.close()
+    }
+  })
+
   it('browses actual terminal observations for category tabs instead of their parent executions', async () => {
     const executionId = randomUUID()
     const correlationId = randomUUID()
@@ -620,6 +662,229 @@ export function registerCompilationAndTheoriaTests(
     ).toBe(1)
   })
 
+  it('moves hot evidence into monthly warm partitions and queries both tiers', async () => {
+    const executionId = randomUUID()
+    const name = `warm-${randomUUID()}`
+    await pool().query(
+      `
+        INSERT INTO doxa_theoria_observations
+          (id, occurred_at, kind, name, phase, execution_id, correlation_id, attributes)
+        VALUES ($1, now() - interval '10 days', 'execution', $2, 'completed', $3, $4, '{}'::jsonb)
+      `,
+      [randomUUID(), name, executionId, `incident:${executionId}`],
+    )
+    await pruneTheoria(connectionString(), {
+      hotRetentionDays: 7,
+      warmRetentionDays: 30,
+      maximumObservations: 50_000,
+    })
+    expect(
+      (await pool().query('SELECT 1 FROM doxa_theoria_observations WHERE name = $1', [name]))
+        .rowCount,
+    ).toBe(0)
+    expect(
+      (await pool().query('SELECT 1 FROM doxa_theoria_observations_warm WHERE name = $1', [name]))
+        .rowCount,
+    ).toBe(1)
+    const store = new TheoriaStore(connectionString())
+    try {
+      expect(await store.executions({ search: name })).toEqual([
+        expect.objectContaining({ executionId, name }),
+      ])
+    } finally {
+      await store.close()
+    }
+  })
+
+  it('bounds production capture and reports dropped recorder evidence', async () => {
+    const recorder = new PostgresTheoria({
+      connectionString: connectionString(),
+      environment: 'production',
+      profile: 'production-diagnostics',
+      productionEnabled: true,
+      maximumPending: 1,
+      batchSize: 100,
+      flushIntervalMilliseconds: 60_000,
+    })
+    const lifecycle = {
+      signal: new AbortController().signal,
+      deadline: new Date(Date.now() + 5_000),
+    }
+    await recorder.start(lifecycle)
+    recorder.record({
+      id: randomUUID(),
+      occurredAt: new Date().toISOString(),
+      kind: 'log',
+      name: 'accepted',
+      phase: 'occurred',
+      context: {},
+      attributes: {},
+    })
+    recorder.record({
+      id: randomUUID(),
+      occurredAt: new Date().toISOString(),
+      kind: 'log',
+      name: 'dropped',
+      phase: 'occurred',
+      context: {},
+      attributes: {},
+    })
+    expect(recorder.health()).toEqual(
+      expect.objectContaining({ queued: 1, accepted: 1, dropped: 1, writeFailures: 0 }),
+    )
+    await recorder.dispose(lifecycle)
+    expect(recorder.health()).toEqual(
+      expect.objectContaining({ queued: 0, persisted: 1, dropped: 1, writeFailures: 0 }),
+    )
+  })
+
+  it('filters complete spans and persists production resource identity', async () => {
+    const recorder = new PostgresTheoria({
+      connectionString: connectionString(),
+      environment: 'production',
+      profile: 'production-diagnostics',
+      productionEnabled: true,
+      includeKinds: ['action'],
+      includeNames: ['slow-operation'],
+      minimumDurationMilliseconds: 10,
+      batchSize: 100,
+      flushIntervalMilliseconds: 60_000,
+      resource: {
+        application: 'evergreen',
+        service: 'worker',
+        environment: 'production',
+        release: '2026.07.16',
+        instanceId: 'worker-7',
+      },
+    })
+    const lifecycle = {
+      signal: new AbortController().signal,
+      deadline: new Date(Date.now() + 5_000),
+    }
+    await recorder.start(lifecycle)
+    const executionId = randomUUID()
+    const traceId = 'a'.repeat(32)
+    const recordSpan = (name: string, spanId: string, durationMilliseconds: number) => {
+      recorder.record({
+        id: randomUUID(),
+        occurredAt: new Date().toISOString(),
+        kind: 'action',
+        name,
+        phase: 'started',
+        context: { executionId, traceId, spanId },
+        attributes: {},
+      })
+      recorder.record({
+        id: randomUUID(),
+        occurredAt: new Date().toISOString(),
+        kind: 'action',
+        name,
+        phase: 'completed',
+        durationMilliseconds,
+        context: { executionId, traceId, spanId },
+        attributes: {},
+      })
+    }
+    recordSpan('slow-operation', 'b'.repeat(16), 25)
+    recordSpan('slow-operation', 'c'.repeat(16), 2)
+    recordSpan('excluded-name', 'd'.repeat(16), 25)
+    await recorder.dispose(lifecycle)
+
+    const result = await pool().query<{ name: string; phase: string; resource: unknown }>(
+      `SELECT name, phase, resource
+       FROM doxa_theoria_observations
+       WHERE execution_id = $1
+       ORDER BY sequence`,
+      [executionId],
+    )
+    expect(result.rows).toEqual([
+      {
+        name: 'slow-operation',
+        phase: 'started',
+        resource: {
+          application: 'evergreen',
+          service: 'worker',
+          environment: 'production',
+          release: '2026.07.16',
+          instanceId: 'worker-7',
+        },
+      },
+      {
+        name: 'slow-operation',
+        phase: 'completed',
+        resource: {
+          application: 'evergreen',
+          service: 'worker',
+          environment: 'production',
+          release: '2026.07.16',
+          instanceId: 'worker-7',
+        },
+      },
+    ])
+  })
+
+  it('keeps distinct semantic start records that share one execution span', async () => {
+    const recorder = new PostgresTheoria({
+      connectionString: connectionString(),
+      minimumDurationMilliseconds: 10,
+      batchSize: 100,
+      flushIntervalMilliseconds: 60_000,
+    })
+    const lifecycle = {
+      signal: new AbortController().signal,
+      deadline: new Date(Date.now() + 5_000),
+    }
+    await recorder.start(lifecycle)
+    const executionId = randomUUID()
+    const context = {
+      executionId,
+      traceId: 'e'.repeat(32),
+      spanId: 'f'.repeat(16),
+    }
+    for (const [kind, name] of [
+      ['execution', 'GET /shared'] as const,
+      ['http', 'GET /shared'] as const,
+    ]) {
+      recorder.record({
+        id: randomUUID(),
+        occurredAt: new Date().toISOString(),
+        kind,
+        name,
+        phase: 'started',
+        context,
+        attributes: {},
+      })
+    }
+    for (const [kind, name] of [
+      ['execution', 'GET /shared'] as const,
+      ['http', 'GET /shared'] as const,
+    ]) {
+      recorder.record({
+        id: randomUUID(),
+        occurredAt: new Date().toISOString(),
+        kind,
+        name,
+        phase: 'completed',
+        durationMilliseconds: 25,
+        context,
+        attributes: {},
+      })
+    }
+    await recorder.dispose(lifecycle)
+
+    const result = await pool().query<{ kind: string; phase: string }>(
+      `SELECT kind, phase FROM doxa_theoria_observations
+       WHERE execution_id = $1 ORDER BY sequence`,
+      [executionId],
+    )
+    expect(result.rows).toEqual([
+      { kind: 'execution', phase: 'started' },
+      { kind: 'execution', phase: 'completed' },
+      { kind: 'http', phase: 'started' },
+      { kind: 'http', phase: 'completed' },
+    ])
+  })
+
   it('serves the read-only Theoria explorer from its dedicated loopback host', async () => {
     const host = await listenTheoria({ connectionString: connectionString(), port: 0 })
     try {
@@ -629,6 +894,7 @@ export function registerCompilationAndTheoriaTests(
       expect(html).toContain('Everything beneath the surface')
       expect(html).toContain('.filters{flex:0 0 auto')
       expect(html).toContain('.scroll{flex:1 1 auto}')
+      expect(html).toContain('if(selected)await chooseExecution')
       expect(await (await fetch(new URL('/api/health', host.url))).json()).toEqual({
         ok: true,
         data: { service: 'theoria' },
@@ -646,6 +912,68 @@ export function registerCompilationAndTheoriaTests(
     }
     await expect(
       listenTheoria({ connectionString: connectionString(), host: '0.0.0.0', port: 0 }),
-    ).rejects.toThrow('loopback only')
+    ).rejects.toThrow('production-diagnostics')
+  })
+
+  it('protects and audits non-loopback production explorer access', async () => {
+    const audit: Array<{ outcome: string; operatorId?: string }> = []
+    const host = await listenTheoria({
+      connectionString: connectionString(),
+      host: '0.0.0.0',
+      port: 0,
+      profile: 'production-diagnostics',
+      access: { mode: 'bearer', token: 't'.repeat(32), operatorId: 'operator:aaron' },
+      audit: (event) => audit.push(event),
+    })
+    try {
+      expect((await fetch(new URL('/api/health', host.url))).status).toBe(401)
+      expect(
+        (
+          await fetch(new URL('/api/health', host.url), {
+            headers: { authorization: `bearer ${'t'.repeat(32)}` },
+          })
+        ).status,
+      ).toBe(200)
+      expect(audit).toEqual([
+        expect.objectContaining({ outcome: 'denied' }),
+        expect.objectContaining({ outcome: 'allowed', operatorId: 'operator:aaron' }),
+      ])
+    } finally {
+      await host.shutdown()
+    }
+  })
+
+  it('accepts trusted-proxy identities only from explicit proxy and operator allowlists', async () => {
+    const host = await listenTheoria({
+      connectionString: connectionString(),
+      host: '127.0.0.1',
+      port: 0,
+      access: {
+        mode: 'trusted-proxy',
+        identityHeader: 'x-theoria-operator',
+        allowedOperators: ['operator:aaron'],
+        trustedProxyAddresses: ['127.0.0.1'],
+        proxyTrusted: true,
+      },
+      audit: () => undefined,
+    })
+    try {
+      expect(
+        (
+          await fetch(new URL('/api/health', host.url), {
+            headers: { 'x-theoria-operator': 'operator:mallory' },
+          })
+        ).status,
+      ).toBe(401)
+      expect(
+        (
+          await fetch(new URL('/api/health', host.url), {
+            headers: { 'x-theoria-operator': 'operator:aaron' },
+          })
+        ).status,
+      ).toBe(200)
+    } finally {
+      await host.shutdown()
+    }
   })
 }

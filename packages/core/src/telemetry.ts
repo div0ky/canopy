@@ -1,4 +1,23 @@
-import type { JsonValue } from './index.js'
+import type { JsonValue, SpanLink, TraceContext } from './index.js'
+
+export interface TelemetrySpanStart {
+  readonly name: string
+  readonly context: TraceContext
+  readonly startedAt: string
+  readonly attributes: Readonly<Record<string, JsonValue>>
+}
+
+export interface TelemetrySpanEnd {
+  readonly endedAt: string
+  readonly durationMilliseconds: number
+  readonly status: 'ok' | 'error'
+  readonly attributes: Readonly<Record<string, JsonValue>>
+}
+
+export interface TelemetrySpanHandle {
+  readonly context: TraceContext
+  end(result: TelemetrySpanEnd): void | Promise<void>
+}
 
 export type TelemetryRecord =
   | {
@@ -19,6 +38,10 @@ export type TelemetryRecord =
       readonly name: string
       readonly traceId: string
       readonly spanId: string
+      readonly parentSpanId?: string
+      readonly links?: readonly SpanLink[]
+      readonly startedAt: string
+      readonly endedAt: string
       readonly durationMilliseconds: number
       readonly status: 'ok' | 'error'
       readonly attributes: Readonly<Record<string, JsonValue>>
@@ -26,6 +49,7 @@ export type TelemetryRecord =
 
 export abstract class Telemetry {
   abstract record(record: TelemetryRecord): void | Promise<void>
+  startSpan?(span: TelemetrySpanStart): TelemetrySpanHandle | undefined
 }
 
 export class NoopTelemetry extends Telemetry {

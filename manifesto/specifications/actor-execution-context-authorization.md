@@ -226,6 +226,11 @@ authorization result is never sufficient.
 Retries create a new execution ID and span while preserving correlation, causation, actor,
 initiator, and job identity. Retry attempt is execution metadata, not a new business cause.
 
+Each execution span preserves its inbound parent span when one exists. Framework-owned timed work
+creates child spans beneath the currently active span. Fan-out, delayed work, retries, and
+multi-source work use bounded explicit span links when a single parent would misrepresent causality.
+Business causation remains distinct from trace parentage.
+
 ## Authorization contract
 
 Authorization should be default-deny and return a structured decision rather than a bare boolean:

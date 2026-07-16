@@ -27,8 +27,12 @@ those convictions into decision rules and, eventually, executable specifications
   abuse cases, controls, and the release review gate.
 - [First-class logging](specifications/logging.md) defines structured records, automatic execution
   context, safe redaction, and the colorful local console experience.
-- [Theoria](specifications/theoria.md) defines the typed, correlation-driven local execution
-  debugger and its safety and retention boundaries.
+- [Telemetry and distributed tracing](specifications/telemetry-and-tracing.md) defines span
+  parentage, links, instrumented scopes, and the OpenTelemetry adapter boundary.
+- [Theoria](specifications/theoria.md) defines the typed execution debugger, causal timeline,
+  waterfall, production diagnostics, and safety and retention boundaries.
+- [AI observations](specifications/ai-observations.md) defines privacy-safe operational evidence for
+  model, tool, critic, and retry work.
 - [Container deployment](specifications/container-deployment.md) defines the one-image web,
   background, and migration production topology.
 - [Implementation proofs](implementation/index.md) record which accepted contracts have executable

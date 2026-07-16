@@ -69,7 +69,11 @@ export class HonoHttpEngine implements HttpEngine {
           )
         } catch (error) {
           const response = withAuthenticationHeaders(
-            errorResponse(error, correlationId),
+            withCorrelation(
+              errorResponse(error, correlationId),
+              correlationId,
+              responseTraceparent,
+            ),
             authenticationHeaders,
           )
           const attributes = {
@@ -207,6 +211,7 @@ function traceContextFrom(request: Request): TraceContext | undefined {
   return {
     traceId: match[1]!.toLowerCase(),
     spanId: match[2]!.toLowerCase(),
+    isRemote: true,
     traceFlags: Number.parseInt(match[3]!, 16),
   }
 }
