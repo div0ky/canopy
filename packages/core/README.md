@@ -1,6 +1,10 @@
 # `@doxajs/core`
 
-The stable, application-facing programming model for Doxa. Application Features import roles,
+> **Controlled-adoption prerelease:** Publicly downloadable under Apache-2.0; Midtown Home
+> Improvements is the sole supported consumer. External use is permitted without compatibility,
+> support, warranty, roadmap, or production-readiness commitments.
+
+The primary application-facing programming model for Doxa. Application Features import roles,
 models, events, jobs, schedules, policies, configuration, ports, and public contracts from this
 package.
 

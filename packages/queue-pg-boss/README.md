@@ -1,5 +1,9 @@
 # `@doxajs/queue-pg-boss`
 
+> **Controlled-adoption prerelease:** Publicly downloadable under Apache-2.0; Midtown Home
+> Improvements is the sole supported consumer. External use is permitted without compatibility,
+> support, warranty, roadmap, or production-readiness commitments.
+
 Doxa's first-party PostgreSQL queue, outbox handoff, worker, retry, failure, schedule, and operator
 adapter implemented with pg-boss.
 

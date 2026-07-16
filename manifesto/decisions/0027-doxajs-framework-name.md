@@ -4,6 +4,8 @@
 
 Accepted on 2026-07-11.
 
+Amended on 2026-07-16 to align rename compatibility with controlled adoption.
+
 ## Decision
 
 The framework, its public package organization, programming model, documentation, generated
@@ -45,8 +47,10 @@ This is a deliberate replacement, not a display-name overlay:
   and Doxa as the programming name.
 
 Historical compatibility aliases for `Canopy`, `@canopy/*`, `.canopy`, or `canopy_*` are explicitly
-out of scope before the first public release. If published adopters later require a rename, that
-would need a separate migration and deprecation decision.
+out of scope during the controlled-adoption alpha. Public npm availability alone does not stabilize
+those names for unsupported external users. Once supported production applications depend on them, a
+rename requires an explicit coordinated migration; after 1.0 it also requires ordinary major-version
+treatment.
 
 ## Consequences
 

@@ -1,5 +1,9 @@
 # `@doxajs/theoria`
 
+> **Controlled-adoption prerelease:** Publicly downloadable under Apache-2.0; Midtown Home
+> Improvements is the sole supported consumer. External use is permitted without compatibility,
+> support, warranty, roadmap, or production-readiness commitments.
+
 Theoria is Doxa's optional first-party execution debugger. It records redacted correlated
 observations in PostgreSQL and exposes a read-only causal timeline plus hierarchical waterfall for
 requests, operations, models, reactions, events, jobs, schedules, AI work, logs, and exceptions.

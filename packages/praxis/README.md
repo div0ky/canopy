@@ -1,5 +1,9 @@
 # `@doxajs/praxis`
 
+> **Controlled-adoption prerelease:** Publicly downloadable under Apache-2.0; Midtown Home
+> Improvements is the sole supported consumer. External use is permitted without compatibility,
+> support, warranty, roadmap, or production-readiness commitments.
+
 Praxis is Doxa's canonical generator and command suite. It owns application generation, compilation,
 development hot reload, migrations, runtime roles, inspection, recovery, Drizzle Studio, Gnosis
 knowledge, and Theoria operations.

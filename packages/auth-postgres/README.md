@@ -1,5 +1,9 @@
 # `@doxajs/auth-postgres`
 
+> **Controlled-adoption prerelease:** Publicly downloadable under Apache-2.0; Midtown Home
+> Improvements is the sole supported consumer. External use is permitted without compatibility,
+> support, warranty, roadmap, or production-readiness commitments.
+
 Framework-owned PostgreSQL authentication for Doxa: existing identity models, Argon2id credentials,
 opaque browser sessions, opaque bearer tokens, verification and recovery challenges, durable abuse
 controls, audit evidence, and existing-table mapping.

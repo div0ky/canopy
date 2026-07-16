@@ -21,4 +21,5 @@
 
 Remove the deprecated alpha-only Theoria `retentionDays` alias in favor of `hotRetentionDays`, align
 the documented existing-table authentication implementation status, enforce the Node.js runtime
-floor required by first-party Argon2id authentication, and add PostgreSQL 16 conformance coverage.
+floor required by first-party Argon2id authentication, add PostgreSQL 16 conformance coverage, and
+document Doxa's closed controlled-adoption program across every published package.

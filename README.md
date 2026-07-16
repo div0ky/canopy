@@ -9,10 +9,11 @@ coherence and developer experience. It is magical where that magic is safe, dete
 inspectable beneath the surface, trivial for Gnosis to understand, and deliberately difficult to
 misuse.
 
-> **Pre-1.0 status:** Doxa.js is an open-source alpha. Its connected application model is
-> implemented and extensively tested, but APIs may still change and the independent security review
-> required for a production-stability claim is not complete. Tagless installs currently resolve to
-> the alpha release.
+> **Controlled-adoption alpha:** Doxa is independently owned and maintained by div0ky. Midtown Home
+> Improvements is its sole supported consumer. Prereleases are publicly downloadable under
+> Apache-2.0, but the adoption program and roadmap are closed. External use is permitted without any
+> compatibility, support, warranty, or production-readiness commitment. Tagless installs currently
+> resolve to the alpha release.
 
 ## The Doxa experience
 
@@ -108,6 +109,8 @@ To work on Doxa itself before package publication, follow the
 - [Upgrading](docs/upgrading/index.md)
 - [Architecture](manifesto/architecture.md)
 - [Security model](manifesto/security.md)
+- [Controlled production adoption](manifesto/decisions/0033-controlled-production-adoption.md)
+- [Ownership and adoption](OWNERSHIP.md)
 
 ## Development
 

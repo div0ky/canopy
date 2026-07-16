@@ -1,6 +1,7 @@
 # Maintainers
 
-Doxa is currently stewarded by [@div0ky](https://github.com/div0ky) as lead maintainer.
+Doxa is independently owned and maintained by [@div0ky](https://github.com/div0ky). Midtown Home
+Improvements is currently its sole supported consumer and does not own or maintain the framework.
 
 Maintainers review changes, protect the architectural and security boundaries, manage releases and
 package namespaces, administer community spaces, and coordinate vulnerability response. The

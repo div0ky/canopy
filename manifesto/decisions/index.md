@@ -105,6 +105,7 @@ still be intelligible if an engine is replaced.
 | AI observations                          | Typed operational metadata with content and customer PII excluded by default           | Accepted              | [AI observations](0032-privacy-safe-ai-observations.md)                                                  |
 | Container deployment                     | One immutable image; web, combined background, and migration roles                     | Accepted              | [Container deployment](0026-one-image-role-based-container-deployment.md)                                |
 | Framework identity                       | Doxa.js under the institutionally owned `@doxajs` package scope                        | Accepted              | [Framework name](0027-doxajs-framework-name.md)                                                          |
+| Adoption and maturity                    | Public packages; closed Midtown-only support; production-proven 1.0                    | Accepted              | [Controlled production adoption](0033-controlled-production-adoption.md)                                 |
 
 "Accepted in principle" means the manifesto establishes the architectural requirement, while the
 observable programming contract remains to be specified.
@@ -172,6 +173,8 @@ observable programming contract remains to be specified.
     2026-07-16.
 32. [Add privacy-safe first-class AI observations](0032-privacy-safe-ai-observations.md) — Accepted
     on 2026-07-16.
+33. [Use a closed, controlled production adoption program](0033-controlled-production-adoption.md) —
+    Accepted on 2026-07-16.
 
 ## Adding a decision
 

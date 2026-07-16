@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
+- **Amended:** 2026-07-16 — Public identifies exported package surfaces, not an open support program
 - **Scope:** MVP
 - **Decision owners:** Doxa maintainers
 
@@ -15,6 +16,11 @@ import { Action, Event, Feature, Model, Query, ShouldQueue, token } from '@doxaj
 
 Compiler, container, manifest, registry, lifecycle, and runtime implementation packages are not
 application dependencies. Internal package refactors must not require feature-code rewrites.
+
+In this decision, **public** means exported and application-facing rather than private
+implementation detail. It does not promise external compatibility or support during the
+controlled-adoption alpha and beta stages defined by
+[Decision 0033](0033-controlled-production-adoption.md).
 
 ## Separate public surfaces
 
@@ -37,7 +43,7 @@ Feature code.
 
 ## Core boundary
 
-`@doxajs/core` owns the stable vocabulary used by application code, including:
+`@doxajs/core` owns the canonical vocabulary used by application code, including:
 
 - Application and Feature declarations.
 - Role base classes and capability interfaces.
@@ -129,7 +135,7 @@ dependency direction, source imports, and published package contents.
 
 ## Consequences
 
-- Developers learn one stable programming-model import surface.
+- Developers learn one primary programming-model import surface.
 - Testing remains powerful without polluting production APIs.
 - Adapters can evolve or be replaced without changing domain code.
 - Internal packages may be split for architectural enforcement without becoming user-facing

@@ -1,5 +1,9 @@
 # `@doxajs/realtime`
 
+> **Controlled-adoption prerelease:** Publicly downloadable under Apache-2.0; Midtown Home
+> Improvements is the sole supported consumer. External use is permitted without compatibility,
+> support, warranty, roadmap, or production-readiness commitments.
+
 Typed, reconnecting subscriptions for Doxa broadcasts.
 
 ```ts

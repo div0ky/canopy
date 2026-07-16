@@ -2,9 +2,10 @@
 
 ## Supported versions
 
-Doxa is currently pre-1.0. Security fixes are provided for the latest published prerelease only. No
-release should be treated as production-stable until the independent review required by the
-[security model](manifesto/security.md) is complete.
+Doxa is currently pre-1.0. Security fixes are provided for the latest published prerelease only.
+Controlled production adoption applies risk-based review before a capability carries production
+responsibility. No release claims 1.0 production stability until the independent review required by
+the [security model](manifesto/security.md) is complete.
 
 ## Reporting a vulnerability
 

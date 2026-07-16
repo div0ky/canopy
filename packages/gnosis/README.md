@@ -1,5 +1,9 @@
 # `@doxajs/gnosis`
 
+> **Controlled-adoption prerelease:** Publicly downloadable under Apache-2.0; Midtown Home
+> Improvements is the sole supported consumer. External use is permitted without compatibility,
+> support, warranty, roadmap, or production-readiness commitments.
+
 Gnosis is Doxa's local, read-only AI engineering server. Praxis registers it in project-scoped MCP
 configuration when an application is created or upgraded. Open the application in Codex, Claude
 Code, Cursor, or VS Code and the client starts and stops Gnosis automatically.

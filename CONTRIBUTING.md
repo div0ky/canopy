@@ -4,6 +4,10 @@ Doxa exists to make the right application architecture feel obvious. Contributio
 that standard: opinionated, magical where safe, deterministic beneath the surface, trivial for
 Gnosis to explain, and difficult to misuse.
 
+Doxa's packages and repository are public, but its supported adoption program and roadmap are
+closed. Midtown Home Improvements is currently the sole supported consumer. An external contribution
+does not create compatibility, support, roadmap, or production-readiness commitments.
+
 ## Before opening a change
 
 - Use GitHub Discussions or an issue for substantial new behavior before investing in an
@@ -14,7 +18,7 @@ Gnosis to explain, and difficult to misuse.
 
 ## Development setup
 
-Doxa supports Node.js 24 and pnpm 11.
+Doxa supports Node.js 24.7 or newer within the 24.x line and pnpm 11.
 
 ```sh
 corepack enable

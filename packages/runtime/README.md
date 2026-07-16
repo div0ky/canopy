@@ -1,5 +1,9 @@
 # `@doxajs/runtime`
 
+> **Controlled-adoption prerelease:** Publicly downloadable under Apache-2.0; Midtown Home
+> Improvements is the sole supported consumer. External use is permitted without compatibility,
+> support, warranty, roadmap, or production-readiness commitments.
+
 The artifact-only Doxa runtime. It validates compiled artifacts, constructs the dependency graph,
 admits execution scopes, dispatches framework roles, and owns deterministic lifecycle behavior.
 

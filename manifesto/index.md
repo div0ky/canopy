@@ -6,7 +6,10 @@ Doxa.js 0.1 has reached the viability bar defined by this knowledge base. Its co
 flow proves compile-to-boot composition, execution and authorization, PostgreSQL-backed atomic
 durability, Eloquent-style models and observers, events and signals, Hono-backed HTTP, auth, pg-boss
 workers and schedules, communications, observability, testing, Praxis, and Gnosis metadata. It
-remains an early MVP rather than a compatibility-stable 1.0 release.
+remains a controlled-adoption alpha rather than a production-proven 1.0 release. Doxa is
+independently owned and maintained by div0ky, with Midtown Home Improvements as its sole supported
+consumer. Public npm availability does not open the supported adoption program or create external
+compatibility and support commitments.
 
 ## Using this knowledge base
 
@@ -25,6 +28,8 @@ those convictions into decision rules and, eventually, executable specifications
   complete Doxa application model.
 - [Security model and threat assessment](security.md) records protected assets, trust boundaries,
   abuse cases, controls, and the release review gate.
+- [Controlled production adoption](decisions/0033-controlled-production-adoption.md) defines the
+  alpha, controlled production beta, and production-proven 1.0 maturity stages.
 - [First-class logging](specifications/logging.md) defines structured records, automatic execution
   context, safe redaction, and the colorful local console experience.
 - [Telemetry and distributed tracing](specifications/telemetry-and-tracing.md) defines span
@@ -356,10 +361,10 @@ Doxa will:
 Applications should upgrade Doxa, not independently solve a compatibility matrix across a dozen
 runtime packages.
 
-Internal use makes this discipline more important, not less. Doxa should let internal teams move
-quickly because the platform team has already made and verified the infrastructure decisions. If
-Doxa is later open sourced, this compatibility contract becomes part of the product rather than an
-internal assumption that must be reconstructed.
+Controlled adoption makes this discipline more important, not less. Doxa should let the supported
+consumer move quickly because the framework has already made and verified the infrastructure
+decisions. If the adoption program later opens, this compatibility contract becomes part of the
+supported product rather than an internal assumption that must be reconstructed.
 
 ## The desired programming experience
 

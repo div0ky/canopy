@@ -13,6 +13,9 @@ Doxa documentation is organized by what a developer is trying to accomplish:
 - [Deployment](operations/deployment.md) describes production roles and release ordering.
 - [Packages](reference/packages.md) identifies supported public and framework-internal surfaces.
 - [Upgrading](upgrading/index.md) defines pre-1.0 compatibility and migration expectations.
+- [Controlled production adoption](../manifesto/decisions/0033-controlled-production-adoption.md)
+  defines the closed support program and alpha, beta, and 1.0 maturity stages.
+- [Ownership and adoption](../OWNERSHIP.md) records the div0ky and Midtown boundary.
 
 The [Doxa Manifesto](../manifesto/index.md) remains the design authority. User documentation
 explains how to build; decisions and specifications explain why the framework behaves that way.

@@ -2,6 +2,8 @@
 
 - **Status:** Accepted
 - **Accepted:** 2026-07-11
+- **Amended:** 2026-07-16 — Publication alone does not imply external stability during controlled
+  adoption
 - **Scope:** Optional post-MVP WebSocket and broadcasting capability
 - **Decision owners:** Doxa maintainers
 
@@ -62,9 +64,11 @@ without leaking its native API into actions, events, listeners, or browser code.
 - Documentation has one application-facing term: broadcasting.
 - Keryx can be replaced or supplemented without rewriting application features.
 - Realtime clients remain discoverable by purpose and avoid a second term developers must learn.
-- Keryx is a public package name and should be treated as a stable contract once published.
+- Keryx is a public package name, but alpha publication alone does not create external compatibility
+  or support commitments.
 - Broadcasting remains optional for applications and outside the MVP viability bar, while its
-  implemented runtime behavior is now a stable public contract.
+  implemented runtime behavior is a conformance-tested contract within each coordinated Doxa
+  release. It earns production compatibility obligations when a supported application relies on it.
 
 ## Required implementation proof
 

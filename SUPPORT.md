@@ -1,6 +1,12 @@
 # Support
 
-Doxa is maintained as an open-source project and currently has no commercial support guarantee.
+Doxa is independently owned and maintained by div0ky. Midtown Home Improvements is currently its
+sole supported production consumer.
+
+The packages are publicly downloadable under Apache-2.0, but the supported adoption program and
+roadmap are closed. External use is permitted without any compatibility, support, warranty, roadmap,
+or production-readiness commitment. Public availability does not make an external installation a
+supported deployment.
 
 ## Officially tested matrix
 
