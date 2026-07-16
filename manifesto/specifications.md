@@ -1,11 +1,14 @@
-# Doxa Specification Roadmap
+# Doxa Specification Status
 
-The next Doxa implementation begins only after its critical contracts are specified. This page turns
-the manifesto's initial specification set into a working knowledge-base roadmap.
+This page records the current acceptance status of Doxa's public contracts. The
+[MVP completion ledger](implementation/mvp-completion-ledger.md) is the aggregate authority for MVP
+implementation status: a capability marked complete there has an accepted public contract,
+production behavior or adapter evidence, conformance coverage, reference-application evidence,
+diagnostics, and agreeing documentation.
 
-The [MVP viability bar](mvp.md) requires a complete synchronous and asynchronous application model.
-Focused vertical proofs may validate individual contracts during implementation, but they are not
-the Doxa MVP.
+Individual vertical-slice documents preserve the narrower status and remaining work that existed
+when each proof was written. Their historical `MVP status: Incomplete` notes do not override the
+later completion ledger.
 
 ## What a specification is
 
@@ -45,98 +48,77 @@ Status describes confidence in the contract, not the amount of code written.
 
 ## Foundation
 
-| Area                            | Status    | Central question                                                                                                                                   |
-| ------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Application and feature model   | Exploring | [How do explicit feature boundaries support automatic build-time registration?](decisions/0014-explicit-features-generated-manifest.md)            |
-| Application manifest            | Exploring | [How does one versioned representation power boot, tooling, tests, and adapters?](decisions/0014-explicit-features-generated-manifest.md)          |
-| Lifecycle and failure semantics | Exploring | [How do startup, readiness, drain, stop, disposal, deadlines, and failures compose?](decisions/0017-deterministic-runtime-lifecycle.md)            |
-| Container and execution scopes  | Exploring | How do role-scoped `this.inject()` and service constructor injection remain automatic, explicit, and inspectable in TypeScript?                    |
-| Package boundaries              | Exploring | [How does one application-facing core remain independent from compiler, runtime, testing, and adapters?](decisions/0018-public-package-surface.md) |
+| Area                            | Status      | Contract or evidence                                                                               |
+| ------------------------------- | ----------- | -------------------------------------------------------------------------------------------------- |
+| Application and feature model   | Implemented | [Explicit features and generated manifest](decisions/0014-explicit-features-generated-manifest.md) |
+| Application manifest            | Implemented | [Explicit features and generated manifest](decisions/0014-explicit-features-generated-manifest.md) |
+| Lifecycle and failure semantics | Implemented | [Deterministic runtime lifecycle](decisions/0017-deterministic-runtime-lifecycle.md)               |
+| Container and execution scopes  | Implemented | [Role injection with plain services](decisions/0024-role-injection-with-plain-services.md)         |
+| Package boundaries              | Implemented | [Public package surface](decisions/0018-public-package-surface.md)                                 |
 
 These specifications come first because every other subsystem participates in the application graph,
 lifecycle, and execution scope.
 
 ## Application operations
 
-| Area                           | Status                      | Central question                                                                                                                                                                  |
-| ------------------------------ | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Actions and dispatch           | Exploring                   | What guarantees surround an intentional state change?                                                                                                                             |
-| Queries and dispatch           | Exploring                   | How do optimized reads retain common context, policy, and error behavior?                                                                                                         |
-| Domain models and repositories | Query contract accepted     | [How do Eloquent-style persistence, typed model queries, relationships, and eager loading retain Doxa transaction semantics?](specifications/model-querying-and-relationships.md) |
-| Existing-table model mapping   | MVP common path implemented | [How can ordinary models override table, key, column, timestamp, and version conventions without importing Drizzle?](decisions/0023-existing-table-model-auth-mapping.md)         |
-| Units of work and transactions | Exploring                   | Where do atomicity and after-commit behavior begin and end?                                                                                                                       |
-| Validation and error documents | Accepted                    | [How are Standard Schema inputs validated and represented consistently?](decisions/0006-standard-schema-zod-validation.md)                                                        |
-| Resources and serialization    | Unexplored                  | How does domain output become a stable external representation?                                                                                                                   |
+| Area                           | Status                        | Contract or evidence                                                                         |
+| ------------------------------ | ----------------------------- | -------------------------------------------------------------------------------------------- |
+| Actions and dispatch           | Implemented                   | [Execution and operations proof](implementation/execution-operations-vertical-slice.md)      |
+| Queries and dispatch           | Implemented                   | [Execution and operations proof](implementation/execution-operations-vertical-slice.md)      |
+| Domain models and repositories | Implemented                   | [Model querying and relationships](specifications/model-querying-and-relationships.md)       |
+| Existing-table model mapping   | Implemented (MVP common path) | [Existing-table model and auth mapping](decisions/0023-existing-table-model-auth-mapping.md) |
+| Units of work and transactions | Implemented                   | [PostgreSQL durability proof](implementation/postgresql-durability-vertical-slice.md)        |
+| Validation and error documents | Implemented                   | [HTTP response envelopes](specifications/http-response-envelopes.md)                         |
+| Resources and serialization    | Implemented                   | [Generated MVP reference flow](implementation/generated-mvp-reference-flow.md)               |
 
-The [execution and operations vertical slice](implementation/execution-operations-vertical-slice.md)
-provides executable evidence for the initial action, query, context, transaction-boundary, and scope
-shape. These areas remain **Exploring** until their complete observable contracts and conformance
-requirements are accepted.
-
-The [PostgreSQL durability vertical slice](implementation/postgresql-durability-vertical-slice.md)
-proves the initial transaction, Unit of Work, entity-state, journal, outbox, optimistic-concurrency,
-and after-commit boundaries against a real PostgreSQL container. The complete model and persistence
-specifications remain **Exploring**.
-
-The [class events vertical slice](implementation/class-events-vertical-slice.md) proves typed local
-and after-commit dispatch across the active execution and transaction. The complete event,
-domain-event, signal, queue, serialization, and testing specifications remain **Exploring**.
+The execution, durability, model, HTTP, and generated-reference proofs collectively cover the
+observable action, query, transaction, validation, resource, and serialization contracts recorded as
+complete in the MVP ledger.
 
 ## Events and asynchronous work
 
-| Area                      | Status                          | Central question                                                                                                                                                                                                                   |
-| ------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Journal and domain events | Exploring                       | [How do Laravel-like events distinguish general dispatch from durable domain facts?](decisions/0015-laravel-like-class-events.md)                                                                                                  |
-| Outbox and delivery       | Exploring                       | How does committed intent reliably leave the transaction boundary?                                                                                                                                                                 |
-| Listeners and observers   | Exploring                       | [Which local, after-commit, and queued phases does each reaction receive?](decisions/0015-laravel-like-class-events.md)                                                                                                            |
-| Jobs and workers          | Exploring; implementation proof | How are context, retries, timeouts, uniqueness, and terminal failure defined?                                                                                                                                                      |
-| Scheduling                | Implemented proof               | Class-first Job targets, cron/interval cadence, time zones, deterministic reconciliation, serialized overlap, skipped misfires, and causal system execution are proven; catch-up, operator state, fakes, and observability remain. |
-| Mail and SMS              | Exploring                       | How are queued provider delivery and webhook outcomes normalized?                                                                                                                                                                  |
-| Realtime broadcasting     | Implemented                     | [How do queued and synchronous event broadcasts, authenticated Keryx subscriptions, presence, reconnect, ordering, and failure semantics compose?](specifications/realtime-broadcasting.md)                                        |
-
-The [pg-boss queue and worker vertical slice](implementation/pg-boss-queue-worker-vertical-slice.md)
-proves declared transactional jobs, atomic outbox handoff, retries, terminal retention, idempotency,
-queued listeners, causal execution, and worker draining. Crash-process conformance, operator
-recovery, testing fakes, advanced policies, and the complete asynchronous specification remain
-**Exploring**.
+| Area                      | Status      | Contract or evidence                                                                     |
+| ------------------------- | ----------- | ---------------------------------------------------------------------------------------- |
+| Journal and domain events | Implemented | [Laravel-like class events](decisions/0015-laravel-like-class-events.md)                 |
+| Outbox and delivery       | Implemented | [PostgreSQL durability proof](implementation/postgresql-durability-vertical-slice.md)    |
+| Listeners and observers   | Implemented | [Signals and observers proof](implementation/signals-observers-vertical-slice.md)        |
+| Jobs and workers          | Implemented | [pg-boss queue and worker proof](implementation/pg-boss-queue-worker-vertical-slice.md)  |
+| Scheduling                | Implemented | [Scheduling proof](implementation/scheduling-vertical-slice.md)                          |
+| Mail and SMS              | Implemented | [Communications adapter proof](implementation/communications-adapters-vertical-slice.md) |
+| Realtime broadcasting     | Implemented | [Realtime broadcasting contract](specifications/realtime-broadcasting.md)                |
 
 ## Interfaces and policy
 
-| Area                              | Status                          | Central question                                                                                                                                                                                                                                                                                  |
-| --------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| HTTP manifest                     | Exploring; implementation proof | What transport-neutral declaration does application code write?                                                                                                                                                                                                                                   |
-| Hono adapter                      | Exploring; implementation proof | How is that declaration compiled without leaking Hono into features?                                                                                                                                                                                                                              |
-| HTTP response envelopes           | Implemented                     | [How does Doxa automatically provide one discriminated success and failure grammar?](specifications/http-response-envelopes.md)                                                                                                                                                                   |
-| Authentication                    | Implemented proofs              | Email/password identities, Argon2id credentials, browser sessions, opaque bearer tokens, actor resolution, authority propagation, rotation, CSRF origin enforcement, revocation, and audit are proven; verification, reset, abuse controls, renewal, testing helpers, and security review remain. |
-| Existing-table auth mapping       | MVP common path implemented     | [How can first-party auth use an application's existing identity and credential columns while preserving Doxa security semantics?](decisions/0023-existing-table-model-auth-mapping.md)                                                                                                           |
-| Authorization                     | Implemented proof               | [Default-deny manifest policies, entry access, resource decisions, bearer constraints, stable denial, security audit, testing fakes, and diagnostics are proven.](specifications/actor-execution-context-authorization.md)                                                                        |
-| First-party roles and permissions | Deferred                        | [Policies and stable abilities remain core; role, grant, and permission persistence is intentionally deferred.](decisions/0022-defer-first-party-permissions.md)                                                                                                                                  |
-| Execution context                 | Implemented proof               | [How are actor, tenant, causation, and security context propagated?](specifications/actor-execution-context-authorization.md)                                                                                                                                                                     |
-
-The [Hono HTTP vertical slice](implementation/hono-http-vertical-slice.md) proves one class-first
-route shape, manifest compilation, Web Standards adaptation, Standard Schema validation, anonymous
-actor admission, stable errors, and Node host lifecycle. Authentication, middleware, resources,
-policy, hardening, and the complete HTTP specification remain unsettled.
+| Area                              | Status                        | Contract or evidence                                                                                            |
+| --------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| HTTP manifest                     | Implemented                   | [Hono HTTP proof](implementation/hono-http-vertical-slice.md)                                                   |
+| Hono adapter                      | Implemented                   | [Hono HTTP proof](implementation/hono-http-vertical-slice.md)                                                   |
+| HTTP response envelopes           | Implemented                   | [HTTP response envelopes](specifications/http-response-envelopes.md)                                            |
+| Authentication                    | Implemented                   | [Authentication completion proof](implementation/authentication-completion-vertical-slice.md)                   |
+| Existing-table auth mapping       | Implemented (MVP common path) | [Existing-table model and auth mapping](decisions/0023-existing-table-model-auth-mapping.md)                    |
+| Authorization                     | Implemented                   | [Actor, execution-context, and authorization contract](specifications/actor-execution-context-authorization.md) |
+| First-party roles and permissions | Deferred                      | [First-party permission persistence is intentionally deferred](decisions/0022-defer-first-party-permissions.md) |
+| Execution context                 | Implemented                   | [Actor, execution-context, and authorization contract](specifications/actor-execution-context-authorization.md) |
 
 ## Operations and developer experience
 
-| Area                           | Status                               | Central question                                                                                                                                              |
-| ------------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Configuration and secrets      | Exploring                            | [How do injectable configuration classes resolve, validate, and protect declared values?](decisions/0021-injectable-configuration-classes.md)                 |
-| Logging                        | Implemented                          | [How do built-in structured records become contextual, redacted, color-coded local output and machine-readable production output?](specifications/logging.md) |
-| Metrics and tracing            | Exploring                            | Which actor and causal fields connect traces, journal entries, jobs, and audit records?                                                                       |
-| Testing applications and fakes | Exploring                            | [How do direct unit tests and pre-boot derived test graphs preserve framework semantics?](decisions/0020-preboot-test-overrides.md)                           |
-| CLI and generators             | Exploring                            | [How do generators support opinionated defaults without making paths semantic?](decisions/0016-path-independent-structure-autowired-services.md)              |
-| Development debugger           | Implemented                          | [How does Theoria expose safe causal execution evidence without becoming audit or APM storage?](specifications/theoria.md)                                    |
-| Diagnostics                    | Implemented                          | Praxis inspection, Drizzle Studio, and [Theoria](specifications/theoria.md) expose the compiled graph, storage, and live execution behavior.                  |
-| Adapter contracts              | Unexplored                           | Which guarantees and conformance cases apply to infrastructure engines?                                                                                       |
-| Compatibility releases         | Unexplored                           | How does a release declare and prove a supported component matrix?                                                                                            |
-| Gnosis AI-assisted engineering | Read-only Phase 1 accepted           | [How can agents safely inspect and work with a Doxa application?](specifications/gnosis.md)                                                                   |
-| Container deployment           | Accepted; implementation in progress | [How does one immutable image safely run web, background, and migration roles?](specifications/container-deployment.md)                                       |
+| Area                           | Status                          | Contract or evidence                                                                                    |
+| ------------------------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Configuration and secrets      | Implemented                     | [Injectable configuration classes](decisions/0021-injectable-configuration-classes.md)                  |
+| Logging                        | Implemented                     | [Logging contract](specifications/logging.md)                                                           |
+| Metrics and tracing            | Implemented                     | [Praxis runtime and observability proof](implementation/praxis-runtime-observability-vertical-slice.md) |
+| Testing applications and fakes | Implemented                     | [First-party testing harness proof](implementation/testing-harness-vertical-slice.md)                   |
+| CLI and generators             | Implemented                     | [Praxis command kernel proof](implementation/praxis-command-kernel-vertical-slice.md)                   |
+| Development debugger           | Implemented                     | [Theoria contract](specifications/theoria.md)                                                           |
+| Diagnostics                    | Implemented                     | [Operational control proof](implementation/operational-control-vertical-slice.md)                       |
+| Adapter contracts              | Implemented                     | [MVP completion ledger](implementation/mvp-completion-ledger.md)                                        |
+| Compatibility releases         | Implemented                     | [Upgrade workflow](../docs/upgrading/index.md)                                                          |
+| Gnosis AI-assisted engineering | Implemented (read-only Phase 1) | [Gnosis contract](specifications/gnosis.md)                                                             |
+| Container deployment           | Implemented                     | [Container deployment contract](specifications/container-deployment.md)                                 |
 
-## Recommended authoring order
+## Maintenance order
 
-The documents should be authored in dependency order, not in order of visible product appeal:
+Contract revisions should still proceed in dependency order, not in order of visible product appeal:
 
 1. Application model, manifest, lifecycle, scopes, and package rules.
 2. Execution context, actions, queries, units of work, and errors.
@@ -145,8 +127,10 @@ The documents should be authored in dependency order, not in order of visible pr
 5. Jobs, workers, retries, scheduling, and shutdown coordination.
 6. Configuration, observability, testing, diagnostics, CLI, and compatibility releases.
 
-Exploration can happen in parallel, but an accepted downstream specification must identify the
-accepted upstream contracts it relies on.
+Exploration can happen in parallel, but a revised downstream specification must identify the
+accepted upstream contracts it relies on. A newly proposed capability may use **Unexplored**,
+**Exploring**, or **Proposed** without changing the implemented status of the completed MVP contract
+it extends.
 
 ## Acceptance bar
 
@@ -161,5 +145,6 @@ A specification is ready to become **Accepted** when:
 - Escape hatches do not undermine the primary programming model.
 - Remaining open questions do not change the contract's foundation.
 
-Implementation should begin with vertical proofs of accepted contracts, but implementation
-convenience must not silently settle unresolved specification questions.
+New implementation should begin with vertical proofs of accepted contracts, but implementation
+convenience must not silently settle unresolved specification questions. Once the aggregate
+acceptance bar passes, this status page and the completion ledger must be updated together.

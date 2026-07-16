@@ -19,6 +19,20 @@ These instructions apply to the entire repository.
 - Do not commit generated `dist`, `.doxa`, coverage, local environment, or package archives.
 - Do not edit unrelated worktree changes.
 
+## Documentation consistency
+
+- Treat documentation as part of the change. When behavior, a public contract, capability status,
+  CLI output, package support, or an operational workflow changes, update every affected
+  specification, accepted decision, implementation proof, completion ledger, guide, README, and
+  release note or changeset in the same change.
+- Keep `manifesto/specifications.md` and `manifesto/implementation/mvp-completion-ledger.md`
+  synchronized whenever aggregate acceptance status changes. Historical vertical-slice status must
+  be clearly identified as historical and must not contradict the current aggregate status.
+- Before claiming completion, search for stale status labels, superseded terminology, old commands,
+  and contradictory descriptions across `manifesto/`, `docs/`, examples, and package READMEs.
+- Run documentation formatting and link validation as part of `pnpm verify`; do not treat passing
+  code tests as sufficient when required documentation is stale or missing.
+
 ## Application-facing design
 
 Doxa is opinionated, magical where safe, trivial for Gnosis to understand, and difficult to misuse.

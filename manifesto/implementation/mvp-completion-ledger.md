@@ -35,7 +35,7 @@ applications and tools do not depend on undocumented behavior.
 
 ## Foundation and operations
 
-| Capability                             | State    | Remaining acceptance work                                                                                                                                                   |
+| Capability                             | State    | Acceptance evidence                                                                                                                                                         |
 | -------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Application and Feature declarations   | Complete | Compiled declarations, generators, and diagnostics agree.                                                                                                                   |
 | Manifest and constructor registry      | Complete | Versioned JSON, constructor registry, hashes, compatibility, and inspection fail closed.                                                                                    |
@@ -49,7 +49,7 @@ applications and tools do not depend on undocumented behavior.
 
 ## Reactive and asynchronous model
 
-| Capability                 | State    | Remaining acceptance work                                                                                                  |
+| Capability                 | State    | Acceptance evidence                                                                                                        |
 | -------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Class events and listeners | Complete | Local, after-commit, queued, and queued-after-commit semantics and fakes are proven.                                       |
 | Signals                    | Complete | Immediate non-durable semantics, failure behavior, diagnostics, and test API are proven.                                   |
@@ -59,7 +59,7 @@ applications and tools do not depend on undocumented behavior.
 
 ## Security
 
-| Capability                    | State    | Remaining acceptance work                                                                                                           |
+| Capability                    | State    | Acceptance evidence                                                                                                                 |
 | ----------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Email/password identities     | Complete | Registration, verification, reset/change, single-use challenges, breached-password hook, and audit are proven.                      |
 | Browser sessions              | Complete | Digest-only storage, CSRF, rotation, bounded grace, replay rejection, listing, revocation, and pruning are proven.                  |
@@ -71,7 +71,7 @@ applications and tools do not depend on undocumented behavior.
 
 ## Communications and infrastructure
 
-| Capability         | State    | Remaining acceptance work                                                                                                    |
+| Capability         | State    | Acceptance evidence                                                                                                          |
 | ------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | Doxa mail contract | Complete | Transactional outbox delivery, normalized state, fakes, telemetry, inspection, and redrive are proven.                       |
 | SendGrid adapter   | Complete | Request translation, failure classes, signed timestamp-bounded webhooks, deduplication, and conformance fixtures are proven. |
@@ -81,7 +81,7 @@ applications and tools do not depend on undocumented behavior.
 
 ## Observability and operability
 
-| Capability                     | State    | Remaining acceptance work                                                                                                                                                                                         |
+| Capability                     | State    | Acceptance evidence                                                                                                                                                                                               |
 | ------------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Structured logs                | Complete | Automatic role-bound loggers, ordinary-service constructor injection, recursive redaction, contextual framework channels, colored TTY output, NDJSON output, and in-memory assertions are proven.                 |
 | W3C trace context              | Complete | HTTP validation/propagation plus durable queue, delivery, journal, and outbox correlation are proven.                                                                                                             |
@@ -93,16 +93,17 @@ applications and tools do not depend on undocumented behavior.
 
 ## Developer experience
 
-| Capability                  | State    | Remaining acceptance work                                                                                                                                                          |
-| --------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Praxis command kernel       | Complete | One first-party executable owns generation, build, run, migration, inspection, recovery, and application commands.                                                                 |
-| `new` application generator | Complete | A clean generated app compiles and boots auth, HTTP, persistence, policy, model, observer, event, signal, job, schedule, mail, SMS, telemetry, and tests.                          |
-| `make:*` generators         | Complete | Every canonical role is generated, registered, overwrite-safe, and authorization-explicit.                                                                                         |
-| Database commands           | Complete | Forward migration, status, batching, checksums, advisory lock, and drift refusal are proven; destructive rollback is intentionally excluded.                                       |
-| Runtime commands            | Complete | `serve`, default combined `work`, advanced isolated `work --without-scheduler`/`schedule`, combined dev, and fail-safe fresh-runtime hot reload are proven.                        |
-| Inspection commands         | Complete | Graph, routes, reactive roles, policies, commands, queues, deliveries, infrastructure, auth, and schedules are proven.                                                             |
-| Testing package and fakes   | Complete | HTTP/auth/persistence/queue/comms/cache/telemetry plus direct event, signal, job, and schedule APIs are proven against real manifests.                                             |
-| Gnosis integration          | Complete | Shared typed introspection, manifest relationship metadata, bounded read-only MCP tools/resources, exact-version local guidance, stdio launch, and generated knowledge are proven. |
+| Capability                  | State    | Acceptance evidence                                                                                                                                                                          |
+| --------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Praxis command kernel       | Complete | One first-party executable owns generation, build, run, migration, inspection, recovery, and application commands.                                                                           |
+| `new` application generator | Complete | A clean generated app compiles and boots auth, HTTP, persistence, policy, model, observer, event, signal, job, schedule, mail, SMS, telemetry, and tests.                                    |
+| `make:*` generators         | Complete | Every canonical role is generated, registered, overwrite-safe, and authorization-explicit.                                                                                                   |
+| Database commands           | Complete | Forward migration, status, batching, checksums, advisory lock, and drift refusal are proven; destructive rollback is intentionally excluded.                                                 |
+| Runtime commands            | Complete | `serve`, default combined `work`, advanced isolated `work --without-scheduler`/`schedule`, combined dev, and fail-safe fresh-runtime hot reload are proven.                                  |
+| Inspection commands         | Complete | Graph, routes, reactive roles, policies, commands, queues, deliveries, infrastructure, auth, and schedules are proven.                                                                       |
+| Testing package and fakes   | Complete | HTTP/auth/persistence/queue/comms/cache/telemetry plus direct event, signal, job, and schedule APIs are proven against real manifests.                                                       |
+| Gnosis integration          | Complete | Shared typed introspection, manifest relationship metadata, bounded read-only MCP tools/resources, exact-version local guidance, stdio launch, and generated knowledge are proven.           |
+| Compatibility and upgrades  | Complete | Release metadata aligns the framework package and toolchain matrix; safe planning, built-in recipes, installation handoff, build, migration-status, and optional test validation are proven. |
 
 ## Reference application acceptance
 
