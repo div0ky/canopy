@@ -7,12 +7,15 @@ The normative direction is defined by
 ## Trace context
 
 An active trace context contains a W3C-compatible trace ID, active span ID, optional parent span ID,
-trace flags, and bounded links. A new execution always receives a new span ID. An admitted inbound
-span is the execution span's parent; it is never reused as the execution span itself.
+remote-parent provenance, trace flags, and bounded links. A new execution always receives a new span
+ID. An admitted inbound span is the execution span's parent; it is never reused as the execution
+span itself.
 
 Queue and durable context envelopes preserve the producer trace. Direct producer/consumer work uses
 parentage. Fan-out, scheduled or delayed work, retries, and multi-source work use explicit links
-when single parentage would misstate causality.
+when single parentage would misstate causality. Queue adapters persist the actual trace and span
+identity for each attempt until terminal completion so retry links remain correct across worker
+processes and telemetry adapters that assign span IDs.
 
 ## Instrumented scopes
 

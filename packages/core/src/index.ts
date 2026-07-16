@@ -513,6 +513,8 @@ export interface TraceContext {
   readonly traceId?: string
   readonly spanId?: string
   readonly parentSpanId?: string
+  readonly isRemote?: boolean
+  readonly parentIsRemote?: boolean
   readonly traceFlags?: number
   readonly links?: readonly SpanLink[]
 }

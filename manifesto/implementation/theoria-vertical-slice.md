@@ -9,13 +9,14 @@ telemetry, and semantic observations. Each admitted request or worker delivery c
 span beneath valid inbound W3C context. Actions, queries, commands, routes, transactions, model
 operations, authorization, listeners, reactions, jobs, queue and communication adapters, broadcasts,
 and AI operations create child spans. Delayed and retried work carries explicit links when a single
-parent would misstate causality. Business correlation and causation remain separate from span
-parentage.
+parent would misstate causality. Queue attempt trace identities are persisted until terminal
+completion, so retry links survive worker replacement and SDK-assigned span IDs. Business
+correlation and causation remain separate from span parentage.
 
 `@doxajs/opentelemetry` bridges the vendor-independent `Telemetry` port to the registered
-OpenTelemetry API. The SDK-generated trace and span IDs become the active Doxa context, so exported
-spans, Theoria observations, structured logs, queue envelopes, and HTTP response headers agree. The
-adapter does not choose an exporter, endpoint, or credentials for the application.
+OpenTelemetry API. The adapter-reported trace and span IDs become the active Doxa context, so
+exported spans, Theoria observations, structured logs, queue envelopes, and HTTP response headers
+agree. The adapter does not choose an exporter, endpoint, or credentials for the application.
 
 Theoria persists immutable, redacted observations with parent span IDs, span links, opaque text
 correlation IDs, and application, service, environment, release, and instance resource identity. Its

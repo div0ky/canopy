@@ -823,6 +823,68 @@ export function registerCompilationAndTheoriaTests(
     ])
   })
 
+  it('keeps distinct semantic start records that share one execution span', async () => {
+    const recorder = new PostgresTheoria({
+      connectionString: connectionString(),
+      minimumDurationMilliseconds: 10,
+      batchSize: 100,
+      flushIntervalMilliseconds: 60_000,
+    })
+    const lifecycle = {
+      signal: new AbortController().signal,
+      deadline: new Date(Date.now() + 5_000),
+    }
+    await recorder.start(lifecycle)
+    const executionId = randomUUID()
+    const context = {
+      executionId,
+      traceId: 'e'.repeat(32),
+      spanId: 'f'.repeat(16),
+    }
+    for (const [kind, name] of [
+      ['execution', 'GET /shared'] as const,
+      ['http', 'GET /shared'] as const,
+    ]) {
+      recorder.record({
+        id: randomUUID(),
+        occurredAt: new Date().toISOString(),
+        kind,
+        name,
+        phase: 'started',
+        context,
+        attributes: {},
+      })
+    }
+    for (const [kind, name] of [
+      ['execution', 'GET /shared'] as const,
+      ['http', 'GET /shared'] as const,
+    ]) {
+      recorder.record({
+        id: randomUUID(),
+        occurredAt: new Date().toISOString(),
+        kind,
+        name,
+        phase: 'completed',
+        durationMilliseconds: 25,
+        context,
+        attributes: {},
+      })
+    }
+    await recorder.dispose(lifecycle)
+
+    const result = await pool().query<{ kind: string; phase: string }>(
+      `SELECT kind, phase FROM doxa_theoria_observations
+       WHERE execution_id = $1 ORDER BY sequence`,
+      [executionId],
+    )
+    expect(result.rows).toEqual([
+      { kind: 'execution', phase: 'started' },
+      { kind: 'execution', phase: 'completed' },
+      { kind: 'http', phase: 'started' },
+      { kind: 'http', phase: 'completed' },
+    ])
+  })
+
   it('serves the read-only Theoria explorer from its dedicated loopback host', async () => {
     const host = await listenTheoria({ connectionString: connectionString(), port: 0 })
     try {
@@ -832,6 +894,7 @@ export function registerCompilationAndTheoriaTests(
       expect(html).toContain('Everything beneath the surface')
       expect(html).toContain('.filters{flex:0 0 auto')
       expect(html).toContain('.scroll{flex:1 1 auto}')
+      expect(html).toContain('if(selected)await chooseExecution')
       expect(await (await fetch(new URL('/api/health', host.url))).json()).toEqual({
         ok: true,
         data: { service: 'theoria' },
@@ -867,7 +930,7 @@ export function registerCompilationAndTheoriaTests(
       expect(
         (
           await fetch(new URL('/api/health', host.url), {
-            headers: { authorization: `Bearer ${'t'.repeat(32)}` },
+            headers: { authorization: `bearer ${'t'.repeat(32)}` },
           })
         ).status,
       ).toBe(200)
@@ -875,6 +938,40 @@ export function registerCompilationAndTheoriaTests(
         expect.objectContaining({ outcome: 'denied' }),
         expect.objectContaining({ outcome: 'allowed', operatorId: 'operator:aaron' }),
       ])
+    } finally {
+      await host.shutdown()
+    }
+  })
+
+  it('accepts trusted-proxy identities only from explicit proxy and operator allowlists', async () => {
+    const host = await listenTheoria({
+      connectionString: connectionString(),
+      host: '127.0.0.1',
+      port: 0,
+      access: {
+        mode: 'trusted-proxy',
+        identityHeader: 'x-theoria-operator',
+        allowedOperators: ['operator:aaron'],
+        trustedProxyAddresses: ['127.0.0.1'],
+        proxyTrusted: true,
+      },
+      audit: () => undefined,
+    })
+    try {
+      expect(
+        (
+          await fetch(new URL('/api/health', host.url), {
+            headers: { 'x-theoria-operator': 'operator:mallory' },
+          })
+        ).status,
+      ).toBe(401)
+      expect(
+        (
+          await fetch(new URL('/api/health', host.url), {
+            headers: { 'x-theoria-operator': 'operator:aaron' },
+          })
+        ).status,
+      ).toBe(200)
     } finally {
       await host.shutdown()
     }

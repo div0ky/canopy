@@ -1,4 +1,5 @@
 import type { ActorKind, JsonValue, SpanLink } from './index.js'
+import { safeDiagnosticError } from './privacy-error.js'
 
 export type ObservationKind =
   | 'execution'
@@ -112,7 +113,7 @@ export function sanitizeObservationAttributes(
 
 export function sanitizeObservationError(error: unknown): ObservationError {
   try {
-    return sanitizeError(error, new Set())
+    return sanitizeError(safeDiagnosticError(error), new Set())
   } catch {
     return Object.freeze({ name: 'Error', message: '[UNAVAILABLE ERROR]' })
   }

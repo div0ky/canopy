@@ -1,5 +1,13 @@
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { argon2, createHash, createHmac, generateKeyPairSync, randomUUID, sign } from 'node:crypto'
+import {
+  argon2,
+  createHash,
+  createHmac,
+  generateKeyPairSync,
+  randomBytes,
+  randomUUID,
+  sign,
+} from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -22,6 +30,11 @@ import {
   ReadOnlyExecutionError,
   StaleUnitOfWorkError,
   StaleModelError,
+  Telemetry,
+  type TelemetryRecord,
+  type TelemetrySpanEnd,
+  type TelemetrySpanHandle,
+  type TelemetrySpanStart,
   type UnitOfWork,
   Model,
   type ModelAttributes,
@@ -110,6 +123,23 @@ let container: StartedPostgreSqlContainer
 let connectionString: string
 let pool: Pool
 let executionSequence = 0
+
+class ReplacingSpanTelemetry extends Telemetry {
+  record(_record: TelemetryRecord): void {}
+
+  startSpan(input: TelemetrySpanStart): TelemetrySpanHandle {
+    return Object.freeze({
+      context: Object.freeze({
+        ...input.context,
+        traceId: input.context.parentSpanId
+          ? input.context.traceId!
+          : randomBytes(16).toString('hex'),
+        spanId: randomBytes(8).toString('hex'),
+      }),
+      end(_result: TelemetrySpanEnd): void {},
+    })
+  }
+}
 
 describe('PostgreSQL and Drizzle persistence slice', () => {
   beforeAll(async () => {
@@ -706,6 +736,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       'Migrated framework/auth-postgres/0001_doxa_auth.sql',
       'Migrated framework/auth-postgres/0003_challenge_recipient_binding.sql',
       'Migrated framework/queue-pg-boss/0001_doxa_schedule_controls.sql',
+      'Migrated framework/queue-pg-boss/0002_doxa_queue_attempt_traces.sql',
     ])
     expect(
       (await pool.query(`SELECT to_regclass('pgboss.job') AS relation`)).rows[0]?.relation,
@@ -959,7 +990,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
   })
 
   it('hands committed jobs through the outbox and retries with stable job identity', async () => {
-    const runtime = await bootPersistenceRuntime()
+    const runtime = await bootPersistenceRuntime({ telemetry: new ReplacingSpanTelemetry() })
     const jobId = await runtime.admit(
       {
         actor: { kind: 'service', id: 'queue-producer' },
@@ -1032,6 +1063,16 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         }),
       ]),
     )
+    expect(
+      Number(
+        (
+          await pool.query(
+            'SELECT count(*) AS count FROM doxa_queue_attempt_traces WHERE job_id = $1',
+            [jobId],
+          )
+        ).rows[0]?.count ?? 0,
+      ),
+    ).toBe(0)
     expect(await inspectQueueJob(connectionString, jobId)).toEqual(
       expect.objectContaining({
         id: jobId,
@@ -4057,6 +4098,7 @@ async function bootPersistenceRuntime(
   options: {
     readonly profile?: 'application' | 'model-reader'
     readonly minimalEnvironment?: boolean
+    readonly telemetry?: Telemetry
   } = {},
 ): Promise<DoxaRuntime> {
   const artifactsDirectory = await temporaryDirectory()
@@ -4074,6 +4116,13 @@ async function bootPersistenceRuntime(
             COMMUNICATIONS_TWILIO_AUTH_TOKEN: twilioAuthToken,
           }),
     },
+    ...(options.telemetry
+      ? {
+          providerOverrides: {
+            'provider:infrastructure/telemetry': options.telemetry,
+          },
+        }
+      : {}),
   })
   runtimes.push(runtime)
   return runtime

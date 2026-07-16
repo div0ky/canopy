@@ -61,6 +61,9 @@ export class DoxaOpenTelemetry extends Telemetry {
         traceId: actual.traceId,
         spanId: actual.spanId,
         ...(input.context.parentSpanId ? { parentSpanId: input.context.parentSpanId } : {}),
+        ...(input.context.parentSpanId
+          ? { parentIsRemote: input.context.parentIsRemote === true }
+          : {}),
         traceFlags: actual.traceFlags,
         ...(input.context.links?.length ? { links: input.context.links } : {}),
       }),
@@ -97,16 +100,26 @@ function parentSpanContext(input: TelemetrySpanStart) {
   if (!traceId || !parentSpanId) return ROOT_CONTEXT
   return trace.setSpanContext(
     ROOT_CONTEXT,
-    spanContext(traceId, parentSpanId, input.context.traceFlags),
+    spanContext(
+      traceId,
+      parentSpanId,
+      input.context.traceFlags,
+      input.context.parentIsRemote === true,
+    ),
   )
 }
 
-function spanContext(traceId: string, spanId: string, traceFlags = 1): SpanContext {
+function spanContext(
+  traceId: string,
+  spanId: string,
+  traceFlags = 1,
+  isRemote = false,
+): SpanContext {
   return Object.freeze({
     traceId,
     spanId,
     traceFlags: traceFlags & TraceFlags.SAMPLED ? TraceFlags.SAMPLED : TraceFlags.NONE,
-    isRemote: false,
+    isRemote,
   })
 }
 

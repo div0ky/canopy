@@ -100,6 +100,7 @@ import {
 import {
   type EventDispatcher,
   type JobDispatcher,
+  markPrivacySensitiveError,
   ModelSession,
   runWithEventDispatcher,
   runWithJobDispatcher,
@@ -108,6 +109,7 @@ import {
   runWithRoleConstruction,
   type RoleConstructionContext,
   runWithSignalDispatcher,
+  safeDiagnosticError,
   type RoleInjectionToken,
   type SignalDispatcher,
 } from '@doxajs/core/runtime'
@@ -812,6 +814,7 @@ export class DoxaRuntime {
     liveSpan?: TelemetrySpanHandle,
   ): Promise<void> {
     const durationMilliseconds = performance.now() - startedAt
+    const diagnosticError = safeDiagnosticError(error)
     const attributes = telemetryAttributes(context)
     const executionLogger = this.logger.channel(logChannelForTransport(context.transport.kind))
     const logAttributes = {
@@ -822,7 +825,7 @@ export class DoxaRuntime {
       if (status === 'ok' && context.transport.kind === 'http')
         executionLogger.debug('Execution completed', logAttributes)
       else if (status === 'ok') executionLogger.info('Execution completed', logAttributes)
-      else executionLogger.error('Execution failed', error, logAttributes)
+      else executionLogger.error('Execution failed', diagnosticError, logAttributes)
     })
     await this.recordTelemetry({
       kind: 'log',
@@ -867,7 +870,7 @@ export class DoxaRuntime {
         phase,
         durationMilliseconds,
         attributes: { transport: context.transport.kind },
-        ...(error === undefined ? {} : { error }),
+        ...(diagnosticError === undefined ? {} : { error: diagnosticError }),
       },
       context,
     )
@@ -888,10 +891,10 @@ export class DoxaRuntime {
       await this.recordObservation(
         {
           kind: 'exception',
-          name: errorMessage(error),
+          name: errorMessage(diagnosticError),
           phase: 'occurred',
           attributes: { boundary: 'execution' },
-          error,
+          error: diagnosticError,
         },
         context,
       )
@@ -976,6 +979,7 @@ export class DoxaRuntime {
           )
           return output
         } catch (error) {
+          if (kind.startsWith('ai.')) markPrivacySensitiveError(error)
           await this.completeInstrumentedScope(
             { kind, name, attributes, ...(roleId ? { roleId } : {}) },
             context,
@@ -1007,6 +1011,7 @@ export class DoxaRuntime {
   ): Promise<void> {
     const durationMilliseconds = performance.now() - startedAt
     const endedAt = new Date().toISOString()
+    const observationError = safeDiagnosticError(error)
     await this.recordObservation(
       {
         kind: input.kind,
@@ -1015,7 +1020,7 @@ export class DoxaRuntime {
         attributes: input.attributes,
         durationMilliseconds,
         ...(input.roleId ? { roleId: input.roleId } : {}),
-        ...(error === undefined ? {} : { error }),
+        ...(observationError === undefined ? {} : { error: observationError }),
       },
       context,
     )
@@ -1023,10 +1028,10 @@ export class DoxaRuntime {
       await this.recordObservation(
         {
           kind: 'exception',
-          name: errorMessage(error),
+          name: errorMessage(observationError),
           phase: 'occurred',
           attributes: { boundary: input.kind },
-          error,
+          error: observationError,
           ...(input.roleId ? { roleId: input.roleId } : {}),
         },
         context,
@@ -1073,9 +1078,12 @@ export class DoxaRuntime {
       if (
         !handle.context.traceId ||
         !/^[0-9a-f]{32}$/.test(handle.context.traceId) ||
+        /^0+$/.test(handle.context.traceId) ||
         !handle.context.spanId ||
         !/^[0-9a-f]{16}$/.test(handle.context.spanId) ||
-        handle.context.traceId !== context.traceId
+        /^0+$/.test(handle.context.spanId) ||
+        (context.parentSpanId !== undefined && handle.context.traceId !== context.traceId) ||
+        handle.context.parentSpanId !== context.parentSpanId
       ) {
         return undefined
       }
@@ -2075,109 +2083,159 @@ export class DoxaRuntime {
 
   private async handleQueueDelivery(delivery: QueueDelivery): Promise<void> {
     const { envelope, attempt } = delivery
-    await this.observeTelemetry(
-      'queue.delivery',
-      {
-        kind: envelope.kind,
-        target: envelope.targetId,
-        scheduled: Boolean(envelope.scheduleId),
-        attempt,
-      },
-      () =>
-        this.#admitExecution(
-          {
-            ...queueSeed(envelope, attempt),
-            cancellation: delivery.cancellation,
-          },
-          async () => {
-            const store = this.requireExecution('job')
-            store.job = Object.freeze({
-              id: envelope.id,
-              attempt,
-              maxAttempts: envelope.policy.retries + 1,
-              ...(envelope.idempotencyKey ? { idempotencyKey: envelope.idempotencyKey } : {}),
-            })
-            if (envelope.kind === 'job') {
-              const manifest = this.#jobsById.get(envelope.targetId)
-              if (!manifest)
-                throw new OperationDispatchError(`Queued job ${envelope.targetId} is not declared.`)
-              if (envelope.scheduleId) {
-                const schedule = this.#schedulesById.get(envelope.scheduleId)
-                if (!schedule)
+    const priorAttemptTrace =
+      attempt > 1 ? await this.findQueueAttemptTrace(envelope.id, attempt - 1) : undefined
+    let succeeded = false
+    try {
+      await this.observeTelemetry(
+        'queue.delivery',
+        {
+          kind: envelope.kind,
+          target: envelope.targetId,
+          scheduled: Boolean(envelope.scheduleId),
+          attempt,
+        },
+        () =>
+          this.#admitExecution(
+            {
+              ...queueSeed(envelope, attempt, priorAttemptTrace),
+              cancellation: delivery.cancellation,
+            },
+            async (context) => {
+              await this.recordQueueAttemptTrace(envelope.id, attempt, context.trace)
+              const store = this.requireExecution('job')
+              store.job = Object.freeze({
+                id: envelope.id,
+                attempt,
+                maxAttempts: envelope.policy.retries + 1,
+                ...(envelope.idempotencyKey ? { idempotencyKey: envelope.idempotencyKey } : {}),
+              })
+              if (envelope.kind === 'job') {
+                const manifest = this.#jobsById.get(envelope.targetId)
+                if (!manifest)
                   throw new OperationDispatchError(
-                    `Schedule ${envelope.scheduleId} is not declared.`,
+                    `Queued job ${envelope.targetId} is not declared.`,
                   )
-                if (schedule.access !== 'public')
-                  await this.authorization.authorize(schedule.access)
-                await this.recordObservation({
-                  kind: 'schedule',
-                  name: schedule.id,
-                  phase: 'occurred',
-                  roleId: schedule.id,
-                  attributes: { jobId: envelope.id, targetId: envelope.targetId },
-                })
+                if (envelope.scheduleId) {
+                  const schedule = this.#schedulesById.get(envelope.scheduleId)
+                  if (!schedule)
+                    throw new OperationDispatchError(
+                      `Schedule ${envelope.scheduleId} is not declared.`,
+                    )
+                  if (schedule.access !== 'public')
+                    await this.authorization.authorize(schedule.access)
+                  await this.recordObservation({
+                    kind: 'schedule',
+                    name: schedule.id,
+                    phase: 'occurred',
+                    roleId: schedule.id,
+                    attributes: { jobId: envelope.id, targetId: envelope.targetId },
+                  })
+                }
+                await this.invokeJob(manifest, envelope.payload, store)
+                return
               }
-              await this.invokeJob(manifest, envelope.payload, store)
-              return
-            }
-            if (envelope.kind === 'mail' || envelope.kind === 'sms') {
-              await this.invokeCommunication(envelope, store)
-              return
-            }
-            if (envelope.kind === 'broadcast') {
-              const eventManifest = this.manifest.events.find(
+              if (envelope.kind === 'mail' || envelope.kind === 'sms') {
+                await this.invokeCommunication(envelope, store)
+                return
+              }
+              if (envelope.kind === 'broadcast') {
+                const eventManifest = this.manifest.events.find(
+                  (entry) => entry.id === envelope.targetId,
+                )
+                const EventConstructor = eventManifest
+                  ? this.artifacts.registry.constructors[eventManifest.id]
+                  : undefined
+                if (
+                  !eventManifest ||
+                  !EventConstructor ||
+                  envelope.eventVersion !== eventManifest.payloadVersion ||
+                  typeof envelope.payload !== 'object' ||
+                  envelope.payload === null ||
+                  Array.isArray(envelope.payload)
+                ) {
+                  throw new OperationDispatchError(
+                    `Queued broadcast ${envelope.targetId} cannot be rehydrated.`,
+                  )
+                }
+                const event = rehydrateEvent(eventManifest, EventConstructor, envelope.payload)
+                await this.publishBroadcast(eventManifest, event)
+                return
+              }
+              const listener = this.manifest.listeners.find(
                 (entry) => entry.id === envelope.targetId,
               )
-              const EventConstructor = eventManifest
-                ? this.artifacts.registry.constructors[eventManifest.id]
+              const eventManifest = envelope.eventId
+                ? this.manifest.events.find((entry) => entry.id === envelope.eventId)
                 : undefined
+              if (!listener || !eventManifest) {
+                throw new OperationDispatchError(
+                  `Queued listener ${envelope.targetId} is not declared correctly.`,
+                )
+              }
+              if (envelope.eventVersion !== eventManifest.payloadVersion) {
+                throw new OperationDispatchError(
+                  `Queued event ${eventManifest.id} payload version ${String(envelope.eventVersion)} is unsupported; expected ${eventManifest.payloadVersion}.`,
+                )
+              }
+              const EventConstructor = this.artifacts.registry.constructors[eventManifest.id]
               if (
-                !eventManifest ||
                 !EventConstructor ||
-                envelope.eventVersion !== eventManifest.payloadVersion ||
                 typeof envelope.payload !== 'object' ||
                 envelope.payload === null ||
                 Array.isArray(envelope.payload)
               ) {
                 throw new OperationDispatchError(
-                  `Queued broadcast ${envelope.targetId} cannot be rehydrated.`,
+                  `Queued event ${eventManifest.id} cannot be rehydrated.`,
                 )
               }
               const event = rehydrateEvent(eventManifest, EventConstructor, envelope.payload)
-              await this.publishBroadcast(eventManifest, event)
-              return
-            }
-            const listener = this.manifest.listeners.find((entry) => entry.id === envelope.targetId)
-            const eventManifest = envelope.eventId
-              ? this.manifest.events.find((entry) => entry.id === envelope.eventId)
-              : undefined
-            if (!listener || !eventManifest) {
-              throw new OperationDispatchError(
-                `Queued listener ${envelope.targetId} is not declared correctly.`,
-              )
-            }
-            if (envelope.eventVersion !== eventManifest.payloadVersion) {
-              throw new OperationDispatchError(
-                `Queued event ${eventManifest.id} payload version ${String(envelope.eventVersion)} is unsupported; expected ${eventManifest.payloadVersion}.`,
-              )
-            }
-            const EventConstructor = this.artifacts.registry.constructors[eventManifest.id]
-            if (
-              !EventConstructor ||
-              typeof envelope.payload !== 'object' ||
-              envelope.payload === null ||
-              Array.isArray(envelope.payload)
-            ) {
-              throw new OperationDispatchError(
-                `Queued event ${eventManifest.id} cannot be rehydrated.`,
-              )
-            }
-            const event = rehydrateEvent(eventManifest, EventConstructor, envelope.payload)
-            await this.invokeListener(listener, event, store)
-          },
-          queueAttemptSpanId(envelope.id, attempt),
-        ),
-    )
+              await this.invokeListener(listener, event, store)
+            },
+            queueAttemptSpanId(envelope.id, attempt),
+          ),
+      )
+      succeeded = true
+    } finally {
+      if (succeeded || attempt >= envelope.policy.retries + 1) {
+        await this.clearQueueAttemptTraces(envelope.id)
+      }
+    }
+  }
+
+  private async findQueueAttemptTrace(
+    id: string,
+    attempt: number,
+  ): Promise<import('@doxajs/core').SpanLink | undefined> {
+    try {
+      return await this.queues?.findAttemptTrace(id, attempt)
+    } catch {
+      return undefined
+    }
+  }
+
+  private async recordQueueAttemptTrace(
+    id: string,
+    attempt: number,
+    trace: TraceContext,
+  ): Promise<void> {
+    if (!trace.traceId || !trace.spanId) return
+    try {
+      await this.queues?.recordAttemptTrace(id, attempt, {
+        traceId: trace.traceId,
+        spanId: trace.spanId,
+      })
+    } catch {
+      /* Trace bookkeeping never changes job behavior. */
+    }
+  }
+
+  private async clearQueueAttemptTraces(id: string): Promise<void> {
+    try {
+      await this.queues?.clearAttemptTraces(id)
+    } catch {
+      /* Trace bookkeeping never changes job behavior. */
+    }
   }
 
   private async invokeCommunication(envelope: QueueEnvelope, store: ExecutionStore): Promise<void> {
@@ -3490,6 +3548,7 @@ function createExecutionContext(
       traceId: trace.traceId ?? randomBytes(16).toString('hex'),
       spanId: executionSpanId ?? randomBytes(8).toString('hex'),
       ...(trace.spanId ? { parentSpanId: trace.spanId } : {}),
+      ...(trace.spanId ? { parentIsRemote: trace.isRemote === true } : {}),
       traceFlags: trace.traceFlags ?? 1,
       ...(trace.links?.length ? { links: freezeSpanLinks(trace.links) } : {}),
     }),
@@ -3561,6 +3620,7 @@ function childTraceContext(
     traceId: parent.traceId ?? randomBytes(16).toString('hex'),
     spanId: randomBytes(8).toString('hex'),
     ...(parent.spanId ? { parentSpanId: parent.spanId } : {}),
+    ...(parent.spanId ? { parentIsRemote: false } : {}),
     traceFlags: parent.traceFlags ?? 1,
     ...(links?.length ? { links: freezeSpanLinks(links) } : {}),
   })
@@ -3720,13 +3780,17 @@ function queueContext(context: ExecutionContext): QueueExecutionEnvelope {
   }
 }
 
-function queueSeed(envelope: QueueEnvelope, attempt: number): ExecutionContextSeed {
+function queueSeed(
+  envelope: QueueEnvelope,
+  attempt: number,
+  priorAttemptTrace?: import('@doxajs/core').SpanLink,
+): ExecutionContextSeed {
   const context = envelope.context
   const retryLink =
-    attempt > 1 && context.trace.traceId
+    attempt > 1 && priorAttemptTrace
       ? {
-          traceId: context.trace.traceId,
-          spanId: queueAttemptSpanId(envelope.id, attempt - 1),
+          traceId: priorAttemptTrace.traceId,
+          spanId: priorAttemptTrace.spanId,
           attributes: { relationship: 'retry', attempt: attempt - 1 },
         }
       : undefined
@@ -3764,6 +3828,7 @@ function queueSeed(envelope: QueueEnvelope, attempt: number): ExecutionContextSe
     transport: { kind: 'job', name: envelope.targetId },
     trace: {
       ...context.trace,
+      isRemote: true,
       ...(retryLink ? { links: [...(context.trace.links ?? []), retryLink] } : {}),
     },
     ...(context.locale ? { locale: context.locale } : {}),

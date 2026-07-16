@@ -18,7 +18,8 @@ export type TheoriaAccess =
   | {
       readonly mode: 'trusted-proxy'
       readonly identityHeader: string
-      readonly allowedOperators?: readonly string[]
+      readonly allowedOperators: readonly string[]
+      readonly trustedProxyAddresses: readonly string[]
       readonly proxyTrusted: true
     }
 
@@ -58,7 +59,9 @@ export async function listenTheoria(options: TheoriaServerOptions): Promise<Theo
       const operatorId = authorizeRequest(request, access)
       if (!operatorId && access.mode !== 'loopback') {
         options.audit?.(accessEvent(request, url.pathname, 'denied'))
-        response.setHeader('www-authenticate', 'Bearer realm="Theoria"')
+        if (access.mode === 'bearer') {
+          response.setHeader('www-authenticate', 'Bearer realm="Theoria"')
+        }
         return json(response, 401, {
           ok: false,
           code: 'operator_authentication_required',
@@ -205,8 +208,19 @@ function validateAccess(access: TheoriaAccess): void {
     if (!/^[A-Za-z0-9-]{1,64}$/.test(access.identityHeader)) {
       throw new TypeError('Theoria trusted-proxy identityHeader is invalid.')
     }
-    if (access.allowedOperators?.some((operator) => !operator.trim())) {
-      throw new TypeError('Theoria trusted-proxy allowed operators must not be empty.')
+    if (
+      access.allowedOperators.length === 0 ||
+      access.allowedOperators.some((operator) => !operator.trim())
+    ) {
+      throw new TypeError('Theoria trusted-proxy allowedOperators must contain operator IDs.')
+    }
+    if (
+      access.trustedProxyAddresses.length === 0 ||
+      access.trustedProxyAddresses.some((address) => !address.trim())
+    ) {
+      throw new TypeError(
+        'Theoria trusted-proxy trustedProxyAddresses must contain proxy addresses.',
+      )
     }
   }
 }
@@ -218,17 +232,19 @@ function authorizeRequest(
   if (access.mode === 'loopback') return 'loopback'
   if (access.mode === 'bearer') {
     const value = request.headers.authorization
-    if (!value?.startsWith('Bearer ')) return undefined
+    if (!value || !/^Bearer /i.test(value)) return undefined
     const candidate = Buffer.from(value.slice('Bearer '.length))
     const expected = Buffer.from(access.token)
     return candidate.length === expected.length && timingSafeEqual(candidate, expected)
       ? access.operatorId
       : undefined
   }
+  const remoteAddress = request.socket.remoteAddress
+  if (!remoteAddress || !access.trustedProxyAddresses.includes(remoteAddress)) return undefined
   const value = request.headers[access.identityHeader.toLowerCase()]
   const operatorId = Array.isArray(value) ? value[0] : value
   if (!operatorId?.trim()) return undefined
-  if (access.allowedOperators && !access.allowedOperators.includes(operatorId)) return undefined
+  if (!access.allowedOperators.includes(operatorId)) return undefined
   return operatorId
 }
 
@@ -272,9 +288,9 @@ const THEORIA_HTML = String.raw`<!doctype html>
 <aside class="pane inspector-pane"><div class="pane-head"><h2>Inspector</h2><span id="selected-kind">—</span></div><div class="scroll inspector" id="inspector"><div class="empty"><strong>No observation selected</strong>Select a point on the timeline to inspect its safe, redacted evidence.</div></div></aside></main>
 <footer class="footer"><span><span class="dot"></span>Watching PostgreSQL</span><span>Read-only · secrets redacted</span></footer></div>
 <script type="module">
-const state={executions:[],timeline:[],waterfall:[],execution:null,entry:null,observation:null,kind:'',phase:'',search:'',view:'timeline'};const el=id=>document.getElementById(id);const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const fmt=v=>v==null?'—':v<1?v.toFixed(2)+' ms':v<1000?Math.round(v)+' ms':(v/1000).toFixed(2)+' s';
+const state={executions:[],timeline:[],waterfall:[],execution:null,entry:null,observation:null,kind:'',phase:'',search:'',view:'timeline',loading:false};const el=id=>document.getElementById(id);const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const fmt=v=>v==null?'—':v<1?v.toFixed(2)+' ms':v<1000?Math.round(v)+' ms':(v/1000).toFixed(2)+' s';
 async function api(url){const r=await fetch(url);const body=await r.json();if(!r.ok||!body.ok)throw new Error(body.message||'Theoria request failed');return body.data}
-async function loadExecutions(){try{el('error').style.display='none';const p=new URLSearchParams();if(state.kind)p.set('kind',state.kind);if(state.phase)p.set('phase',state.phase);if(state.search)p.set('search',state.search);state.executions=await api('/api/entries?'+p);const selected=state.executions.find(x=>(x.entryId||x.executionId)===(state.entry||state.execution));if(!selected){state.execution=null;state.entry=null}renderExecutions();if(!selected&&state.executions[0])await chooseExecution(state.executions[0].executionId,state.executions[0].entryId)}catch(e){el('error').textContent=e.message;el('error').style.display='block'}}
+async function loadExecutions(){if(state.loading)return;state.loading=true;try{el('error').style.display='none';const p=new URLSearchParams();if(state.kind)p.set('kind',state.kind);if(state.phase)p.set('phase',state.phase);if(state.search)p.set('search',state.search);state.executions=await api('/api/entries?'+p);const selected=state.executions.find(x=>(x.entryId||x.executionId)===(state.entry||state.execution));if(!selected){state.execution=null;state.entry=null}renderExecutions();if(selected)await chooseExecution(selected.executionId,state.entry||undefined);else if(state.executions[0])await chooseExecution(state.executions[0].executionId,state.executions[0].entryId)}catch(e){el('error').textContent=e.message;el('error').style.display='block'}finally{state.loading=false}}
 function renderExecutions(){const titles={http:'HTTP',job:'Queue',event:'Events',schedule:'Schedules'};el('rail-title').textContent=titles[state.kind]||'Activity';el('count').textContent=state.executions.length;el('executions').innerHTML=state.executions.length?state.executions.map(x=>'<button class="execution '+((x.entryId||x.executionId)===(state.entry||state.execution)?'active ':'')+(x.phase==='failed'?'failed':'')+'" data-id="'+esc(x.executionId)+'" data-entry="'+esc(x.entryId||'')+'"><div class="execution-top"><span class="status '+(x.phase==='failed'?'failed':'')+'"></span><span class="kind">'+esc(x.kind||x.transport||'run')+'</span><span class="execution-name">'+esc(x.name)+'</span></div><div class="execution-meta"><span>'+new Date(x.occurredAt).toLocaleTimeString()+'</span><span>· '+esc(x.phase)+'</span><span class="duration">'+fmt(x.durationMilliseconds)+'</span></div></button>').join(''):'<div class="empty"><strong>No '+esc((titles[state.kind]||'activity').toLowerCase())+' recorded</strong>Run your Doxa application and matching evidence will appear here.</div>';document.querySelectorAll('.execution').forEach(b=>b.onclick=()=>chooseExecution(b.dataset.id,b.dataset.entry||undefined))}
 async function chooseExecution(id,entryId){state.execution=id;state.entry=entryId||null;renderExecutions();[state.timeline,state.waterfall]=await Promise.all([api('/api/timeline/'+encodeURIComponent(id)),api('/api/waterfall/'+encodeURIComponent(id))]);state.observation=(entryId?state.timeline.find(x=>x.id===entryId):null)||state.timeline.findLast(x=>x.phase==='failed')||state.timeline.at(-1)||null;el('correlation').textContent=state.timeline[0]?.context?.correlationId?'correlation '+state.timeline[0].context.correlationId.slice(0,8):'';renderDetail();renderInspector()}
 function renderDetail(){el('detail-title').textContent=state.view==='waterfall'?'Waterfall':'Timeline';el('timeline').className='scroll '+(state.view==='waterfall'?'waterfall':'timeline');if(state.view==='waterfall')renderWaterfall();else renderTimeline()}

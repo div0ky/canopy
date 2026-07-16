@@ -81,7 +81,8 @@ or placing migrations in an entrypoint.
   protect, or replace this operational contract.
 - Background health is process/lifecycle health; it does not pretend to expose HTTP.
 - `SIGTERM` reaches Praxis so Doxa drains before shutdown.
-- Theoria remains disabled in production unless explicitly overridden.
+- Theoria remains inactive in production unless the explicit bounded `production-diagnostics`
+  profile and protected operator access are configured.
 - A release runs migrations once before promoting application roles.
 
 ## Consequences

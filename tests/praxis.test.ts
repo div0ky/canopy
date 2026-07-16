@@ -309,6 +309,18 @@ describe('Praxis command suite', () => {
     expect(invocations).toEqual([['--config.node-linker=hoisted', 'install']])
   })
 
+  it('rejects Theoria-only operator options on db:studio', async () => {
+    const root = await temporaryDirectory()
+    const errors: string[] = []
+    expect(
+      await runPraxis(['db:studio', '--operator=operator:aaron'], root, {
+        out: () => undefined,
+        error: (message) => errors.push(message),
+      }),
+    ).toBe(1)
+    expect(errors).toEqual(['Unknown db:studio option --operator=operator:aaron.'])
+  })
+
   it('generates and registers every canonical framework role', async () => {
     const root = await temporaryDirectory()
     const io = {
@@ -792,6 +804,27 @@ describe('Praxis command suite', () => {
     )
     expect(await fileExists(path.join(destination, 'src/infrastructure'))).toBe(false)
     expect(messages.at(-1)).toContain('Run doxa migrate, then doxa theoria')
+  })
+
+  it('accepts an explicit Theoria operator option before enforcing non-loopback access', async () => {
+    const root = await temporaryDirectory()
+    const errors: string[] = []
+    const previous = process.env.THEORIA_ACCESS_TOKEN
+    delete process.env.THEORIA_ACCESS_TOKEN
+    try {
+      expect(
+        await runPraxis(['theoria', '--host=0.0.0.0', '--operator=operator:aaron'], root, {
+          out: () => undefined,
+          error: (message) => errors.push(message),
+        }),
+      ).toBe(1)
+      expect(errors).toEqual([
+        'Non-loopback Theoria requires THEORIA_ACCESS_TOKEN with at least 32 characters.',
+      ])
+    } finally {
+      if (previous === undefined) delete process.env.THEORIA_ACCESS_TOKEN
+      else process.env.THEORIA_ACCESS_TOKEN = previous
+    }
   })
 
   it('installs the first-party OpenTelemetry composition adapter', async () => {

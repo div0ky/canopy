@@ -22,7 +22,8 @@ work.
 
 Delayed, retried, fanned-out, or multi-source work may carry explicit span links where a single
 parent would misstate causality. Business `correlationId` and `causationId` remain independent from
-trace parentage.
+trace parentage. The first-party queue adapter retains actual attempt trace identities until a job
+is terminal, keeping retry links valid across worker replacement and SDK-assigned span IDs.
 
 ## OpenTelemetry
 
@@ -44,8 +45,10 @@ export class Application extends DoxaApplication {
 
 Initialize an OpenTelemetry Node SDK before importing or booting the application. Select the OTLP or
 other exporter in that SDK; Doxa does not own exporter credentials or endpoint configuration. The
-adapter adopts the SDK-generated span ID at scope start, so exported spans, Theoria observations,
-logs, queue envelopes, and response `traceparent` headers describe the same tree.
+adapter adopts the SDK-reported trace and span identity at scope start, so exported spans, Theoria
+observations, logs, queue envelopes, and response `traceparent` headers describe the same tree.
+Without inbound context, the SDK owns the new root trace identity; with inbound context, Doxa
+retains the admitted trace ID and the SDK supplies the child span ID.
 
 ## Development Theoria
 
@@ -93,13 +96,14 @@ export class Application extends DoxaApplication {
 ```
 
 The recorder samples deterministically by execution, batches writes, bounds its pending queue, and
-never delays application work when saturated. `health()` reports queued, accepted, persisted,
-dropped, and failed writes. Hot evidence stays in the indexed write table; older evidence moves into
-monthly warm partitions. Pruning removes expired partitions and enforces the configured hot bound.
-Kind, phase, exact-name, and minimum-duration filters run before persistence; duration filtering
-retains or rejects both ends of a span together. Each record also persists application, service,
-environment, release, and instance identity. `DOXA_RELEASE` and `DOXA_INSTANCE_ID` supply the latter
-two when recorder options do not.
+never delays application work when saturated. A production `NODE_ENV` cannot be downgraded by
+resource-label configuration. `health()` reports queued, accepted, persisted, dropped, and failed
+writes. Hot evidence stays in the indexed write table; older evidence moves into monthly warm
+partitions. Pruning removes expired partitions and enforces the configured hot bound. Kind, phase,
+exact-name, and minimum-duration filters run before persistence; duration filtering retains or
+rejects both ends of a span together. Each record also persists application, service, environment,
+release, and instance identity. `DOXA_RELEASE` and `DOXA_INSTANCE_ID` supply the latter two when
+recorder options do not.
 
 For protected non-loopback access, run:
 
@@ -112,7 +116,7 @@ pnpm doxa theoria --host=0.0.0.0
 Praxis enables the `production-diagnostics` explorer profile, requires bearer authentication, and
 emits an audit line for allowed and denied requests. Terminate TLS at a deliberately trusted
 operator proxy. For direct integration, `listenTheoria()` also supports a fail-closed trusted-proxy
-identity header with an operator allowlist and mandatory audit callback.
+identity header with explicit proxy-address and operator allowlists plus a mandatory audit callback.
 
 The explorer is read-only. Do not route it through ordinary application business middleware or
 expose it anonymously.

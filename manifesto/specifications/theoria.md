@@ -16,8 +16,8 @@ Each immutable observation contains:
 - Sanitized JSON attributes and a normalized sanitized error.
 
 The initial kinds are `execution`, `http`, `action`, `query`, `transaction`, `model`, `event`,
-`listener`, `reaction`, `signal`, `job`, `schedule`, `authorization`, `cache`, `mail`, `sms`, `log`,
-and `exception`, plus the AI kinds defined by the
+`broadcast`, `listener`, `reaction`, `signal`, `job`, `schedule`, `authorization`, `cache`, `mail`,
+`sms`, `log`, and `exception`, plus the AI kinds defined by the
 [AI observation specification](ai-observations.md). Adding a kind is backward-compatible; changing
 the meaning of an existing kind is not.
 
@@ -62,6 +62,8 @@ logging, and explicit proxy trust. Theoria does not silently reuse application b
 
 Production configuration controls capture sampling and filters, pending-buffer capacity, overflow
 policy, batch size and interval, storage pool, partitions, retention tiers, and protected access.
+Trusted-proxy access requires explicit proxy-address and operator allowlists; a forwarded identity
+header from any other peer is denied.
 
 The primary rail is an activity feed, not merely a list of parent executions. `All` exposes each
 terminal or instantaneous observation as its own entry, so an event dispatched during HTTP work is

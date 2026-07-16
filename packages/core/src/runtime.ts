@@ -4,6 +4,7 @@ export { runWithSignalDispatcher, type SignalDispatcher } from './signal-context
 export { ModelSession } from './model.js'
 export { type JobDispatcher, runWithJobDispatcher } from './queue-context.js'
 export { runWithLogContext } from './logging.js'
+export { markPrivacySensitiveError, safeDiagnosticError } from './privacy-error.js'
 export {
   runWithRoleConstruction,
   type RoleConstructionContext,

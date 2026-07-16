@@ -452,8 +452,7 @@ async function runDatabaseStudio(
       argument === '--verbose' ||
       argument.startsWith('--database=') ||
       argument.startsWith('--host=') ||
-      argument.startsWith('--port=') ||
-      argument.startsWith('--operator=')
+      argument.startsWith('--port=')
     )
       continue
     throw new PraxisCommandError(`Unknown db:studio option ${argument}.`)
@@ -542,7 +541,8 @@ async function runTheoria(cwd: string, args: readonly string[], io: PraxisIo): P
     if (
       argument.startsWith('--database=') ||
       argument.startsWith('--host=') ||
-      argument.startsWith('--port=')
+      argument.startsWith('--port=') ||
+      argument.startsWith('--operator=')
     )
       continue
     throw new PraxisCommandError(`Unknown theoria option ${argument}.`)

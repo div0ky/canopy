@@ -1,8 +1,11 @@
 ---
 '@doxajs/compiler': minor
 '@doxajs/core': minor
+'@doxajs/http-hono': patch
+'@doxajs/introspection': patch
 '@doxajs/opentelemetry': minor
 '@doxajs/praxis': minor
+'@doxajs/queue-pg-boss': minor
 '@doxajs/runtime': minor
 '@doxajs/theoria': minor
 ---

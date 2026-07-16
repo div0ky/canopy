@@ -69,10 +69,14 @@ export class PostgresTheoria extends ObservationRecorder implements Starts, Drai
     if (context.signal.aborted) throw context.signal.reason
     validateRetention(this.options)
     validateCapture(this.options)
-    const environment = this.options.environment ?? process.env.NODE_ENV ?? 'development'
+    const processEnvironment = process.env.NODE_ENV
+    const environment = this.options.environment ?? processEnvironment ?? 'development'
     const productionEnabled =
       this.options.profile === 'production-diagnostics' && this.options.productionEnabled === true
-    if (environment === 'production' && !productionEnabled) {
+    if (
+      (processEnvironment === 'production' || environment === 'production') &&
+      !productionEnabled
+    ) {
       throw new Error(
         'Theoria production diagnostics require profile production-diagnostics and explicit production enablement.',
       )
@@ -345,7 +349,9 @@ function shouldCaptureBase(observation: Observation, options: PostgresTheoriaOpt
 function observationSpanKey(observation: Observation): string | undefined {
   const traceId = observation.context.traceId
   const spanId = observation.context.spanId
-  return traceId && spanId ? `${traceId}:${spanId}` : undefined
+  return traceId && spanId
+    ? `${traceId}:${spanId}:${observation.kind}:${observation.name}:${observation.roleId ?? ''}`
+    : undefined
 }
 
 async function pruneWithPool(
@@ -477,9 +483,9 @@ function validateRetention(options: PostgresTheoriaOptions): void {
   }
   if (
     options.maximumObservations !== undefined &&
-    (!Number.isInteger(options.maximumObservations) || options.maximumObservations <= 0)
+    (!Number.isSafeInteger(options.maximumObservations) || options.maximumObservations <= 0)
   ) {
-    throw new TypeError('Theoria maximumObservations must be a positive integer.')
+    throw new TypeError('Theoria maximumObservations must be a positive safe integer.')
   }
 }
 
@@ -497,14 +503,25 @@ function validateCapture(options: PostgresTheoriaOptions): void {
   ) {
     throw new TypeError('Theoria minimumDurationMilliseconds must be non-negative.')
   }
+  if (
+    options.minimumDurationMilliseconds !== undefined &&
+    options.includePhases &&
+    !(['started', 'completed', 'failed'] as const).every((phase) =>
+      options.includePhases!.includes(phase),
+    )
+  ) {
+    throw new TypeError(
+      'Theoria duration filtering requires started, completed, and failed phases.',
+    )
+  }
   for (const [name, value] of [
     ['maximumPending', options.maximumPending],
     ['batchSize', options.batchSize],
     ['flushIntervalMilliseconds', options.flushIntervalMilliseconds],
     ['poolMaximum', options.poolMaximum],
   ] as const) {
-    if (value !== undefined && (!Number.isInteger(value) || value <= 0)) {
-      throw new TypeError(`Theoria ${name} must be a positive integer.`)
+    if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0)) {
+      throw new TypeError(`Theoria ${name} must be a positive safe integer.`)
     }
   }
 }

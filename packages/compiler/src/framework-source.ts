@@ -111,6 +111,18 @@ export function prepareFrameworkSource(fileName: string, sourceText: string): Pr
   ) {
     throw new DoxaCompilationError('Theoria includePhases contains an unsupported phase.')
   }
+  const theoriaMinimumDurationMilliseconds = theoria
+    ? optionalNonNegativeNumber(theoria, 'minimumDurationMilliseconds')
+    : undefined
+  if (
+    theoriaMinimumDurationMilliseconds !== undefined &&
+    theoriaIncludePhases &&
+    !['started', 'completed', 'failed'].every((phase) => theoriaIncludePhases.includes(phase))
+  ) {
+    throw new DoxaCompilationError(
+      'Theoria duration filtering requires started, completed, and failed phases.',
+    )
+  }
   const configuration = {
     applicationName: database
       ? (optionalString(database, 'applicationName') ?? applicationId)
@@ -136,21 +148,16 @@ export function prepareFrameworkSource(fileName: string, sourceText: string): Pr
     ...(theoria && optionalStringArray(theoria, 'includeNames')
       ? { theoriaIncludeNames: optionalStringArray(theoria, 'includeNames')! }
       : {}),
-    ...(theoria && optionalNonNegativeNumber(theoria, 'minimumDurationMilliseconds') !== undefined
-      ? {
-          theoriaMinimumDurationMilliseconds: optionalNonNegativeNumber(
-            theoria,
-            'minimumDurationMilliseconds',
-          )!,
-        }
+    ...(theoriaMinimumDurationMilliseconds !== undefined
+      ? { theoriaMinimumDurationMilliseconds }
       : {}),
     theoriaMaximumPending: theoria
-      ? (optionalPositiveNumber(theoria, 'maximumPending') ?? 10_000)
+      ? (optionalPositiveInteger(theoria, 'maximumPending') ?? 10_000)
       : 10_000,
     theoriaOverflowPolicy,
-    theoriaBatchSize: theoria ? (optionalPositiveNumber(theoria, 'batchSize') ?? 100) : 100,
+    theoriaBatchSize: theoria ? (optionalPositiveInteger(theoria, 'batchSize') ?? 100) : 100,
     theoriaFlushIntervalMilliseconds: theoria
-      ? (optionalPositiveNumber(theoria, 'flushIntervalMilliseconds') ?? 100)
+      ? (optionalPositiveInteger(theoria, 'flushIntervalMilliseconds') ?? 100)
       : 100,
     theoriaHotRetentionDays: theoria
       ? (optionalPositiveNumber(theoria, 'hotRetentionDays') ??
@@ -161,9 +168,9 @@ export function prepareFrameworkSource(fileName: string, sourceText: string): Pr
       ? { theoriaWarmRetentionDays: optionalPositiveNumber(theoria, 'warmRetentionDays')! }
       : {}),
     theoriaMaximumObservations: theoria
-      ? (optionalPositiveNumber(theoria, 'maximumObservations') ?? 50_000)
+      ? (optionalPositiveInteger(theoria, 'maximumObservations') ?? 50_000)
       : 50_000,
-    theoriaPoolMaximum: theoria ? (optionalPositiveNumber(theoria, 'poolMaximum') ?? 4) : 4,
+    theoriaPoolMaximum: theoria ? (optionalPositiveInteger(theoria, 'poolMaximum') ?? 4) : 4,
     theoriaServiceName: theoria
       ? (optionalString(theoria, 'serviceName') ?? applicationId)
       : applicationId,
@@ -945,6 +952,17 @@ function optionalPositiveNumber(
   const value = Number(property.initializer.text)
   if (!Number.isFinite(value) || value <= 0) {
     throw new DoxaCompilationError(`${name} must be a positive number literal.`)
+  }
+  return value
+}
+
+function optionalPositiveInteger(
+  object: ts.ObjectLiteralExpression,
+  name: string,
+): number | undefined {
+  const value = optionalPositiveNumber(object, name)
+  if (value !== undefined && !Number.isSafeInteger(value)) {
+    throw new DoxaCompilationError(`${name} must be a positive safe integer literal.`)
   }
   return value
 }

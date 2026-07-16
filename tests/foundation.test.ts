@@ -106,6 +106,33 @@ describe('foundational compile-to-boot slice', () => {
     expect(prepared.source).toContain('application: "evergreen"')
     expect(prepared.source).toContain('serviceName = "riley-worker"')
     expect(prepared.source).toContain('release = "2026.07.16"')
+
+    expect(() =>
+      prepareFrameworkSource(
+        'app.config.ts',
+        `export class Application {
+          id = 'invalid-theoria'
+          features = []
+          plugins = ['@doxajs/theoria']
+          framework = { theoria: { maximumPending: 1.5 } }
+        }`,
+      ),
+    ).toThrow('maximumPending must be a positive safe integer literal')
+
+    expect(() =>
+      prepareFrameworkSource(
+        'app.config.ts',
+        `export class Application {
+          id = 'invalid-duration-filter'
+          features = []
+          plugins = ['@doxajs/theoria']
+          framework = { theoria: {
+            minimumDurationMilliseconds: 5,
+            includePhases: ['started', 'completed']
+          } }
+        }`,
+      ),
+    ).toThrow('duration filtering requires started, completed, and failed phases')
   })
 
   it('creates parented spans for executions and nested framework scopes', async () => {
@@ -185,9 +212,16 @@ describe('foundational compile-to-boot slice', () => {
     const parentSpanId = '4'.repeat(16)
     await runtime.admit(
       {
+        actor: { kind: 'system', id: 'otel-root-test' },
+        transport: { kind: 'test', name: 'otel-root-proof' },
+      },
+      () => undefined,
+    )
+    await runtime.admit(
+      {
         actor: { kind: 'system', id: 'otel-test' },
         transport: { kind: 'test', name: 'otel-proof' },
-        trace: { traceId, spanId: parentSpanId, traceFlags: 1 },
+        trace: { traceId, spanId: parentSpanId, isRemote: true, traceFlags: 1 },
       },
       () => runtime.actions.execute(IncrementCounter, { amount: 1 }),
     )
@@ -195,11 +229,15 @@ describe('foundational compile-to-boot slice', () => {
     await provider.forceFlush()
 
     const spans = exporter.getFinishedSpans()
+    const root = spans.find((span) => span.name === 'otel-root-proof')
     const execution = spans.find((span) => span.name === 'otel-proof')
     const action = spans.find((span) => span.name.endsWith('/increment-counter'))
     const transaction = spans.find((span) => span.name === 'action transaction')
+    expect(root?.spanContext().traceId).toMatch(/^[0-9a-f]{32}$/)
+    expect(root?.parentSpanContext).toBeUndefined()
     expect(execution?.spanContext().traceId).toBe(traceId)
     expect(execution?.parentSpanContext?.spanId).toBe(parentSpanId)
+    expect(execution?.parentSpanContext?.isRemote).toBe(true)
     expect(action?.parentSpanContext?.spanId).toBe(execution?.spanContext().spanId)
     expect(transaction?.parentSpanContext?.spanId).toBe(action?.spanContext().spanId)
     expect(
@@ -246,6 +284,24 @@ describe('foundational compile-to-boot slice', () => {
         expect.objectContaining({ kind: 'span', name: 'reference.classify', status: 'ok' }),
       ]),
     )
+    await runtime.shutdown()
+  })
+
+  it('does not copy provider error content into AI observations', async () => {
+    const runtime = await bootRuntime()
+    await expect(
+      runtime.admit(
+        { actor: { kind: 'system', id: 'ai-error-test' }, transport: { kind: 'test' } },
+        () =>
+          runtime.ai.run({ kind: 'ai.operation', operationId: 'reference.failure' }, async () => {
+            throw new Error('prompt=customer secret; phone=3125550199')
+          }),
+      ),
+    ).rejects.toThrow('prompt=customer secret')
+
+    const recorded = JSON.stringify(referenceObservations)
+    expect(recorded).toContain('AI operation failed.')
+    expect(recorded).not.toMatch(/customer secret|3125550199/)
     await runtime.shutdown()
   })
 
@@ -425,7 +481,7 @@ describe('foundational compile-to-boot slice', () => {
     )
   })
 
-  it('requires an explicit production override before Theoria can start', async () => {
+  it('requires explicit production diagnostics enablement before Theoria can start', async () => {
     const recorder = new PostgresTheoria({
       connectionString: 'postgresql://unused:unused@127.0.0.1:1/unused',
       environment: 'production',
@@ -436,6 +492,26 @@ describe('foundational compile-to-boot slice', () => {
         deadline: new Date(Date.now() + 1_000),
       }),
     ).rejects.toThrow('production diagnostics require')
+  })
+
+  it('does not let recorder resource metadata bypass the production guard', async () => {
+    const previous = process.env.NODE_ENV
+    process.env.NODE_ENV = 'production'
+    try {
+      const recorder = new PostgresTheoria({
+        connectionString: 'postgresql://unused:unused@127.0.0.1:1/unused',
+        environment: 'development',
+      })
+      await expect(
+        recorder.start({
+          signal: new AbortController().signal,
+          deadline: new Date(Date.now() + 1_000),
+        }),
+      ).rejects.toThrow('production diagnostics require')
+    } finally {
+      if (previous === undefined) delete process.env.NODE_ENV
+      else process.env.NODE_ENV = previous
+    }
   })
 
   it('fails clearly when a role with required scoped dependencies is constructed directly', () => {
