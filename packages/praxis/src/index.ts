@@ -201,7 +201,7 @@ export async function runPraxis(
       const { pruneTheoria } = await loadTheoriaTools()
       const connectionString = await databaseConnection(cwd, args)
       const count = await pruneTheoria(connectionString, {
-        retentionDays: numberOption(args, 'days', 7),
+        hotRetentionDays: numberOption(args, 'days', 7),
         maximumObservations: positiveIntegerOption(args, 'maximum', 50_000),
       })
       io.out(`Pruned ${count} Theoria observation${count === 1 ? '' : 's'}.`)
@@ -1226,7 +1226,7 @@ async function makeApplication(directory: string, rawName: string): Promise<void
           typescript: '^6.0.0',
           vitest: '^4.0.0',
         },
-        engines: { node: '>=24 <25' },
+        engines: { node: '>=24.7 <25' },
       },
       null,
       2,

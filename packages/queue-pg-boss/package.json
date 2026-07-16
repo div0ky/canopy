@@ -1,6 +1,6 @@
 {
   "name": "@doxajs/queue-pg-boss",
-  "version": "0.1.0-alpha.16",
+  "version": "0.1.0-alpha.17",
   "description": "The first-party pg-boss queue, worker, outbox, and scheduling adapter for Doxa.",
   "license": "Apache-2.0",
   "repository": {
@@ -21,7 +21,7 @@
   ],
   "type": "module",
   "engines": {
-    "node": ">=24 <25"
+    "node": ">=24.7 <25"
   },
   "publishConfig": {
     "access": "public",

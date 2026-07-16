@@ -86,9 +86,9 @@ model-runtime work.
 - Durable execution-context envelopes.
 - After-commit release after the database transaction promise confirms commit.
 
-The proof pins Drizzle ORM 0.45.2 and `pg` 8.22.0. PostgreSQL conformance currently runs against the
-locally available `postgres:17-alpine` image. Runtime boot never creates or migrates tables. The
-explicit migration helper is used only by tests and future migration tooling.
+The proof pins Drizzle ORM 0.45.2 and `pg` 8.22.0. PostgreSQL conformance runs against
+`postgres:16-alpine` and `postgres:17-alpine`. Runtime boot never creates or migrates tables. The
+explicit migration helper is used only by tests and migration tooling.
 
 The initial generic `doxa_entity_states` table proves the framework transaction and concurrency
 contract; it does not mandate that every future Doxa model use one JSON record. Model mappers may

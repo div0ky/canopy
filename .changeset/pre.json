@@ -22,7 +22,8 @@
     "@doxajs/realtime": "0.1.0-alpha.0",
     "@doxajs/website": "0.1.0",
     "@doxajs/gnosis": "0.1.0-alpha.11",
-    "@doxajs/introspection": "0.1.0-alpha.11"
+    "@doxajs/introspection": "0.1.0-alpha.11",
+    "@doxajs/opentelemetry": "0.1.0-alpha.16"
   },
   "changesets": [
     "add-doxa-upgrade",
@@ -35,6 +36,7 @@
     "alpha-nine-release",
     "alpha-seven-release",
     "alpha-six-release",
+    "alpha-sixteen-release",
     "alpha-ten-release",
     "alpha-thirteen-release",
     "alpha-three-release",
@@ -53,6 +55,7 @@
     "install-pg-boss-schema",
     "manifest-safety-and-schedule-catchup",
     "migrate-framework-application-root",
+    "observability-program",
     "open-source-foundation",
     "reject-stale-package-collisions",
     "remove-praxis-install-scripts",

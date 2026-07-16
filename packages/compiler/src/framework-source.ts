@@ -160,9 +160,7 @@ export function prepareFrameworkSource(fileName: string, sourceText: string): Pr
       ? (optionalPositiveInteger(theoria, 'flushIntervalMilliseconds') ?? 100)
       : 100,
     theoriaHotRetentionDays: theoria
-      ? (optionalPositiveNumber(theoria, 'hotRetentionDays') ??
-        optionalPositiveNumber(theoria, 'retentionDays') ??
-        7)
+      ? (optionalPositiveNumber(theoria, 'hotRetentionDays') ?? 7)
       : 7,
     ...(theoria && optionalPositiveNumber(theoria, 'warmRetentionDays') !== undefined
       ? { theoriaWarmRetentionDays: optionalPositiveNumber(theoria, 'warmRetentionDays')! }

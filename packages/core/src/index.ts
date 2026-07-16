@@ -241,8 +241,6 @@ export interface DoxaTheoriaConfiguration {
   readonly flushIntervalMilliseconds?: number
   readonly hotRetentionDays?: number
   readonly warmRetentionDays?: number
-  /** @deprecated Use hotRetentionDays. */
-  readonly retentionDays?: number
   readonly maximumObservations?: number
   readonly poolMaximum?: number
   readonly serviceName?: string

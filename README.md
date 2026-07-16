@@ -111,7 +111,7 @@ To work on Doxa itself before package publication, follow the
 
 ## Development
 
-Doxa supports Node.js 24 and pnpm 11.
+Doxa supports Node.js 24.7 or newer within the 24.x line, pnpm 11, and PostgreSQL 16 or 17.
 
 ```sh
 corepack enable

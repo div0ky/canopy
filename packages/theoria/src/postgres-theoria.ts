@@ -16,8 +16,6 @@ export type TheoriaOverflowPolicy = 'drop-oldest' | 'drop-newest'
 export interface PostgresTheoriaOptions {
   readonly connectionString: string
   readonly applicationName?: string
-  /** @deprecated Use hotRetentionDays. */
-  readonly retentionDays?: number
   readonly hotRetentionDays?: number
   readonly warmRetentionDays?: number
   readonly maximumObservations?: number
@@ -192,7 +190,7 @@ export class PostgresTheoria extends ObservationRecorder implements Starts, Drai
     if (!pool) throw new Error('Theoria is not started.')
     return await pruneWithPool(
       pool,
-      this.options.hotRetentionDays ?? this.options.retentionDays ?? 7,
+      this.options.hotRetentionDays ?? 7,
       this.options.maximumObservations ?? 50_000,
       this.options.warmRetentionDays,
     )
@@ -236,7 +234,7 @@ export class PostgresTheoria extends ObservationRecorder implements Starts, Drai
         if (this.#persisted > 0 && this.#persisted % 500 < batch.length) {
           await pruneWithPool(
             pool,
-            this.options.hotRetentionDays ?? this.options.retentionDays ?? 7,
+            this.options.hotRetentionDays ?? 7,
             this.options.maximumObservations ?? 50_000,
             this.options.warmRetentionDays,
           )
@@ -260,7 +258,7 @@ export async function pruneTheoria(
   connectionString: string,
   options: Pick<
     PostgresTheoriaOptions,
-    'retentionDays' | 'hotRetentionDays' | 'warmRetentionDays' | 'maximumObservations'
+    'hotRetentionDays' | 'warmRetentionDays' | 'maximumObservations'
   > = {},
 ): Promise<number> {
   validateRetention({ connectionString, ...options })
@@ -268,7 +266,7 @@ export async function pruneTheoria(
   try {
     return await pruneWithPool(
       pool,
-      options.hotRetentionDays ?? options.retentionDays ?? 7,
+      options.hotRetentionDays ?? 7,
       options.maximumObservations ?? 50_000,
       options.warmRetentionDays,
     )
@@ -463,18 +461,12 @@ async function dropExpiredWarmPartitions(pool: Pool, warmRetentionDays: number):
 
 function validateRetention(options: PostgresTheoriaOptions): void {
   if (
-    options.retentionDays !== undefined &&
-    (!Number.isFinite(options.retentionDays) || options.retentionDays <= 0)
-  ) {
-    throw new TypeError('Theoria retentionDays must be positive.')
-  }
-  if (
     options.hotRetentionDays !== undefined &&
     (!Number.isFinite(options.hotRetentionDays) || options.hotRetentionDays <= 0)
   ) {
     throw new TypeError('Theoria hotRetentionDays must be positive.')
   }
-  const hotRetentionDays = options.hotRetentionDays ?? options.retentionDays ?? 7
+  const hotRetentionDays = options.hotRetentionDays ?? 7
   if (
     options.warmRetentionDays !== undefined &&
     (!Number.isFinite(options.warmRetentionDays) || options.warmRetentionDays <= hotRetentionDays)

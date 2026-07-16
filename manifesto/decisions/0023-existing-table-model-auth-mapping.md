@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
 - **Amended:** 2026-07-14
-- **Implementation:** Config-driven identity contract in progress; direct table mapping remains
+- **Implementation:** Config-driven identity contract and direct table mapping are implemented and
   proven
 - **Decision owners:** Doxa maintainers
 

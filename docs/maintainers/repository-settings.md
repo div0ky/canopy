@@ -5,7 +5,8 @@ After the workflows reach `main`, configure a GitHub ruleset for the default bra
 - Require pull requests and one approving review.
 - Dismiss stale approvals and require approval of the latest reviewable push.
 - Require resolved conversations.
-- Require `CI / Verify`, `Dependency review / dependency-review`, and CodeQL checks.
+- Require `CI / Verify`, `CI / PostgreSQL 16 compatibility`,
+  `Dependency review / dependency-review`, and CodeQL checks.
 - Block force pushes and branch deletion.
 - Require signed commits when every active maintainer can comply.
 - Restrict workflow changes to CODEOWNERS review.

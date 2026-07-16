@@ -116,6 +116,7 @@ const { privateKey: sendGridPrivateKey, publicKey: sendGridPublicKey } = generat
 })
 const twilioAuthToken = 'test-twilio-auth-token'
 const persistenceApplication = path.join(workspace, 'examples/persistence-app')
+const postgresTestImage = process.env.DOXA_TEST_POSTGRES_IMAGE ?? 'postgres:17-alpine'
 const temporaryDirectories: string[] = []
 const runtimes: DoxaRuntime[] = []
 const hosts: HonoHttpHost[] = []
@@ -148,7 +149,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       path.join(persistenceApplication, 'dist/application.js'),
       path.join(persistenceApplication, 'dist/app.config.js'),
     )
-    container = await new PostgreSqlContainer('postgres:17-alpine').start()
+    container = await new PostgreSqlContainer(postgresTestImage).start()
     connectionString = container.getConnectionUri()
     await installPersistenceSchema(connectionString)
     await installCacheSchema(connectionString)

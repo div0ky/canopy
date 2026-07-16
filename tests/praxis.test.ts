@@ -481,7 +481,7 @@ describe('Praxis command suite', () => {
           schedule: 'doxa schedule',
           'db:studio': 'doxa db:studio',
         }),
-        engines: { node: '>=24 <25' },
+        engines: { node: '>=24.7 <25' },
       }),
     )
     expect(await readFile(path.join(destination, 'pnpm-workspace.yaml'), 'utf8')).toBe(
@@ -906,7 +906,7 @@ describe('Praxis command suite', () => {
       devDependencies: Record<string, string>
     }
     packageJson.packageManager = 'pnpm@11.10.0'
-    packageJson.engines.node = '>=24 <25'
+    packageJson.engines.node = '>=24.7 <25'
     packageJson.dependencies['@doxajs/core'] = '0.1.0-alpha.5'
     packageJson.devDependencies.typescript = '^6.0.0'
     await writeFile(path.join(root, 'package.json'), `${JSON.stringify(packageJson, null, 2)}\n`)
@@ -1356,7 +1356,7 @@ function registryUpgradeTarget(version: string): { code: number; stdout: string;
         channel: 'alpha',
         frameworkPackages: ['@doxajs/core', '@doxajs/praxis', '@doxajs/testing'],
         toolchain: {
-          node: '>=24 <25',
+          node: '>=24.7 <25',
           packageManager: 'pnpm@11.10.0',
           devDependencies: {
             '@types/node': '^24.0.0',

@@ -646,7 +646,7 @@ export function registerCompilationAndTheoriaTests(
       )
     }
     expect(
-      await pruneTheoria(connectionString(), { retentionDays: 7, maximumObservations: 2 }),
+      await pruneTheoria(connectionString(), { hotRetentionDays: 7, maximumObservations: 2 }),
     ).toBe(2)
     expect(
       Number(
@@ -658,7 +658,7 @@ export function registerCompilationAndTheoriaTests(
       `UPDATE doxa_theoria_observations SET occurred_at = now() - interval '8 days' WHERE name = 'entry-2'`,
     )
     expect(
-      await pruneTheoria(connectionString(), { retentionDays: 7, maximumObservations: 10 }),
+      await pruneTheoria(connectionString(), { hotRetentionDays: 7, maximumObservations: 10 }),
     ).toBe(1)
   })
 
