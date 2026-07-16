@@ -2446,6 +2446,7 @@ function builtinIdForDeclaration(declaration: ts.ClassDeclaration): string | und
     name !== 'CurrentJob' &&
     name !== 'UnitOfWork' &&
     name !== 'Authorization' &&
+    name !== 'AiObservability' &&
     name !== 'Mailer' &&
     name !== 'Sms' &&
     name !== 'DeliveryLedger' &&
@@ -2459,6 +2460,7 @@ function builtinIdForDeclaration(declaration: ts.ClassDeclaration): string | und
   if (name === 'CurrentExecution') return 'doxa:current-execution'
   if (name === 'CurrentJob') return 'doxa:current-job'
   if (name === 'Authorization') return 'doxa:authorization'
+  if (name === 'AiObservability') return 'doxa:ai-observability'
   if (name === 'Mailer') return 'doxa:mailer'
   if (name === 'Sms') return 'doxa:sms'
   if (name === 'DeliveryLedger') return 'doxa:delivery-ledger'

@@ -3,6 +3,7 @@ import ts from 'typescript'
 import { DoxaCompilationError } from './errors.js'
 
 export const supportedPluginPackages = [
+  '@doxajs/opentelemetry',
   '@doxajs/sendgrid',
   '@doxajs/theoria',
   '@doxajs/twilio-sms',
@@ -56,10 +57,60 @@ export function prepareFrameworkSource(fileName: string, sourceText: string): Pr
   const auth = framework ? nestedObject(framework, 'auth') : undefined
   const identity = auth ? nestedObject(auth, 'identity') : undefined
   const queue = framework ? nestedObject(framework, 'queue') : undefined
+  const theoria = framework ? nestedObject(framework, 'theoria') : undefined
   const localConcurrency = queue ? optionalPositiveNumber(queue, 'localConcurrency') : undefined
   const outboxPollingMilliseconds = queue
     ? optionalPositiveNumber(queue, 'outboxPollingMilliseconds')
     : undefined
+  const theoriaProfile = theoria
+    ? (optionalString(theoria, 'profile') ?? 'development')
+    : 'development'
+  if (!['development', 'production-diagnostics'].includes(theoriaProfile)) {
+    throw new DoxaCompilationError('Theoria profile must be development or production-diagnostics.')
+  }
+  const theoriaOverflowPolicy = theoria
+    ? (optionalString(theoria, 'overflowPolicy') ?? 'drop-newest')
+    : 'drop-newest'
+  if (!['drop-oldest', 'drop-newest'].includes(theoriaOverflowPolicy)) {
+    throw new DoxaCompilationError('Theoria overflowPolicy must be drop-oldest or drop-newest.')
+  }
+  const theoriaIncludeKinds = theoria ? optionalStringArray(theoria, 'includeKinds') : undefined
+  const observationKinds = [
+    'execution',
+    'http',
+    'action',
+    'query',
+    'transaction',
+    'model',
+    'event',
+    'broadcast',
+    'listener',
+    'reaction',
+    'signal',
+    'job',
+    'schedule',
+    'authorization',
+    'cache',
+    'mail',
+    'sms',
+    'log',
+    'ai.operation',
+    'ai.tool',
+    'ai.critic',
+    'ai.retry',
+    'exception',
+  ]
+  if (theoriaIncludeKinds?.some((kind) => !observationKinds.includes(kind))) {
+    throw new DoxaCompilationError('Theoria includeKinds contains an unsupported observation kind.')
+  }
+  const theoriaIncludePhases = theoria ? optionalStringArray(theoria, 'includePhases') : undefined
+  if (
+    theoriaIncludePhases?.some(
+      (phase) => !['started', 'completed', 'failed', 'occurred'].includes(phase),
+    )
+  ) {
+    throw new DoxaCompilationError('Theoria includePhases contains an unsupported phase.')
+  }
   const configuration = {
     applicationName: database
       ? (optionalString(database, 'applicationName') ?? applicationId)
@@ -75,6 +126,62 @@ export function prepareFrameworkSource(fileName: string, sourceText: string): Pr
       : 'mapped',
     ...(localConcurrency === undefined ? {} : { localConcurrency }),
     ...(outboxPollingMilliseconds === undefined ? {} : { outboxPollingMilliseconds }),
+    theoriaProfile,
+    theoriaProductionEnabled: theoria
+      ? (optionalBoolean(theoria, 'productionEnabled') ?? false)
+      : false,
+    theoriaSampleRate: theoria ? (optionalRate(theoria, 'sampleRate') ?? 1) : 1,
+    ...(theoriaIncludeKinds ? { theoriaIncludeKinds } : {}),
+    ...(theoriaIncludePhases ? { theoriaIncludePhases } : {}),
+    ...(theoria && optionalStringArray(theoria, 'includeNames')
+      ? { theoriaIncludeNames: optionalStringArray(theoria, 'includeNames')! }
+      : {}),
+    ...(theoria && optionalNonNegativeNumber(theoria, 'minimumDurationMilliseconds') !== undefined
+      ? {
+          theoriaMinimumDurationMilliseconds: optionalNonNegativeNumber(
+            theoria,
+            'minimumDurationMilliseconds',
+          )!,
+        }
+      : {}),
+    theoriaMaximumPending: theoria
+      ? (optionalPositiveNumber(theoria, 'maximumPending') ?? 10_000)
+      : 10_000,
+    theoriaOverflowPolicy,
+    theoriaBatchSize: theoria ? (optionalPositiveNumber(theoria, 'batchSize') ?? 100) : 100,
+    theoriaFlushIntervalMilliseconds: theoria
+      ? (optionalPositiveNumber(theoria, 'flushIntervalMilliseconds') ?? 100)
+      : 100,
+    theoriaHotRetentionDays: theoria
+      ? (optionalPositiveNumber(theoria, 'hotRetentionDays') ??
+        optionalPositiveNumber(theoria, 'retentionDays') ??
+        7)
+      : 7,
+    ...(theoria && optionalPositiveNumber(theoria, 'warmRetentionDays') !== undefined
+      ? { theoriaWarmRetentionDays: optionalPositiveNumber(theoria, 'warmRetentionDays')! }
+      : {}),
+    theoriaMaximumObservations: theoria
+      ? (optionalPositiveNumber(theoria, 'maximumObservations') ?? 50_000)
+      : 50_000,
+    theoriaPoolMaximum: theoria ? (optionalPositiveNumber(theoria, 'poolMaximum') ?? 4) : 4,
+    theoriaServiceName: theoria
+      ? (optionalString(theoria, 'serviceName') ?? applicationId)
+      : applicationId,
+    ...(theoria && optionalString(theoria, 'environment')
+      ? { theoriaEnvironment: optionalString(theoria, 'environment')! }
+      : {}),
+    ...(theoria && optionalString(theoria, 'release')
+      ? { theoriaRelease: optionalString(theoria, 'release')! }
+      : {}),
+    ...(theoria && optionalString(theoria, 'instanceId')
+      ? { theoriaInstanceId: optionalString(theoria, 'instanceId')! }
+      : {}),
+  }
+  if (
+    configuration.theoriaWarmRetentionDays !== undefined &&
+    configuration.theoriaWarmRetentionDays <= configuration.theoriaHotRetentionDays
+  ) {
+    throw new DoxaCompilationError('Theoria warmRetentionDays must exceed hotRetentionDays.')
   }
 
   return {
@@ -96,12 +203,33 @@ function renderFrameworkSource(
     readonly verificationMode: string
     readonly localConcurrency?: number
     readonly outboxPollingMilliseconds?: number
+    readonly theoriaProfile: string
+    readonly theoriaProductionEnabled: boolean
+    readonly theoriaSampleRate: number
+    readonly theoriaIncludeKinds?: readonly string[]
+    readonly theoriaIncludePhases?: readonly string[]
+    readonly theoriaIncludeNames?: readonly string[]
+    readonly theoriaMinimumDurationMilliseconds?: number
+    readonly theoriaMaximumPending: number
+    readonly theoriaOverflowPolicy: string
+    readonly theoriaBatchSize: number
+    readonly theoriaFlushIntervalMilliseconds: number
+    readonly theoriaHotRetentionDays: number
+    readonly theoriaWarmRetentionDays?: number
+    readonly theoriaMaximumObservations: number
+    readonly theoriaPoolMaximum: number
+    readonly theoriaServiceName: string
+    readonly theoriaEnvironment?: string
+    readonly theoriaRelease?: string
+    readonly theoriaInstanceId?: string
   },
 ): string {
   const sendgrid = plugins.includes('@doxajs/sendgrid')
+  const opentelemetry = plugins.includes('@doxajs/opentelemetry')
   const twilio = plugins.includes('@doxajs/twilio-sms')
   const theoria = plugins.includes('@doxajs/theoria')
   const optionalImports = [
+    ...(opentelemetry ? ["import { DoxaOpenTelemetry } from '@doxajs/opentelemetry'"] : []),
     ...(sendgrid ? ["import { SendGridMailTransport } from '@doxajs/sendgrid'"] : []),
     ...(twilio ? ["import { TwilioSmsTransport } from '@doxajs/twilio-sms'"] : []),
     ...(theoria ? ["import { PostgresTheoria } from '@doxajs/theoria'"] : []),
@@ -113,6 +241,13 @@ function renderFrameworkSource(
   const verificationRoutes =
     managedIdentity && configuration.hasContactEmail && configuration.verificationMode !== 'trusted'
   const recoveryRoutes = managedIdentity && configuration.hasContactEmail
+
+  if (opentelemetry) {
+    providers.push('ApplicationTelemetry')
+    providerSources.push(`export class ApplicationTelemetry extends DoxaOpenTelemetry {
+  static override readonly id = 'telemetry'
+}`)
+  }
 
   if (sendgrid) {
     configs.push('SendGridConfig')
@@ -159,11 +294,59 @@ export class ApplicationSms extends TwilioSmsTransport {
     )
   }
   if (theoria) {
+    configs.push('TheoriaConfig')
     providers.push('ApplicationTheoria')
-    providerSources.push(`export class ApplicationTheoria extends PostgresTheoria {
+    providerSources.push(`export class TheoriaConfig extends Configuration {
+  profile = ${JSON.stringify(configuration.theoriaProfile)}
+  productionEnabled = ${configuration.theoriaProductionEnabled}
+  sampleRate = ${configuration.theoriaSampleRate}
+  ${configuration.theoriaIncludeKinds ? `includeKinds = ${JSON.stringify(configuration.theoriaIncludeKinds)} as const` : ''}
+  ${configuration.theoriaIncludePhases ? `includePhases = ${JSON.stringify(configuration.theoriaIncludePhases)} as const` : ''}
+  ${configuration.theoriaIncludeNames ? `includeNames = ${JSON.stringify(configuration.theoriaIncludeNames)} as const` : ''}
+  ${configuration.theoriaMinimumDurationMilliseconds === undefined ? '' : `minimumDurationMilliseconds = ${configuration.theoriaMinimumDurationMilliseconds}`}
+  maximumPending = ${configuration.theoriaMaximumPending}
+  overflowPolicy = ${JSON.stringify(configuration.theoriaOverflowPolicy)}
+  batchSize = ${configuration.theoriaBatchSize}
+  flushIntervalMilliseconds = ${configuration.theoriaFlushIntervalMilliseconds}
+  hotRetentionDays = ${configuration.theoriaHotRetentionDays}
+  ${configuration.theoriaWarmRetentionDays === undefined ? '' : `warmRetentionDays = ${configuration.theoriaWarmRetentionDays}`}
+  maximumObservations = ${configuration.theoriaMaximumObservations}
+  poolMaximum = ${configuration.theoriaPoolMaximum}
+  serviceName = ${JSON.stringify(configuration.theoriaServiceName)}
+  ${configuration.theoriaEnvironment ? `environment = ${JSON.stringify(configuration.theoriaEnvironment)}` : ''}
+  ${configuration.theoriaRelease ? `release = ${JSON.stringify(configuration.theoriaRelease)}` : ''}
+  ${configuration.theoriaInstanceId ? `instanceId = ${JSON.stringify(configuration.theoriaInstanceId)}` : ''}
+}
+
+export class ApplicationTheoria extends PostgresTheoria {
   static override readonly id = 'theoria'
-  constructor(config: DatabaseConfig) {
-    super({ connectionString: config.connectionString.reveal() })
+  constructor(database: DatabaseConfig, theoria: TheoriaConfig) {
+    super({
+      connectionString: database.connectionString.reveal(),
+      profile: theoria.profile as 'development' | 'production-diagnostics',
+      productionEnabled: theoria.productionEnabled,
+      sampleRate: theoria.sampleRate,
+      ...('includeKinds' in theoria ? { includeKinds: theoria.includeKinds as readonly import('@doxajs/core').ObservationKind[] } : {}),
+      ...('includePhases' in theoria ? { includePhases: theoria.includePhases as readonly import('@doxajs/core').ObservationPhase[] } : {}),
+      ...('includeNames' in theoria ? { includeNames: theoria.includeNames as readonly string[] } : {}),
+      ...('minimumDurationMilliseconds' in theoria ? { minimumDurationMilliseconds: theoria.minimumDurationMilliseconds as number } : {}),
+      maximumPending: theoria.maximumPending,
+      overflowPolicy: theoria.overflowPolicy as 'drop-oldest' | 'drop-newest',
+      batchSize: theoria.batchSize,
+      flushIntervalMilliseconds: theoria.flushIntervalMilliseconds,
+      hotRetentionDays: theoria.hotRetentionDays,
+      ...('warmRetentionDays' in theoria ? { warmRetentionDays: theoria.warmRetentionDays as number } : {}),
+      maximumObservations: theoria.maximumObservations,
+      poolMaximum: theoria.poolMaximum,
+      ...('environment' in theoria ? { environment: theoria.environment as string } : {}),
+      resource: {
+        application: ${JSON.stringify(applicationId)},
+        service: theoria.serviceName,
+        ...('environment' in theoria ? { environment: theoria.environment as string } : {}),
+        ...('release' in theoria ? { release: theoria.release as string } : {}),
+        ...('instanceId' in theoria ? { instanceId: theoria.instanceId as string } : {}),
+      },
+    })
   }
 }`)
   }
@@ -762,6 +945,35 @@ function optionalPositiveNumber(
   const value = Number(property.initializer.text)
   if (!Number.isFinite(value) || value <= 0) {
     throw new DoxaCompilationError(`${name} must be a positive number literal.`)
+  }
+  return value
+}
+
+function optionalNonNegativeNumber(
+  object: ts.ObjectLiteralExpression,
+  name: string,
+): number | undefined {
+  const property = objectPropertyAssignment(object, name)
+  if (!property) return undefined
+  if (!ts.isNumericLiteral(property.initializer)) {
+    throw new DoxaCompilationError(`${name} must be a non-negative number literal.`)
+  }
+  const value = Number(property.initializer.text)
+  if (!Number.isFinite(value) || value < 0) {
+    throw new DoxaCompilationError(`${name} must be a non-negative number literal.`)
+  }
+  return value
+}
+
+function optionalRate(object: ts.ObjectLiteralExpression, name: string): number | undefined {
+  const property = objectPropertyAssignment(object, name)
+  if (!property) return undefined
+  if (!ts.isNumericLiteral(property.initializer)) {
+    throw new DoxaCompilationError(`${name} must be a number literal between zero and one.`)
+  }
+  const value = Number(property.initializer.text)
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw new DoxaCompilationError(`${name} must be a number literal between zero and one.`)
   }
   return value
 }

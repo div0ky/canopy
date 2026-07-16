@@ -40,6 +40,7 @@ const allowedDoxaDependencies = new Map(
     '@doxajs/runtime': ['@doxajs/core', '@doxajs/manifest'],
     '@doxajs/http-hono': ['@doxajs/core', '@doxajs/runtime'],
     '@doxajs/keryx': ['@doxajs/core'],
+    '@doxajs/opentelemetry': ['@doxajs/core'],
     '@doxajs/realtime': [],
     '@doxajs/postgres-drizzle': ['@doxajs/core'],
     '@doxajs/auth-postgres': ['@doxajs/core'],

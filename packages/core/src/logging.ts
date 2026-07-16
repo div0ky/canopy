@@ -13,6 +13,7 @@ export interface LogContext {
   readonly tenantId?: string
   readonly traceId?: string
   readonly spanId?: string
+  readonly parentSpanId?: string
   readonly transport?: string
 }
 

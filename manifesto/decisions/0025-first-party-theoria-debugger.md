@@ -4,6 +4,7 @@
 - **Accepted:** 2026-07-11
 - **Scope:** Optional first-party product
 - **Decision owners:** Doxa maintainers
+- **Amended by:** [0031: Production Theoria](0031-production-theoria.md)
 
 ## Decision
 

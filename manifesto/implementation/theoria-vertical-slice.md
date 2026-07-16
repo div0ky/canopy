@@ -1,41 +1,55 @@
-# Theoria Development Debugger Vertical Slice
+# Distributed Observability and Theoria Vertical Slice
 
 - **Status:** Implemented proof
-- **Manifest format:** 11
-- **Completed:** 2026-07-11
+- **Manifest format:** 4
+- **Completed:** 2026-07-16
 
-Theoria is Doxa's optional first-party development debugger. The runtime emits immutable, typed
-observations for executions, HTTP, actions, queries, transactions, models, events, listeners,
-signals, jobs, schedules, authorization, communications, logs, and exceptions. Every entry carries
-the applicable execution, source-execution, correlation, causation, trace, actor, tenant, transport,
-and stable role identity.
+Doxa now owns one coherent observability context across executions, nested framework work, logs,
+telemetry, and semantic observations. Each admitted request or worker delivery creates an execution
+span beneath valid inbound W3C context. Actions, queries, commands, routes, transactions, model
+operations, authorization, listeners, reactions, jobs, queue and communication adapters, broadcasts,
+and AI operations create child spans. Delayed and retried work carries explicit links when a single
+parent would misstate causality. Business correlation and causation remain separate from span
+parentage.
 
-`@doxajs/theoria` records those observations into namespaced PostgreSQL tables without blocking
-application work. Writes are serialized in the background to preserve causal order; recorder
-failures are isolated from the application. Recursive redaction occurs before the adapter boundary,
-the dedicated host is loopback-only, production requires an explicit override, and retention
-defaults to seven days and 50,000 entries with best-effort and manual pruning.
+`@doxajs/opentelemetry` bridges the vendor-independent `Telemetry` port to the registered
+OpenTelemetry API. The SDK-generated trace and span IDs become the active Doxa context, so exported
+spans, Theoria observations, structured logs, queue envelopes, and HTTP response headers agree. The
+adapter does not choose an exporter, endpoint, or credentials for the application.
 
-The read-only explorer provides a newest-first execution rail, kind/status/text/actor search,
-cross-execution correlation timelines, stable role provenance, redacted attributes, and exception
-inspection. It has been rendered and interaction-tested at desktop and 390-pixel mobile widths.
+Theoria persists immutable, redacted observations with parent span IDs, span links, opaque text
+correlation IDs, and application, service, environment, release, and instance resource identity. Its
+timeline preserves chronological semantic and causal facts. Its waterfall groups the matching
+started and terminal records into hierarchical spans, while links navigate producer, worker, and
+retry executions.
 
-Praxis owns the complete workflow:
+The default remains a loopback development explorer. The supported `production-diagnostics` profile
+is public application configuration and fails closed without explicit enablement. Its PostgreSQL
+recorder uses deterministic execution sampling, kind/phase/name/duration filters, batched writes, a
+bounded pending buffer, explicit overflow behavior, a dedicated pool, health counters,
+cursor-bounded queries, a hot table, monthly warm partitions, and retention pruning. Recorder
+saturation and write failure drop diagnostics without changing application behavior. Non-loopback
+access requires an authenticated and authorized operator and mandatory access audit.
+
+`AiObservability` supplies privacy-safe model, operation, token-count, tool, critic, retry, latency,
+and safe outcome evidence. Its public metadata contract intentionally has no prompt, completion,
+message body, phone number, arbitrary tool payload, or customer-PII field. Recursive sanitization is
+defense in depth before either telemetry or recorder boundaries.
+
+Praxis owns installation and operation:
 
 ```sh
+doxa add opentelemetry
 doxa add theoria
 doxa migrate
 doxa theoria
 doxa theoria:prune
 ```
 
-Installation writes the dependency, provider, Feature registration, and scripts. Gnosis reports
-whether the observation capability is installed, the vocabulary, operator commands, and safety
-posture. The first-party test harness automatically substitutes an exposed in-memory recorder when
-the compiled manifest selects Theoria, while explicit overrides still win.
-
 Executable evidence lives in `tests/foundation.test.ts`, `tests/praxis.test.ts`,
-`tests/testing.test.ts`, and `tests/persistence.test.ts`. It covers secret redaction, production
-gating, generator wiring, capability compilation, real PostgreSQL recording, ordered timelines,
-source-to-worker causation, deterministic retention, recorder failure isolation, loopback/read-only
-hosting, and automatic test substitution.
+`tests/persistence.test.ts`, and `tests/persistence/compilation-and-theoria.ts`. It covers shared
+OpenTelemetry IDs, nested parentage, queue retry links, AI privacy and outcomes, schema migration,
+non-UUID correlations, complete-span filtering, resource identity, bounded capture health, warm
+partitions, cursor queries, protected audited access, causal navigation, and waterfall projection.
+The reference application demonstrates nested tracing and first-class AI observations through the
+same runtime ports.

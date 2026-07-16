@@ -990,6 +990,48 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         }),
       )
     }
+    await waitFor(
+      async () =>
+        (
+          await pool.query(
+            `SELECT 1 FROM doxa_theoria_observations
+             WHERE kind = 'execution' AND execution_id = ANY($1::uuid[])
+               AND phase IN ('completed', 'failed')`,
+            [recordedJobAttempts.map((attempt) => attempt.executionId)],
+          )
+        ).rowCount === 2,
+    )
+    const traceAttempts = await pool.query<{
+      execution_id: string
+      trace_id: string
+      span_id: string
+      span_links: Array<{
+        traceId: string
+        spanId: string
+        attributes?: Record<string, unknown>
+      }>
+    }>(
+      `SELECT execution_id, trace_id, span_id, span_links
+       FROM doxa_theoria_observations
+       WHERE kind = 'execution' AND execution_id = ANY($1::uuid[])
+         AND phase IN ('completed', 'failed')`,
+      [recordedJobAttempts.map((attempt) => attempt.executionId)],
+    )
+    const firstTrace = traceAttempts.rows.find(
+      (attempt) => attempt.execution_id === recordedJobAttempts[0]!.executionId,
+    )!
+    const retryTrace = traceAttempts.rows.find(
+      (attempt) => attempt.execution_id === recordedJobAttempts[1]!.executionId,
+    )!
+    expect(retryTrace.span_links).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          traceId: firstTrace.trace_id,
+          spanId: firstTrace.span_id,
+          attributes: expect.objectContaining({ relationship: 'retry', attempt: 1 }),
+        }),
+      ]),
+    )
     expect(await inspectQueueJob(connectionString, jobId)).toEqual(
       expect.objectContaining({
         id: jobId,

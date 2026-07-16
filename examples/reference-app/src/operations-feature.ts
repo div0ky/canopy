@@ -5,15 +5,23 @@ import { FailCounter } from './fail-counter.js'
 import { IncrementCounter } from './increment-counter.js'
 import { NestedCounter } from './nested-counter.js'
 import { MutateCounterQuery } from './mutate-counter-query.js'
+import { ObserveAi } from './observe-ai.js'
 import { ReadCounter } from './read-counter.js'
 import { ReferenceTransactionManager } from './reference-transaction-manager.js'
+import { ReferenceObservationRecorder, ReferenceTelemetry } from './reference-observability.js'
 import { Worker } from './worker.js'
 import { WorkerConfig } from './worker-config.js'
 
 export class OperationsFeature extends Feature {
   id = 'operations'
   configs = [WorkerConfig]
-  providers = [DatabaseConnection, Worker, ReferenceTransactionManager]
-  actions = [IncrementCounter, FailCounter, NestedCounter]
+  providers = [
+    DatabaseConnection,
+    Worker,
+    ReferenceTransactionManager,
+    ReferenceObservationRecorder,
+    ReferenceTelemetry,
+  ]
+  actions = [IncrementCounter, FailCounter, NestedCounter, ObserveAi]
   queries = [ReadCounter, MutateCounterQuery]
 }

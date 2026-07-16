@@ -100,7 +100,9 @@ still be intelligible if an engine is replaced.
 | Existing-table model mapping             | Laravel-like table/key/column overrides on models, with explicit advanced mappers      | Accepted              | [Existing tables](0023-existing-table-model-auth-mapping.md)                                             |
 | Existing-table auth mapping              | Explicit auth field/table configuration; never inferred                                | Accepted              | [Existing tables](0023-existing-table-model-auth-mapping.md)                                             |
 | AI-assisted engineering                  | Gnosis: local read-only MCP over shared typed introspection                            | Phase 1 active        | [Gnosis](0013-first-party-ai-engineering-mcp.md)                                                         |
-| Development debugger                     | Theoria: typed, correlation-driven local execution explorer                            | Accepted              | [Theoria](0025-first-party-theoria-debugger.md)                                                          |
+| Execution debugger                       | Theoria: causal timeline, span waterfall, and supported production diagnostics         | Accepted              | [Production Theoria](0031-production-theoria.md)                                                         |
+| Distributed tracing                      | Runtime-owned span parentage and links with a first-party OpenTelemetry adapter        | Accepted              | [Distributed tracing](0030-standards-correct-distributed-tracing.md)                                     |
+| AI observations                          | Typed operational metadata with content and customer PII excluded by default           | Accepted              | [AI observations](0032-privacy-safe-ai-observations.md)                                                  |
 | Container deployment                     | One immutable image; web, combined background, and migration roles                     | Accepted              | [Container deployment](0026-one-image-role-based-container-deployment.md)                                |
 | Framework identity                       | Doxa.js under the institutionally owned `@doxajs` package scope                        | Accepted              | [Framework name](0027-doxajs-framework-name.md)                                                          |
 
@@ -164,6 +166,12 @@ observable programming contract remains to be specified.
 29. [Provide typed model queries and relationships](0029-typed-model-queries-relationships.md) —
     Accepted on 2026-07-13; builder-level bulk mutation and a public typed join projection API are
     explicitly deferred.
+30. [Provide standards-correct distributed tracing](0030-standards-correct-distributed-tracing.md) —
+    Accepted on 2026-07-16.
+31. [Support Theoria as a production diagnostics product](0031-production-theoria.md) — Accepted on
+    2026-07-16.
+32. [Add privacy-safe first-class AI observations](0032-privacy-safe-ai-observations.md) — Accepted
+    on 2026-07-16.
 
 ## Adding a decision
 

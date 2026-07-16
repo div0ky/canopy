@@ -6,6 +6,10 @@ import { pathToFileURL } from 'node:url'
 
 import {
   ActionBus,
+  AiObservability,
+  type AiOperationMetadata,
+  type AiOperationOutcome,
+  type AiObservedResult,
   Auth,
   type AuthIdentityRegistrationFactory,
   type BroadcastConnectionAdmission,
@@ -54,6 +58,7 @@ import {
   type ModelQueryValue,
   type ModelObserverDispatcher,
   type ModelObserverPhase,
+  type ModelOperationObserver,
   type Query,
   type QueryClass,
   type OperationMode,
@@ -88,6 +93,8 @@ import {
   sanitizeObservationAttributes,
   sanitizeObservationError,
   type TelemetryRecord,
+  type TelemetrySpanHandle,
+  type TraceContext,
   UnitOfWork,
 } from '@doxajs/core'
 import {
@@ -258,6 +265,7 @@ export class DoxaRuntime {
   #state: RuntimeState = 'booting'
   #shutdownPromise?: Promise<void>
   readonly #storage = new AsyncLocalStorage<ExecutionStore>()
+  readonly #traceStorage = new AsyncLocalStorage<TraceContext>()
   readonly #activeExecutions = new Map<Promise<unknown>, AbortController>()
   readonly #operationsByConstructor = new Map<Function, OperationManifestEntry>()
   readonly #modelsByConstructor = new Map<
@@ -300,6 +308,7 @@ export class DoxaRuntime {
   readonly deliveryLedger: DeliveryLedger
   readonly logger: Logger
   readonly authorization: Authorization
+  readonly ai: AiObservability
   readonly #currentExecution: CurrentExecution
 
   private constructor(
@@ -324,6 +333,7 @@ export class DoxaRuntime {
     this.actions = new RuntimeActionBus(this)
     this.queries = new RuntimeQueryBus(this)
     this.authorization = new RuntimeAuthorization(this)
+    this.ai = new RuntimeAiObservability(this)
     this.mailer = new RuntimeMailer(this)
     this.sms = new RuntimeSms(this)
     this.deliveryLedger = new RuntimeDeliveryLedger(this)
@@ -659,6 +669,7 @@ export class DoxaRuntime {
   async #admitExecution<Output>(
     seed: ExecutionContextSeed,
     work: (context: ExecutionContext) => Output | Promise<Output>,
+    executionSpanId?: string,
   ): Promise<Output> {
     if (this.#state !== 'ready') {
       throw new ExecutionAdmissionError(
@@ -680,8 +691,16 @@ export class DoxaRuntime {
       )
       deadlineTimer.unref()
     }
-    const context = createExecutionContext(seed, controller.signal)
+    let context = createExecutionContext(seed, controller.signal, executionSpanId)
     const startedAt = performance.now()
+    const startedAtWall = new Date()
+    const liveSpan = this.startTelemetrySpan(
+      context.transport.name ?? context.transport.kind,
+      context.trace,
+      startedAtWall,
+      telemetryAttributes(context),
+    )
+    if (liveSpan) context = withTraceContext(context, liveSpan.context)
     await this.recordObservation(
       {
         kind: 'execution',
@@ -730,6 +749,7 @@ export class DoxaRuntime {
       this.#currentExecution,
       this.#currentJob,
       this.authorization,
+      this.ai,
       this.mailer,
       this.sms,
       this.deliveryLedger,
@@ -738,29 +758,31 @@ export class DoxaRuntime {
     const store: ExecutionStore = { context, scope, operationStack: [] }
     const execution = Promise.resolve(
       this.#storage.run(store, () =>
-        runWithLogContext(logContext(context), () =>
-          runWithRoleConstruction(scope.constructionContext, () =>
-            runWithEventDispatcher(this.#eventDispatcher, () =>
-              runWithSignalDispatcher(this.#signalDispatcher, () =>
-                runWithJobDispatcher(this.#jobDispatcher, async () => {
-                  let result: Output | undefined
-                  let primaryError: unknown
-                  let failed = false
-                  try {
-                    result = await work(context)
-                  } catch (error) {
-                    failed = true
-                    primaryError = error
-                  }
+        this.#traceStorage.run(context.trace, () =>
+          runWithLogContext(logContext(context), () =>
+            runWithRoleConstruction(scope.constructionContext, () =>
+              runWithEventDispatcher(this.#eventDispatcher, () =>
+                runWithSignalDispatcher(this.#signalDispatcher, () =>
+                  runWithJobDispatcher(this.#jobDispatcher, async () => {
+                    let result: Output | undefined
+                    let primaryError: unknown
+                    let failed = false
+                    try {
+                      result = await work(context)
+                    } catch (error) {
+                      failed = true
+                      primaryError = error
+                    }
 
-                  const cleanupErrors = await scope.dispose(this.deadlines.dispose)
-                  if (failed && cleanupErrors.length > 0) {
-                    throw new ExecutionFailureError(primaryError, cleanupErrors)
-                  }
-                  if (failed) throw primaryError
-                  if (cleanupErrors.length > 0) throw new ExecutionCleanupError(cleanupErrors)
-                  return result as Output
-                }),
+                    const cleanupErrors = await scope.dispose(this.deadlines.dispose)
+                    if (failed && cleanupErrors.length > 0) {
+                      throw new ExecutionFailureError(primaryError, cleanupErrors)
+                    }
+                    if (failed) throw primaryError
+                    if (cleanupErrors.length > 0) throw new ExecutionCleanupError(cleanupErrors)
+                    return result as Output
+                  }),
+                ),
               ),
             ),
           ),
@@ -770,10 +792,10 @@ export class DoxaRuntime {
     this.#activeExecutions.set(execution, controller)
     try {
       const result = await execution
-      await this.completeTelemetry(context, startedAt, 'ok')
+      await this.completeTelemetry(context, startedAt, startedAtWall, 'ok', undefined, liveSpan)
       return result
     } catch (error) {
-      await this.completeTelemetry(context, startedAt, 'error', error)
+      await this.completeTelemetry(context, startedAt, startedAtWall, 'error', error, liveSpan)
       throw error
     } finally {
       this.#activeExecutions.delete(execution)
@@ -784,8 +806,10 @@ export class DoxaRuntime {
   private async completeTelemetry(
     context: ExecutionContext,
     startedAt: number,
+    startedAtWall: Date,
     status: 'ok' | 'error',
     error?: unknown,
+    liveSpan?: TelemetrySpanHandle,
   ): Promise<void> {
     const durationMilliseconds = performance.now() - startedAt
     const attributes = telemetryAttributes(context)
@@ -813,15 +837,28 @@ export class DoxaRuntime {
       unit: 'milliseconds',
       attributes: { transport: context.transport.kind, status },
     })
-    await this.recordTelemetry({
-      kind: 'span',
-      name: context.transport.name ?? context.transport.kind,
-      traceId: context.trace.traceId!,
-      spanId: context.trace.spanId!,
-      durationMilliseconds,
-      status,
-      attributes,
-    })
+    const endedAt = new Date().toISOString()
+    if (liveSpan) {
+      try {
+        await liveSpan.end({ endedAt, durationMilliseconds, status, attributes })
+      } catch {
+        /* Observability never changes application behavior. */
+      }
+    } else {
+      await this.recordTelemetry({
+        kind: 'span',
+        name: context.transport.name ?? context.transport.kind,
+        traceId: context.trace.traceId!,
+        spanId: context.trace.spanId!,
+        ...(context.trace.parentSpanId ? { parentSpanId: context.trace.parentSpanId } : {}),
+        ...(context.trace.links?.length ? { links: context.trace.links } : {}),
+        startedAt: startedAtWall.toISOString(),
+        endedAt,
+        durationMilliseconds,
+        status,
+        attributes,
+      })
+    }
     const phase = status === 'ok' ? 'completed' : 'failed'
     await this.recordObservation(
       {
@@ -873,7 +910,7 @@ export class DoxaRuntime {
     },
     contextOverride?: ExecutionContext,
   ): Promise<void> {
-    const context = contextOverride ?? this.#storage.getStore()?.context
+    const context = contextOverride ?? this.currentExecutionContextOrUndefined()
     const observation: Observation = Object.freeze({
       id: randomUUID(),
       occurredAt: new Date().toISOString(),
@@ -901,45 +938,150 @@ export class DoxaRuntime {
     attributes: Readonly<Record<string, unknown>>,
     work: () => Output | Promise<Output>,
     roleId?: string,
+    links?: readonly import('@doxajs/core').SpanLink[],
   ): Promise<Output> {
+    const execution = this.currentExecutionContext()
+    const proposedTrace = childTraceContext(this.#traceStorage.getStore() ?? execution.trace, links)
     const startedAt = performance.now()
-    await this.recordObservation({
-      kind,
+    const startedAtWall = new Date()
+    const liveSpan = this.startTelemetrySpan(
       name,
-      phase: 'started',
-      attributes,
-      ...(roleId ? { roleId } : {}),
-    })
+      proposedTrace,
+      startedAtWall,
+      sanitizeObservationAttributes(attributes),
+    )
+    const context = withTraceContext(execution, liveSpan?.context ?? proposedTrace)
+    return await this.#traceStorage.run(context.trace, () =>
+      runWithLogContext(logContext(context), async () => {
+        await this.recordObservation(
+          {
+            kind,
+            name,
+            phase: 'started',
+            attributes,
+            ...(roleId ? { roleId } : {}),
+          },
+          context,
+        )
+        try {
+          const output = await work()
+          await this.completeInstrumentedScope(
+            { kind, name, attributes, ...(roleId ? { roleId } : {}) },
+            context,
+            startedAt,
+            startedAtWall,
+            'ok',
+            undefined,
+            liveSpan,
+          )
+          return output
+        } catch (error) {
+          await this.completeInstrumentedScope(
+            { kind, name, attributes, ...(roleId ? { roleId } : {}) },
+            context,
+            startedAt,
+            startedAtWall,
+            'error',
+            error,
+            liveSpan,
+          )
+          throw error
+        }
+      }),
+    )
+  }
+
+  private async completeInstrumentedScope(
+    input: {
+      readonly kind: ObservationKind
+      readonly name: string
+      readonly attributes: Readonly<Record<string, unknown>>
+      readonly roleId?: string
+    },
+    context: ExecutionContext,
+    startedAt: number,
+    startedAtWall: Date,
+    status: 'ok' | 'error',
+    error?: unknown,
+    liveSpan?: TelemetrySpanHandle,
+  ): Promise<void> {
+    const durationMilliseconds = performance.now() - startedAt
+    const endedAt = new Date().toISOString()
+    await this.recordObservation(
+      {
+        kind: input.kind,
+        name: input.name,
+        phase: status === 'ok' ? 'completed' : 'failed',
+        attributes: input.attributes,
+        durationMilliseconds,
+        ...(input.roleId ? { roleId: input.roleId } : {}),
+        ...(error === undefined ? {} : { error }),
+      },
+      context,
+    )
+    if (error !== undefined) {
+      await this.recordObservation(
+        {
+          kind: 'exception',
+          name: errorMessage(error),
+          phase: 'occurred',
+          attributes: { boundary: input.kind },
+          error,
+          ...(input.roleId ? { roleId: input.roleId } : {}),
+        },
+        context,
+      )
+    }
+    const spanAttributes = sanitizeObservationAttributes(input.attributes)
+    if (liveSpan) {
+      try {
+        await liveSpan.end({ endedAt, durationMilliseconds, status, attributes: spanAttributes })
+      } catch {
+        /* Observability never changes application behavior. */
+      }
+    } else {
+      await this.recordTelemetry({
+        kind: 'span',
+        name: input.name,
+        traceId: context.trace.traceId!,
+        spanId: context.trace.spanId!,
+        ...(context.trace.parentSpanId ? { parentSpanId: context.trace.parentSpanId } : {}),
+        ...(context.trace.links?.length ? { links: context.trace.links } : {}),
+        startedAt: startedAtWall.toISOString(),
+        endedAt,
+        durationMilliseconds,
+        status,
+        attributes: spanAttributes,
+      })
+    }
+  }
+
+  private startTelemetrySpan(
+    name: string,
+    context: TraceContext,
+    startedAt: Date,
+    attributes: Readonly<Record<string, import('@doxajs/core').JsonValue>>,
+  ): TelemetrySpanHandle | undefined {
     try {
-      const output = await work()
-      await this.recordObservation({
-        kind,
+      const handle = this.telemetry.startSpan?.({
         name,
-        phase: 'completed',
+        context,
+        startedAt: startedAt.toISOString(),
         attributes,
-        durationMilliseconds: performance.now() - startedAt,
-        ...(roleId ? { roleId } : {}),
       })
-      return output
-    } catch (error) {
-      await this.recordObservation({
-        kind,
-        name,
-        phase: 'failed',
-        attributes,
-        error,
-        durationMilliseconds: performance.now() - startedAt,
-        ...(roleId ? { roleId } : {}),
-      })
-      await this.recordObservation({
-        kind: 'exception',
-        name: errorMessage(error),
-        phase: 'occurred',
-        attributes: { boundary: kind },
-        error,
-        ...(roleId ? { roleId } : {}),
-      })
-      throw error
+      if (!handle) return undefined
+      if (
+        !handle.context.traceId ||
+        !/^[0-9a-f]{32}$/.test(handle.context.traceId) ||
+        !handle.context.spanId ||
+        !/^[0-9a-f]{16}$/.test(handle.context.spanId) ||
+        handle.context.traceId !== context.traceId
+      ) {
+        return undefined
+      }
+      return handle
+    } catch {
+      return undefined
     }
   }
 
@@ -1104,6 +1246,7 @@ export class DoxaRuntime {
           this.modelObserverDispatcher(store),
           true,
           this.modelQueryDiagnosticRecorder(),
+          this.modelOperationObserver(),
         )
         return await store.scope.withUnitOfWork(unitOfWork, async () =>
           runWithModelSession(models, async () => {
@@ -1161,6 +1304,7 @@ export class DoxaRuntime {
                         this.modelObserverDispatcher(store),
                         true,
                         this.modelQueryDiagnosticRecorder(),
+                        this.modelOperationObserver(),
                       )
                       return store.scope.withUnitOfWork(unitOfWork, async () =>
                         runWithModelSession(models, async () => {
@@ -1211,6 +1355,7 @@ export class DoxaRuntime {
                 this.modelObserverDispatcher(store),
                 false,
                 this.modelQueryDiagnosticRecorder(),
+                this.modelOperationObserver(),
               )
               return runWithModelSession(models, async () => {
                 try {
@@ -1319,6 +1464,7 @@ export class DoxaRuntime {
               undefined,
               false,
               this.modelQueryDiagnosticRecorder(),
+              this.modelOperationObserver(),
             )
             return runWithModelSession(models, async () => {
               try {
@@ -1480,7 +1626,13 @@ export class DoxaRuntime {
               await this.authorization.authorize(handlerManifest.access)
             }
             const handler = store.scope.resolve(handlerManifest.id) as SignalHandler
-            await handler.handle(signal)
+            await this.observeObservation(
+              'reaction',
+              handlerManifest.id,
+              { signal: manifest.id },
+              () => handler.handle(signal),
+              handlerManifest.id,
+            )
           }
         }),
       manifest.id,
@@ -1504,7 +1656,13 @@ export class DoxaRuntime {
         for (const manifest of this.#observersByModel.get(definition.entityType) ?? []) {
           if (!manifest.phases.includes(phase)) continue
           const observer = store.scope.resolve(manifest.id) as Observer
-          await observer[phase](model)
+          await this.observeObservation(
+            'reaction',
+            manifest.id,
+            { model: definition.entityType, phase },
+            () => observer[phase](model),
+            manifest.id,
+          )
         }
       },
     })
@@ -1519,6 +1677,22 @@ export class DoxaRuntime {
         roleId: diagnostic.entityType,
         attributes: { ...diagnostic },
       })
+  }
+
+  private modelOperationObserver(): ModelOperationObserver {
+    return Object.freeze({
+      observe: <Output>(
+        diagnostic: import('@doxajs/core').ModelOperationDiagnostic,
+        work: () => Promise<Output>,
+      ) =>
+        this.observeObservation(
+          'model',
+          `${diagnostic.entityType}.${diagnostic.operation}`,
+          { operation: diagnostic.operation, storage: diagnostic.storage },
+          work,
+          diagnostic.entityType,
+        ),
+    })
   }
 
   private async dispatchEventNow(
@@ -1847,7 +2021,7 @@ export class DoxaRuntime {
         ? deterministicJobId(delivery.targetId, delivery.idempotencyKey)
         : randomUUID(),
       ...delivery,
-      context: queueContext(store.context),
+      context: queueContext(this.currentExecutionContext()),
     }
   }
 
@@ -1866,7 +2040,12 @@ export class DoxaRuntime {
       })
       return
     }
-    await this.queues.enqueue(envelope)
+    await this.observeObservation(
+      'job',
+      'queue.enqueue',
+      { kind: envelope.kind, targetId: envelope.targetId },
+      () => this.queues!.enqueue(envelope),
+    )
   }
 
   private async observeLog<Output>(
@@ -1905,9 +2084,9 @@ export class DoxaRuntime {
         attempt,
       },
       () =>
-        this.admit(
+        this.#admitExecution(
           {
-            ...queueSeed(envelope),
+            ...queueSeed(envelope, attempt),
             cancellation: delivery.cancellation,
           },
           async () => {
@@ -1996,6 +2175,7 @@ export class DoxaRuntime {
             const event = rehydrateEvent(eventManifest, EventConstructor, envelope.payload)
             await this.invokeListener(listener, event, store)
           },
+          queueAttemptSpanId(envelope.id, attempt),
         ),
     )
   }
@@ -2008,12 +2188,23 @@ export class DoxaRuntime {
     const transport = envelope.kind === 'mail' ? this.mailTransport : this.smsTransport
     if (!transport) throw new OperationDispatchError(`No ${envelope.kind} transport is configured.`)
     try {
-      const acceptance =
-        envelope.kind === 'mail'
-          ? await (transport as MailTransport).send(envelope.payload as unknown as MailMessage)
-          : await (transport as SmsTransport).send(envelope.payload as unknown as SmsMessage)
-      await this.transactions.transaction(store.context, (unitOfWork) =>
-        unitOfWork.transitionDelivery(acceptance),
+      const acceptance = await this.observeObservation(
+        envelope.kind,
+        `${envelope.kind}.send`,
+        { messageId: envelope.id },
+        () =>
+          envelope.kind === 'mail'
+            ? (transport as MailTransport).send(envelope.payload as unknown as MailMessage)
+            : (transport as SmsTransport).send(envelope.payload as unknown as SmsMessage),
+      )
+      await this.observeObservation(
+        'transaction',
+        'delivery transition',
+        { channel: envelope.kind },
+        () =>
+          this.transactions!.transaction(this.currentExecutionContext(), (unitOfWork) =>
+            unitOfWork.transitionDelivery(acceptance),
+          ),
       )
     } catch (error) {
       if (!(error instanceof DeliveryError)) throw error
@@ -2023,13 +2214,19 @@ export class DoxaRuntime {
           : error.kind === 'transient'
             ? 'undelivered'
             : 'failed'
-      await this.transactions.transaction(store.context, (unitOfWork) =>
-        unitOfWork.transitionDelivery({
-          messageId: String((envelope.payload as { id?: unknown }).id),
-          state,
-          failureKind: error.kind,
-          code: error.code,
-        }),
+      await this.observeObservation(
+        'transaction',
+        'delivery failure transition',
+        { channel: envelope.kind, failureKind: error.kind },
+        () =>
+          this.transactions!.transaction(this.currentExecutionContext(), (unitOfWork) =>
+            unitOfWork.transitionDelivery({
+              messageId: String((envelope.payload as { id?: unknown }).id),
+              state,
+              failureKind: error.kind,
+              code: error.code,
+            }),
+          ),
       )
       if (error.kind === 'transient') throw error
     }
@@ -2062,6 +2259,7 @@ export class DoxaRuntime {
                 this.modelObserverDispatcher(store),
                 true,
                 this.modelQueryDiagnosticRecorder(),
+                this.modelOperationObserver(),
               )
               return store.scope.withUnitOfWork(unitOfWork, async () =>
                 runWithModelSession(models, async () => {
@@ -2098,6 +2296,33 @@ export class DoxaRuntime {
     )
   }
 
+  async observeAi<Output>(
+    metadata: AiOperationMetadata,
+    work: () => Promise<AiObservedResult<Output>>,
+  ): Promise<Output> {
+    validateAiMetadata(metadata)
+    return await this.observeObservation(
+      metadata.kind,
+      metadata.operationId,
+      aiMetadataAttributes(metadata),
+      async () => {
+        const result = await work()
+        validateAiOutcome(result.outcome)
+        if (result.outcome) {
+          await this.recordObservation({
+            kind: metadata.kind,
+            name: `${metadata.operationId}.outcome`,
+            phase: 'occurred',
+            attributes: aiOutcomeAttributes(result.outcome),
+          })
+        }
+        return result.value
+      },
+      undefined,
+      metadata.links,
+    )
+  }
+
   private requireExecution(
     role:
       | 'action'
@@ -2124,7 +2349,15 @@ export class DoxaRuntime {
     if (!store) {
       throw new OperationDispatchError('CurrentExecution requires an active admitted execution.')
     }
-    return store.context
+    const trace = this.#traceStorage.getStore()
+    return trace ? withTraceContext(store.context, trace) : store.context
+  }
+
+  private currentExecutionContextOrUndefined(): ExecutionContext | undefined {
+    const store = this.#storage.getStore()
+    if (!store) return undefined
+    const trace = this.#traceStorage.getStore()
+    return trace ? withTraceContext(store.context, trace) : store.context
   }
 
   currentOperationMode(): OperationMode {
@@ -2171,13 +2404,21 @@ export class DoxaRuntime {
       )
     }
     const policy = store.scope.resolve(manifest.id) as Policy<Resource>
-    const decision = await policy.decide({
-      actor: store.context.actor,
-      ability,
-      ...(resource === undefined ? {} : { resource }),
-      ...(store.context.tenant ? { tenant: store.context.tenant } : {}),
-      context: store.context,
-    })
+    const context = this.currentExecutionContext()
+    const decision = await this.observeObservation(
+      'authorization',
+      manifest.id,
+      { ability },
+      () =>
+        policy.decide({
+          actor: context.actor,
+          ability,
+          ...(resource === undefined ? {} : { resource }),
+          ...(context.tenant ? { tenant: context.tenant } : {}),
+          context,
+        }),
+      manifest.id,
+    )
     if ((decision.effect !== 'allow' && decision.effect !== 'deny') || !decision.code) {
       throw new RuntimeIntegrityError(`Policy ${manifest.id} returned an invalid decision.`)
     }
@@ -2188,7 +2429,7 @@ export class DoxaRuntime {
         policy: manifest.id,
         code: decision.code,
       }),
-      store.context,
+      context,
     )
   }
 
@@ -2198,7 +2439,12 @@ export class DoxaRuntime {
     context: ExecutionContext,
   ): Promise<PolicyDecision> {
     if (this.authentication) {
-      await this.authentication.recordAuthorization(ability, decision, context)
+      await this.observeObservation(
+        'authorization',
+        'authorization.audit',
+        { ability, effect: decision.effect, policy: decision.policy, code: decision.code },
+        () => this.authentication!.recordAuthorization(ability, decision, context),
+      )
     }
     await this.recordTelemetry({
       kind: 'metric',
@@ -2352,6 +2598,19 @@ class RuntimeSms extends Sms {
   }
   send(message: SmsMessage): Promise<string> {
     return this.runtime.dispatchSms(message)
+  }
+}
+
+class RuntimeAiObservability extends AiObservability {
+  constructor(private readonly runtime: DoxaRuntime) {
+    super()
+  }
+
+  run<Output>(
+    metadata: AiOperationMetadata,
+    work: () => Promise<AiObservedResult<Output>>,
+  ): Promise<Output> {
+    return this.runtime.observeAi(metadata, work)
   }
 }
 
@@ -2765,6 +3024,7 @@ class ExecutionScope {
     private readonly currentExecution: CurrentExecution,
     private readonly currentJob: CurrentJob,
     private readonly authorization: Authorization,
+    private readonly ai: AiObservability,
     private readonly mailer: Mailer,
     private readonly sms: Sms,
     private readonly deliveryLedger: DeliveryLedger,
@@ -2816,6 +3076,7 @@ class ExecutionScope {
     if (id === 'doxa:current-execution') return this.currentExecution
     if (id === 'doxa:current-job') return this.currentJob
     if (id === 'doxa:authorization') return this.authorization
+    if (id === 'doxa:ai-observability') return this.ai
     if (id === 'doxa:mailer') return this.mailer
     if (id === 'doxa:sms') return this.sms
     if (id === 'doxa:delivery-ledger') return this.deliveryLedger
@@ -3185,6 +3446,7 @@ function assertOperationInfrastructure(manifest: DoxaManifest): void {
 function createExecutionContext(
   seed: ExecutionContextSeed,
   runtimeCancellation: AbortSignal,
+  executionSpanId?: string,
 ): ExecutionContext {
   validateActor(seed.actor, 'actor')
   const initiator = seed.initiator ?? seed.actor
@@ -3226,8 +3488,10 @@ function createExecutionContext(
     transport: Object.freeze({ ...seed.transport }),
     trace: Object.freeze({
       traceId: trace.traceId ?? randomBytes(16).toString('hex'),
-      spanId: randomBytes(8).toString('hex'),
+      spanId: executionSpanId ?? randomBytes(8).toString('hex'),
+      ...(trace.spanId ? { parentSpanId: trace.spanId } : {}),
       traceFlags: trace.traceFlags ?? 1,
+      ...(trace.links?.length ? { links: freezeSpanLinks(trace.links) } : {}),
     }),
     ...(seed.locale ? { locale: seed.locale } : {}),
     ...(seed.timeZone ? { timeZone: seed.timeZone } : {}),
@@ -3265,6 +3529,8 @@ function observationContext(context: ExecutionContext | undefined): ObservationC
     ...(context.causationId ? { causationId: context.causationId } : {}),
     ...(context.trace.traceId ? { traceId: context.trace.traceId } : {}),
     ...(context.trace.spanId ? { spanId: context.trace.spanId } : {}),
+    ...(context.trace.parentSpanId ? { parentSpanId: context.trace.parentSpanId } : {}),
+    ...(context.trace.links?.length ? { links: context.trace.links } : {}),
     actorKind: context.actor.kind,
     ...(context.actor.id ? { actorId: context.actor.id } : {}),
     ...(context.tenant ? { tenantId: context.tenant.id } : {}),
@@ -3282,8 +3548,115 @@ function logContext(context: ExecutionContext): import('@doxajs/core').LogContex
     ...(context.actor.id ? { actorId: context.actor.id } : {}),
     ...(context.trace.traceId ? { traceId: context.trace.traceId } : {}),
     ...(context.trace.spanId ? { spanId: context.trace.spanId } : {}),
+    ...(context.trace.parentSpanId ? { parentSpanId: context.trace.parentSpanId } : {}),
     transport: context.transport.kind,
   })
+}
+
+function childTraceContext(
+  parent: TraceContext,
+  links?: readonly import('@doxajs/core').SpanLink[],
+): TraceContext {
+  return Object.freeze({
+    traceId: parent.traceId ?? randomBytes(16).toString('hex'),
+    spanId: randomBytes(8).toString('hex'),
+    ...(parent.spanId ? { parentSpanId: parent.spanId } : {}),
+    traceFlags: parent.traceFlags ?? 1,
+    ...(links?.length ? { links: freezeSpanLinks(links) } : {}),
+  })
+}
+
+function withTraceContext(context: ExecutionContext, trace: TraceContext): ExecutionContext {
+  if (context.trace === trace) return context
+  return Object.freeze({ ...context, trace })
+}
+
+function freezeSpanLinks(links: readonly import('@doxajs/core').SpanLink[]) {
+  return Object.freeze(
+    links.slice(0, 32).map((link) =>
+      Object.freeze({
+        traceId: link.traceId,
+        spanId: link.spanId,
+        ...(link.attributes ? { attributes: Object.freeze(structuredClone(link.attributes)) } : {}),
+      }),
+    ),
+  )
+}
+
+function aiMetadataAttributes(metadata: AiOperationMetadata) {
+  return Object.freeze({
+    operationId: metadata.operationId,
+    ...(metadata.provider ? { provider: metadata.provider } : {}),
+    ...(metadata.model ? { model: metadata.model } : {}),
+    ...(metadata.toolId ? { toolId: metadata.toolId } : {}),
+    ...(metadata.criticId ? { criticId: metadata.criticId } : {}),
+    ...(metadata.attempt === undefined ? {} : { attempt: metadata.attempt }),
+    ...(metadata.retryCount === undefined ? {} : { retryCount: metadata.retryCount }),
+  })
+}
+
+function aiOutcomeAttributes(outcome: AiOperationOutcome) {
+  return Object.freeze({
+    ...(outcome.tokenUsage?.input === undefined ? {} : { inputTokens: outcome.tokenUsage.input }),
+    ...(outcome.tokenUsage?.output === undefined
+      ? {}
+      : { outputTokens: outcome.tokenUsage.output }),
+    ...(outcome.tokenUsage?.cached === undefined
+      ? {}
+      : { cachedTokens: outcome.tokenUsage.cached }),
+    ...(outcome.tokenUsage?.reasoning === undefined
+      ? {}
+      : { reasoningTokens: outcome.tokenUsage.reasoning }),
+    ...(outcome.finishReason ? { finishReason: outcome.finishReason } : {}),
+    ...(outcome.cached === undefined ? {} : { cached: outcome.cached }),
+    ...(outcome.verdict ? { verdict: outcome.verdict } : {}),
+    ...(outcome.score === undefined ? {} : { score: outcome.score }),
+    ...(outcome.outcome ? { outcome: outcome.outcome } : {}),
+    ...(outcome.reasonCode ? { reasonCode: outcome.reasonCode } : {}),
+  })
+}
+
+function validateAiMetadata(metadata: AiOperationMetadata): void {
+  for (const [name, value] of [
+    ['operationId', metadata.operationId],
+    ['provider', metadata.provider],
+    ['model', metadata.model],
+    ['toolId', metadata.toolId],
+    ['criticId', metadata.criticId],
+  ] as const) {
+    if (value !== undefined && (!value.trim() || value.length > 200)) {
+      throw new OperationDispatchError(`AI ${name} must be between 1 and 200 characters.`)
+    }
+  }
+  for (const [name, value] of [
+    ['attempt', metadata.attempt],
+    ['retryCount', metadata.retryCount],
+  ] as const) {
+    if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+      throw new OperationDispatchError(`AI ${name} must be a non-negative integer.`)
+    }
+  }
+}
+
+function validateAiOutcome(outcome: AiOperationOutcome | undefined): void {
+  if (!outcome) return
+  for (const [name, value] of Object.entries(outcome.tokenUsage ?? {})) {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new OperationDispatchError(`AI ${name} token count must be a non-negative integer.`)
+    }
+  }
+  if (outcome.score !== undefined && !Number.isFinite(outcome.score)) {
+    throw new OperationDispatchError('AI critic score must be finite.')
+  }
+  for (const [name, value] of [
+    ['finishReason', outcome.finishReason],
+    ['outcome', outcome.outcome],
+    ['reasonCode', outcome.reasonCode],
+  ] as const) {
+    if (value !== undefined && (!value.trim() || value.length > 200)) {
+      throw new OperationDispatchError(`AI ${name} must be between 1 and 200 characters.`)
+    }
+  }
 }
 
 function logChannelForTransport(transport: ExecutionContext['transport']['kind']): string {
@@ -3347,8 +3720,16 @@ function queueContext(context: ExecutionContext): QueueExecutionEnvelope {
   }
 }
 
-function queueSeed(envelope: QueueEnvelope): ExecutionContextSeed {
+function queueSeed(envelope: QueueEnvelope, attempt: number): ExecutionContextSeed {
   const context = envelope.context
+  const retryLink =
+    attempt > 1 && context.trace.traceId
+      ? {
+          traceId: context.trace.traceId,
+          spanId: queueAttemptSpanId(envelope.id, attempt - 1),
+          attributes: { relationship: 'retry', attempt: attempt - 1 },
+        }
+      : undefined
   return {
     sourceExecutionId: context.sourceExecutionId,
     correlationId: context.correlationId,
@@ -3381,10 +3762,20 @@ function queueSeed(envelope: QueueEnvelope): ExecutionContextSeed {
         : {}),
     },
     transport: { kind: 'job', name: envelope.targetId },
-    trace: { ...context.trace },
+    trace: {
+      ...context.trace,
+      ...(retryLink ? { links: [...(context.trace.links ?? []), retryLink] } : {}),
+    },
     ...(context.locale ? { locale: context.locale } : {}),
     ...(context.timeZone ? { timeZone: context.timeZone } : {}),
   }
+}
+
+function queueAttemptSpanId(envelopeId: string, attempt: number): string {
+  return createHash('sha256')
+    .update(`doxa:queue-attempt:${envelopeId}:${attempt}`)
+    .digest('hex')
+    .slice(0, 16)
 }
 
 function serializeQueuePayload(value: unknown): import('@doxajs/core').JsonValue {
@@ -3534,6 +3925,7 @@ const BUILTIN_INJECTION_IDS = new Map<object, string>([
   [CurrentExecution, 'doxa:current-execution'],
   [CurrentJob, 'doxa:current-job'],
   [Authorization, 'doxa:authorization'],
+  [AiObservability, 'doxa:ai-observability'],
   [Mailer, 'doxa:mailer'],
   [Sms, 'doxa:sms'],
   [DeliveryLedger, 'doxa:delivery-ledger'],

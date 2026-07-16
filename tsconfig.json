@@ -18,6 +18,7 @@
     { "path": "packages/postgres-drizzle" },
     { "path": "packages/queue-pg-boss" },
     { "path": "packages/theoria" },
+    { "path": "packages/opentelemetry" },
     { "path": "examples/reference-app" },
     { "path": "examples/persistence-app" }
   ]

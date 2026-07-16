@@ -1,5 +1,7 @@
 export type Class<T = object> = abstract new (...args: never[]) => T
 
+import type { ObservationKind, ObservationPhase } from './observation.js'
+
 export {
   BroadcastTransport,
   Channel,
@@ -31,7 +33,23 @@ export {
 export { Signal, SignalDispatchError, SignalHandler } from './signal.js'
 export { Cache, MemoryCache, type CachePutOptions } from './cache.js'
 export { Command } from './command.js'
-export { MemoryTelemetry, NoopTelemetry, Telemetry, type TelemetryRecord } from './telemetry.js'
+export {
+  MemoryTelemetry,
+  NoopTelemetry,
+  Telemetry,
+  type TelemetryRecord,
+  type TelemetrySpanEnd,
+  type TelemetrySpanHandle,
+  type TelemetrySpanStart,
+} from './telemetry.js'
+export {
+  AiObservability,
+  type AiObservationKind,
+  type AiObservedResult,
+  type AiOperationMetadata,
+  type AiOperationOutcome,
+  type AiTokenUsage,
+} from './ai-observation.js'
 export {
   MemoryObservationRecorder,
   NoopObservationRecorder,
@@ -43,6 +61,7 @@ export {
   type ObservationError,
   type ObservationKind,
   type ObservationPhase,
+  type ObservationResource,
 } from './observation.js'
 export {
   ConsoleLogSink,
@@ -119,7 +138,8 @@ export type ConfigurationClass<T extends Configuration = Configuration> = abstra
 
 export type FeatureClass<T extends Feature = Feature> = abstract new () => T
 
-export type DoxaPluginPackage = '@doxajs/sendgrid' | '@doxajs/theoria' | '@doxajs/twilio-sms'
+export type DoxaPluginPackage =
+  '@doxajs/opentelemetry' | '@doxajs/sendgrid' | '@doxajs/theoria' | '@doxajs/twilio-sms'
 
 export type AuthIdentifierKind = 'email' | 'username' | 'custom'
 export type AuthIdentifierNormalization =
@@ -207,6 +227,30 @@ export interface AuthRawIdentityConfiguration {
 export type AuthIdentityConfiguration =
   AuthModelIdentityConfiguration | AuthRawIdentityConfiguration
 
+export interface DoxaTheoriaConfiguration {
+  readonly profile?: 'development' | 'production-diagnostics'
+  readonly productionEnabled?: boolean
+  readonly sampleRate?: number
+  readonly includeKinds?: readonly ObservationKind[]
+  readonly includePhases?: readonly ObservationPhase[]
+  readonly includeNames?: readonly string[]
+  readonly minimumDurationMilliseconds?: number
+  readonly maximumPending?: number
+  readonly overflowPolicy?: 'drop-oldest' | 'drop-newest'
+  readonly batchSize?: number
+  readonly flushIntervalMilliseconds?: number
+  readonly hotRetentionDays?: number
+  readonly warmRetentionDays?: number
+  /** @deprecated Use hotRetentionDays. */
+  readonly retentionDays?: number
+  readonly maximumObservations?: number
+  readonly poolMaximum?: number
+  readonly serviceName?: string
+  readonly environment?: string
+  readonly release?: string
+  readonly instanceId?: string
+}
+
 export interface DoxaFrameworkConfiguration {
   readonly database?: {
     readonly applicationName?: string
@@ -220,6 +264,7 @@ export interface DoxaFrameworkConfiguration {
     readonly localConcurrency?: number
     readonly outboxPollingMilliseconds?: number
   }
+  readonly theoria?: DoxaTheoriaConfiguration
 }
 
 /**
@@ -320,6 +365,8 @@ export {
   type ModelJournalFact,
   type ModelOutboxMessage,
   type ModelQueryDiagnostic,
+  type ModelOperationDiagnostic,
+  type ModelOperationObserver,
   type ModelRelations,
 } from './model.js'
 export {
@@ -456,10 +503,18 @@ export interface TransportContext {
   readonly name?: string
 }
 
+export interface SpanLink {
+  readonly traceId: string
+  readonly spanId: string
+  readonly attributes?: Readonly<Record<string, JsonValue>>
+}
+
 export interface TraceContext {
   readonly traceId?: string
   readonly spanId?: string
+  readonly parentSpanId?: string
   readonly traceFlags?: number
+  readonly links?: readonly SpanLink[]
 }
 
 export interface ExecutionContext {

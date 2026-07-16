@@ -73,34 +73,36 @@ To work on Doxa itself before package publication, follow the
 - First-party email/password, opaque browser-session, and opaque bearer authentication.
 - Default-deny entry and resource authorization.
 - SendGrid mail and Twilio SMS adapters behind Doxa-owned contracts.
-- W3C trace context, structured logs, metrics, diagnostics, and testing fakes.
-- Theoria, the causal development debugger.
+- Standards-correct distributed spans, structured logs, metrics, diagnostics, and testing fakes.
+- A first-party OpenTelemetry adapter over Doxa-owned trace and metric contracts.
+- Theoria, the causal execution debugger with production diagnostics and a span waterfall.
 - Praxis, the generator, migration, runtime, inspection, and recovery command suite.
 - Gnosis, the automatically registered local read-only MCP server over the compiled application
   graph, versioned guidance, and bounded non-production model queries.
 
 ## Repository map
 
-| Area                                               | Purpose                                                           |
-| -------------------------------------------------- | ----------------------------------------------------------------- |
-| [`packages/core`](packages/core)                   | Stable application-facing programming model                       |
-| [`packages/manifest`](packages/manifest)           | Versioned inert manifest contract                                 |
-| [`packages/compiler`](packages/compiler)           | Semantic TypeScript compiler                                      |
-| [`packages/introspection`](packages/introspection) | Typed protocol-independent application inspection                 |
-| [`packages/gnosis`](packages/gnosis)               | Local read-only MCP engineering server                            |
-| [`packages/runtime`](packages/runtime)             | Container, execution, dispatch, and lifecycle                     |
-| [`packages/praxis`](packages/praxis)               | Generator and command suite                                       |
-| [`packages/testing`](packages/testing)             | First-party harnesses and fakes                                   |
-| `packages/*` adapters                              | Hono, PostgreSQL, queues, auth, communications, and Theoria       |
-| [`examples`](examples)                             | Runtime, persistence, and external Next.js reference applications |
-| [`docs`](docs)                                     | User and maintainer documentation                                 |
-| [`manifesto`](manifesto/index.md)                  | Principles, accepted decisions, specifications, and proof ledger  |
+| Area                                               | Purpose                                                                    |
+| -------------------------------------------------- | -------------------------------------------------------------------------- |
+| [`packages/core`](packages/core)                   | Stable application-facing programming model                                |
+| [`packages/manifest`](packages/manifest)           | Versioned inert manifest contract                                          |
+| [`packages/compiler`](packages/compiler)           | Semantic TypeScript compiler                                               |
+| [`packages/introspection`](packages/introspection) | Typed protocol-independent application inspection                          |
+| [`packages/gnosis`](packages/gnosis)               | Local read-only MCP engineering server                                     |
+| [`packages/runtime`](packages/runtime)             | Container, execution, dispatch, and lifecycle                              |
+| [`packages/praxis`](packages/praxis)               | Generator and command suite                                                |
+| [`packages/testing`](packages/testing)             | First-party harnesses and fakes                                            |
+| `packages/*` adapters                              | Hono, PostgreSQL, queues, auth, communications, OpenTelemetry, and Theoria |
+| [`examples`](examples)                             | Runtime, persistence, and external Next.js reference applications          |
+| [`docs`](docs)                                     | User and maintainer documentation                                          |
+| [`manifesto`](manifesto/index.md)                  | Principles, accepted decisions, specifications, and proof ledger           |
 
 ## Documentation
 
 - [Getting started](docs/getting-started/index.md)
 - [Application model](docs/concepts/application-model.md)
 - [Events, jobs, and schedules](docs/guides/events-jobs-schedules.md)
+- [Observability, OpenTelemetry, and Theoria](docs/guides/observability.md)
 - [Operations and deployment](docs/operations/deployment.md)
 - [Package reference](docs/reference/packages.md)
 - [Upgrading](docs/upgrading/index.md)

@@ -20,10 +20,12 @@ records every role and source plus Doxa's DX, safety, folder, authorization, mig
 generator conventions. The manifest and constructor registry remain the two canonical runtime
 artifacts.
 
-Doxa also owns a vendor-independent `Telemetry` port for metrics and spans. First-class application
-and framework logging is specified separately in
+Doxa also owns a vendor-independent `Telemetry` port for metrics and nested spans. First-class
+application and framework logging is specified separately in
 [First-class logging](../specifications/logging.md). Runtime admission emits structured telemetry
 events, metrics, and spans with actor, correlation, causation, tenant, transport, and trace fields.
 HTTP validates and propagates W3C trace context; queues and durable records preserve it. The runtime
-generates trace/span IDs when no parent exists. Telemetry adapters are isolated from application
-behavior, and an in-memory reference adapter proves deterministic capture without secret values.
+generates trace/span IDs when no parent exists and uses parentage or explicit links for asynchronous
+work. Telemetry adapters are isolated from application behavior. The in-memory reference adapter and
+`@doxajs/opentelemetry` prove deterministic capture and SDK-correct exported parentage without
+secret values.

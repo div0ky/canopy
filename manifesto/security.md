@@ -41,6 +41,8 @@ is executable and must match its manifest build hash and supported format versio
 | Forged provider delivery updates            | Exact-body SendGrid ECDSA verification and timestamp window; canonical Twilio HMAC verification        | Valid, malformed, stale, and duplicate webhook fixtures                         |
 | Artifact substitution                       | Application identity, manifest version, build hash, and constructor registry compatibility fail closed | Compiler/runtime compatibility tests                                            |
 | Secret leakage through framework telemetry  | Structured allowlisted attributes, `SecretString`, provider-independent errors, safe operator views    | Redaction assertions and boundary audit                                         |
+| Prompt, message, or customer PII capture    | AI observation types omit content fields; sanitization remains defense in depth                        | AI observation contract and absence assertions                                  |
+| Unauthorized production debugger access     | Explicit production profile, protected operator identity, authorization, proxy trust, and access audit | Non-loopback authentication and audit integration tests                         |
 | Denial during shutdown                      | Admission closes before drain; bounded lifecycle deadlines; cancellation and full cleanup aggregation  | Lifecycle and active-worker drain tests                                         |
 
 ## Security invariants
@@ -55,6 +57,10 @@ is executable and must match its manifest build hash and supported format versio
   authentication, correlation, causation, tenant, and trace context.
 - Diagnostics expose identity and record identifiers, states, and timestamps, not credentials,
   digests, secrets, message bodies, or cache values.
+- Theoria binds to loopback by default. Non-loopback access fails closed without an explicit
+  production diagnostics profile, authenticated operator boundary, and access audit sink.
+- AI observations exclude prompts, completions, tool payloads, SMS bodies, phone numbers, and
+  customer PII by construction.
 
 ## Supply-chain and provenance posture
 

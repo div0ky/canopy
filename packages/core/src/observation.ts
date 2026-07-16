@@ -1,4 +1,4 @@
-import type { ActorKind, JsonValue } from './index.js'
+import type { ActorKind, JsonValue, SpanLink } from './index.js'
 
 export type ObservationKind =
   | 'execution'
@@ -10,6 +10,7 @@ export type ObservationKind =
   | 'event'
   | 'broadcast'
   | 'listener'
+  | 'reaction'
   | 'signal'
   | 'job'
   | 'schedule'
@@ -18,6 +19,10 @@ export type ObservationKind =
   | 'mail'
   | 'sms'
   | 'log'
+  | 'ai.operation'
+  | 'ai.tool'
+  | 'ai.critic'
+  | 'ai.retry'
   | 'exception'
 
 export type ObservationPhase = 'started' | 'completed' | 'failed' | 'occurred'
@@ -29,6 +34,8 @@ export interface ObservationContext {
   readonly causationId?: string
   readonly traceId?: string
   readonly spanId?: string
+  readonly parentSpanId?: string
+  readonly links?: readonly SpanLink[]
   readonly actorKind?: ActorKind
   readonly actorId?: string
   readonly tenantId?: string
@@ -43,6 +50,14 @@ export interface ObservationError {
   readonly cause?: ObservationError
 }
 
+export interface ObservationResource {
+  readonly application: string
+  readonly service: string
+  readonly environment: string
+  readonly release?: string
+  readonly instanceId?: string
+}
+
 export interface Observation {
   readonly id: string
   readonly occurredAt: string
@@ -52,11 +67,12 @@ export interface Observation {
   readonly roleId?: string
   readonly durationMilliseconds?: number
   readonly context: ObservationContext
+  readonly resource?: ObservationResource
   readonly attributes: Readonly<Record<string, JsonValue>>
   readonly error?: ObservationError
 }
 
-/** Optional development-observation sink. Implementations must never affect application behavior. */
+/** Optional observation sink. Implementations must never affect application behavior. */
 export abstract class ObservationRecorder {
   abstract record(observation: Observation): void | Promise<void>
 }
@@ -85,7 +101,7 @@ export function sanitizeObservationAttributes(
       Object.fromEntries(
         Object.entries(attributes).map(([key, value]) => [
           key,
-          isSensitiveKey(key) ? '[REDACTED]' : sanitizeValue(value, new WeakSet(), 0),
+          isSensitiveKey(key, value) ? '[REDACTED]' : sanitizeValue(value, new WeakSet(), 0),
         ]),
       ),
     )
@@ -171,7 +187,7 @@ function sanitizeValue(value: unknown, seen: WeakSet<object>, depth: number): Js
         .slice(0, 100)
         .map(([key, nested]) => [
           key,
-          isSensitiveKey(key) ? '[REDACTED]' : sanitizeValue(nested, seen, depth + 1),
+          isSensitiveKey(key, nested) ? '[REDACTED]' : sanitizeValue(nested, seen, depth + 1),
         ]),
     )
   } finally {
@@ -179,7 +195,15 @@ function sanitizeValue(value: unknown, seen: WeakSet<object>, depth: number): Js
   }
 }
 
-function isSensitiveKey(key: string): boolean {
+function isSensitiveKey(key: string, value: unknown): boolean {
+  if (
+    /^(?:input|output|cached|reasoning)Tokens$/.test(key) &&
+    typeof value === 'number' &&
+    Number.isSafeInteger(value) &&
+    value >= 0
+  ) {
+    return false
+  }
   return /(?:authorization|cookie|password|passwd|secret|token|api[-_]?key|credential|session|csrf|signature)/i.test(
     key,
   )
