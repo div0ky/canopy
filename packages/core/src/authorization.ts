@@ -9,6 +9,12 @@ export interface PolicyRequest<Resource = unknown> {
   readonly context: ExecutionContext
 }
 
+export interface PermissionSourceRequest {
+  readonly actor: ActorRef
+  readonly tenant?: TenantRef
+  readonly context: ExecutionContext
+}
+
 export interface PolicyDecision {
   readonly effect: 'allow' | 'deny'
   readonly policy: string
@@ -19,6 +25,18 @@ export abstract class Policy<Resource = unknown> extends DoxaRole {
   static readonly id: string = ''
   static readonly abilities: readonly string[] = []
   abstract decide(request: PolicyRequest<Resource>): PolicyDecision | Promise<PolicyDecision>
+}
+
+/**
+ * Application-wide adapter from application-owned permission facts to stable Doxa abilities.
+ *
+ * Doxa resolves one selected source at most once per admitted execution. Implementations must
+ * return only abilities declared in their static catalog.
+ */
+export abstract class PermissionSource extends DoxaRole {
+  static readonly id: string = ''
+  static readonly abilities: readonly string[] = []
+  abstract resolve(request: PermissionSourceRequest): readonly string[] | Promise<readonly string[]>
 }
 
 export class AuthorizationError extends Error {

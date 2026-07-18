@@ -20,6 +20,7 @@ export type InspectionSurface =
   | 'listeners'
   | 'models'
   | 'observers'
+  | 'permissionSources'
   | 'policies'
   | 'queries'
   | 'routes'
@@ -85,6 +86,7 @@ const surfaces: Readonly<Record<InspectionSurface, keyof DoxaManifest>> = {
   listeners: 'listeners',
   models: 'models',
   observers: 'observers',
+  permissionSources: 'permissionSource',
   policies: 'policies',
   queries: 'queries',
   routes: 'routes',
@@ -107,6 +109,7 @@ const graphSections = [
   'jobs',
   'schedules',
   'policies',
+  'permissionSource',
   'commands',
 ] as const satisfies readonly (keyof DoxaManifest)[]
 
@@ -149,7 +152,11 @@ export function inspectGraph(manifest: DoxaManifest): GraphInspection {
       Object.fromEntries(
         graphSections.map((section) => [
           section,
-          Array.isArray(manifest[section]) ? manifest[section].length : 0,
+          Array.isArray(manifest[section])
+            ? manifest[section].length
+            : manifest[section] === null
+              ? 0
+              : 1,
         ]),
       ),
     ),
@@ -161,7 +168,10 @@ export function inspectSurface(
   surface: InspectionSurface,
 ): BoundedInspection<Readonly<Record<string, unknown>>> {
   assertCurrentManifest(manifest)
-  const entries = manifest[surfaces[surface]] as readonly unknown[]
+  const section = manifest[surfaces[surface]]
+  const entries = (
+    Array.isArray(section) ? section : section === null ? [] : [section]
+  ) as readonly unknown[]
   const items = entries
     .map((entry) => sanitizeInspectionValue(entry) as Readonly<Record<string, unknown>>)
     .sort((left, right) => String(left.id).localeCompare(String(right.id)))
@@ -260,7 +270,7 @@ export function createGnosisKnowledge(manifest: DoxaManifest): GnosisKnowledge {
       'Prefer the better developer experience between equally viable choices.',
       'Folder names have no runtime meaning.',
       'Framework roles are explicitly declared by Features and compiled before boot.',
-      'Entry points fail closed unless public or owned by a declared policy ability.',
+      'Entry points fail closed unless public or owned by a declared policy or permission-source ability.',
       'Constructors are side-effect free; lifecycle owns I/O and background behavior.',
     ]),
     conventions: Object.freeze({

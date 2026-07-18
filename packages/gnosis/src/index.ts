@@ -178,6 +178,7 @@ const surfaceTools: Readonly<Record<string, InspectionSurface>> = {
   list_observers: 'observers',
   list_jobs: 'jobs',
   list_schedules: 'schedules',
+  list_permission_sources: 'permissionSources',
   list_policies: 'policies',
   list_commands: 'commands',
 }

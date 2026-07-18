@@ -15,3 +15,6 @@ that exact artifact in a fresh non-production, read-only console execution to re
 selected logical model fields; it does not accept SQL or expose mutation. Praxis also installs a
 managed Doxa guidance block in the application's root `AGENTS.md`. Clients may require their normal
 first-use project trust confirmation.
+
+`list_permission_sources` exposes the compiled source catalog and graph metadata without loading
+group memberships, user grants, or other runtime permission facts.

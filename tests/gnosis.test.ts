@@ -60,7 +60,7 @@ describe('Gnosis read-only local engineering server', () => {
   })
 
   it('compiles model relationships into the canonical manifest', () => {
-    expect(manifest.formatVersion).toBe(4)
+    expect(manifest.formatVersion).toBe(5)
     expect(manifest.frameworkVersion).toBe(compilerVersion)
     expect(manifest.models.find((model) => model.id.endsWith('/counter'))?.relationships).toEqual([
       {
@@ -97,7 +97,7 @@ describe('Gnosis read-only local engineering server', () => {
     expect(applicationInfo(manifest)).toEqual(
       expect.objectContaining({
         applicationId: 'persistence-reference-app',
-        manifestFormatVersion: 4,
+        manifestFormatVersion: 5,
         frameworkVersion: compilerVersion,
       }),
     )
@@ -212,6 +212,7 @@ describe('Gnosis read-only local engineering server', () => {
           'application_info',
           'inspect_graph',
           'list_routes',
+          'list_permission_sources',
           'describe_model',
           'describe_authentication',
           'query_models',
@@ -224,6 +225,14 @@ describe('Gnosis read-only local engineering server', () => {
 
       const routes = await client.callTool({ name: 'list_routes', arguments: {} })
       expect(routes.structuredContent).toEqual(inspectSurface(manifest, 'routes'))
+
+      const permissionSources = await client.callTool({
+        name: 'list_permission_sources',
+        arguments: {},
+      })
+      expect(permissionSources.structuredContent).toEqual(
+        inspectSurface(manifest, 'permissionSources'),
+      )
 
       const authentication = await client.callTool({
         name: 'describe_authentication',
@@ -420,7 +429,7 @@ describe('Gnosis read-only local engineering server', () => {
       expect(result.structuredContent).toEqual(
         expect.objectContaining({
           applicationId: 'garden',
-          manifestFormatVersion: 4,
+          manifestFormatVersion: 5,
           gnosisVersion,
         }),
       )

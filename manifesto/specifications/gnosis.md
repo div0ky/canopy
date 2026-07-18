@@ -80,6 +80,7 @@ Phase 1 provides these read-only tools:
 - `list_observers`
 - `list_jobs`
 - `list_schedules`
+- `list_permission_sources`
 - `list_policies`
 - `list_commands`
 - `search_docs`

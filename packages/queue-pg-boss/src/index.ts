@@ -637,6 +637,7 @@ function scheduleEnvelope(id: string, schedule: ScheduleDefinition): QueueEnvelo
     payload: schedule.input,
     policy: schedule.policy,
     context: {
+      version: 1,
       sourceExecutionId: id,
       correlationId: id,
       causationId: schedule.id,

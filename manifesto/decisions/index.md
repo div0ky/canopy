@@ -34,8 +34,9 @@ still be intelligible if an engine is replaced.
 | Core credential method                   | Email and password                                                                     | Accepted              | [Authentication](0003-first-party-authentication.md)                                                     |
 | Browser sessions                         | Opaque, database-backed sessions                                                       | Accepted              | [Authentication](0003-first-party-authentication.md)                                                     |
 | Additional credential methods            | Optional Doxa auth plugins                                                             | Accepted              | [Authentication](0003-first-party-authentication.md)                                                     |
-| Authorization                            | Doxa-owned actors and policies                                                         | Accepted              | [Actor and execution context](../specifications/actor-execution-context-authorization.md)                |
-| First-party roles and permission storage | Deferred; applications supply permission facts to policies                             | Deferred              | [Permissions](0022-defer-first-party-permissions.md)                                                     |
+| Authorization                            | Doxa-owned ability pipeline with application permission sources and resource policies  | Accepted              | [Actor and execution context](../specifications/actor-execution-context-authorization.md)                |
+| Application permission source            | One execution-cached adapter for application-owned permission facts                    | Accepted              | [Permission sources](0034-application-permission-sources.md)                                             |
+| First-party roles and permission storage | Deferred; applications supply permission facts through the selected source             | Deferred              | [Permissions](0022-defer-first-party-permissions.md)                                                     |
 | Execution context                        | Immutable actor and causal context                                                     | Accepted              | [Actor and execution context](../specifications/actor-execution-context-authorization.md)                |
 | Project installer and generators         | First-party Doxa CLI                                                                   | Accepted              | [CLI and generators](0004-first-party-cli-generators.md)                                                 |
 | Validation contract                      | Standard Schema with Zod 4 as the default                                              | Accepted              | [Validation](0006-standard-schema-zod-validation.md)                                                     |
@@ -175,6 +176,8 @@ observable programming contract remains to be specified.
     on 2026-07-16.
 33. [Use a closed, controlled production adoption program](0033-controlled-production-adoption.md) —
     Accepted on 2026-07-16.
+34. [Accept application-supplied permission sources](0034-application-permission-sources.md) —
+    Accepted on 2026-07-17; first-party role and permission storage remains deferred.
 
 ## Adding a decision
 

@@ -17,6 +17,14 @@ pnpm dev
 
 Run `doxa --help` for the complete command surface.
 
+Use `doxa permission-source:list` (or `--json`) to inspect the selected application permission
+source and its declared abilities without evaluating runtime permission records.
+
+Generate the source with
+`doxa make:permission-source Feature/ApplicationPermissions --abilities=contact.read,contact.update`.
+Use `doxa make:service Feature/ApplicationAccess --provide` when its ordinary service adapter must
+cross a Feature boundary.
+
 Praxis registers the local read-only Gnosis MCP server with Codex, Claude Code, Cursor, and VS Code
 when it creates or upgrades an application and maintains a Doxa guidance block in the root
 `AGENTS.md`. Open the repository in a supported client; the client starts and stops Gnosis on demand

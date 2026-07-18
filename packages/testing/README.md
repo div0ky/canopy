@@ -13,3 +13,7 @@ pnpm add -D @doxajs/testing vitest
 ```
 
 Test-only behavior stays outside `@doxajs/core` and production applications.
+
+Acting-as helpers traverse the real compiled permission source and policy pipeline. Captured
+authorization decisions identify source, policy, credential, and default-deny outcomes without
+exposing raw permission facts.

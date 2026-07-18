@@ -1,9 +1,10 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import { compileApplication } from '@doxajs/compiler'
 import {
+  AuthorizationError,
   MemoryCache,
   Model,
   ModelIdentityMutationError,
@@ -25,6 +26,7 @@ import {
   RuntimeIntegrityError,
 } from '@doxajs/runtime'
 import { PostgresTheoria } from '@doxajs/theoria'
+import { inspectSurface } from '@doxajs/introspection'
 import { DoxaOpenTelemetry } from '@doxajs/opentelemetry'
 import { trace } from '@opentelemetry/api'
 import {
@@ -35,6 +37,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { Application } from '../examples/reference-app/dist/application.js'
+import { ContactDetails } from '../examples/reference-app/dist/contact-details.js'
 import { FailCounter } from '../examples/reference-app/dist/fail-counter.js'
 import { IncrementCounter } from '../examples/reference-app/dist/increment-counter.js'
 import { lifecycleLog, resetLifecycleLog } from '../examples/reference-app/dist/lifecycle-log.js'
@@ -43,6 +46,10 @@ import { ObserveAi } from '../examples/reference-app/dist/observe-ai.js'
 import { MutateCounterQuery } from '../examples/reference-app/dist/mutate-counter-query.js'
 import { operationLog, resetOperationLog } from '../examples/reference-app/dist/operation-log.js'
 import { ReadCounter } from '../examples/reference-app/dist/read-counter.js'
+import {
+  Application as RecursivePermissionApplication,
+  RecursiveContactDetails,
+} from '../examples/reference-app/dist/recursive-permission-application.js'
 import {
   referenceObservations,
   referenceTelemetry,
@@ -543,7 +550,31 @@ describe('foundational compile-to-boot slice', () => {
     expect(firstManifest).toBe(secondManifest)
     expect(firstRegistry).toBe(secondRegistry)
     expect(first.manifest.applicationId).toBe('reference-app')
-    expect(first.manifest.features.map((feature) => feature.id)).toEqual(['operations'])
+    expect(first.manifest.permissionSource).toEqual(
+      expect.objectContaining({
+        id: 'permission-source:authorization/application',
+        ownerId: 'authorization',
+        scope: 'execution',
+        abilities: ['contact.read', 'contact.update'],
+        dependencies: expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'role',
+            parameter: 'access',
+            targetId: 'service:shared-state/application-access',
+          }),
+        ]),
+      }),
+    )
+    expect(inspectSurface(first.manifest, 'permissionSources')).toEqual({
+      items: [expect.objectContaining({ id: 'permission-source:authorization/application' })],
+      total: 1,
+      truncated: false,
+    })
+    expect(first.manifest.features.map((feature) => feature.id)).toEqual([
+      'authorization',
+      'operations',
+      'shared-state',
+    ])
     expect(
       first.manifest.configurations
         .flatMap((configuration) => configuration.properties)
@@ -555,8 +586,9 @@ describe('foundational compile-to-boot slice', () => {
       ['provider:operations/reference-telemetry', 'singleton'],
       ['provider:operations/transactions', 'singleton'],
       ['provider:operations/worker', 'singleton'],
-      ['service:operations/execution-counter', 'execution'],
       ['service:operations/task-runner', 'transient'],
+      ['service:shared-state/application-access', 'execution'],
+      ['service:shared-state/execution-counter', 'execution'],
     ])
     expect(first.manifest.actions.map((action) => [action.id, action.transactional])).toEqual([
       ['action:operations/fail-counter', true],
@@ -565,6 +597,7 @@ describe('foundational compile-to-boot slice', () => {
       ['action:operations/observe-ai', true],
     ])
     expect(first.manifest.queries.map((query) => [query.id, query.transactional])).toEqual([
+      ['query:authorization/contact-details', false],
       ['query:operations/mutate-counter', false],
       ['query:operations/read-counter', false],
     ])
@@ -575,7 +608,7 @@ describe('foundational compile-to-boot slice', () => {
       expect.objectContaining({
         kind: 'role',
         parameter: 'counter',
-        targetId: 'service:operations/execution-counter',
+        targetId: 'service:shared-state/execution-counter',
       }),
       expect.objectContaining({
         kind: 'role',
@@ -596,6 +629,422 @@ describe('foundational compile-to-boot slice', () => {
     ])
     expect(firstRegistry).not.toContain('dependencies')
     expect(firstRegistry).not.toContain('lifecycle')
+  })
+
+  it('exports an execution-scoped ordinary service across Feature boundaries', async () => {
+    const result = await compileFixture(`
+      import {
+        DoxaApplication, Feature, Query, type ExecutionScoped,
+      } from '@doxajs/core'
+
+      class SharedAccess implements ExecutionScoped {}
+      class SharedFormatter {}
+      class ReadAccess extends Query<void, SharedAccess> {
+        static readonly id = 'read-access'
+        static override readonly access = 'public'
+        private readonly access = this.inject(SharedAccess)
+        private readonly formatter = this.inject(SharedFormatter)
+        handle() { void this.formatter; return this.access }
+      }
+      class AccessFeature extends Feature {
+        id = 'access'
+        provides = [SharedAccess, SharedFormatter]
+      }
+      class ConsumerFeature extends Feature {
+        id = 'consumer'
+        queries = [ReadAccess]
+      }
+      export class Application extends DoxaApplication {
+        id = 'shared-service'
+        features = [AccessFeature, ConsumerFeature]
+      }
+    `)
+
+    expect(result.manifest.providers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'service:access/shared-access',
+          ownerId: 'access',
+          role: 'service',
+          scope: 'execution',
+        }),
+        expect.objectContaining({
+          id: 'service:access/shared-formatter',
+          ownerId: 'access',
+          role: 'service',
+          scope: 'transient',
+        }),
+      ]),
+    )
+  })
+
+  it('keeps unprovided concrete services private to their Feature', async () => {
+    await expect(
+      compileFixture(`
+        import { DoxaApplication, Feature, Query } from '@doxajs/core'
+
+        class PrivateAccess {}
+        class FirstRead extends Query<void, void> {
+          static readonly id = 'first-read'
+          static override readonly access = 'public'
+          private readonly access = this.inject(PrivateAccess)
+          handle() { void this.access }
+        }
+        class SecondRead extends Query<void, void> {
+          static readonly id = 'second-read'
+          static override readonly access = 'public'
+          private readonly access = this.inject(PrivateAccess)
+          handle() { void this.access }
+        }
+        class FirstFeature extends Feature { id = 'first'; queries = [FirstRead] }
+        class SecondFeature extends Feature { id = 'second'; queries = [SecondRead] }
+        export class Application extends DoxaApplication {
+          id = 'private-service'
+          features = [FirstFeature, SecondFeature]
+        }
+      `),
+    ).rejects.toThrow('reachable across Feature boundaries without being provided explicitly')
+  })
+
+  it('rejects framework roles exported as ordinary services', async () => {
+    await expect(
+      compileFixture(`
+        import { DoxaApplication, Feature, Query } from '@doxajs/core'
+
+        class ReadAccess extends Query<void, void> {
+          static readonly id = 'read-access'
+          static override readonly access = 'public'
+          handle() {}
+        }
+        class AccessFeature extends Feature {
+          id = 'access'
+          provides = [ReadAccess]
+          queries = [ReadAccess]
+        }
+        export class Application extends DoxaApplication {
+          id = 'invalid-provides'
+          features = [AccessFeature]
+        }
+      `),
+    ).rejects.toThrow('cannot be exported as an ordinary service through provides')
+  })
+
+  it('rejects ambiguous and provider-promoted provides declarations', async () => {
+    await expect(
+      compileFixture(`
+        import { DoxaApplication, Feature } from '@doxajs/core'
+
+        class SharedAccess {}
+        class FirstFeature extends Feature { id = 'first'; provides = [SharedAccess] }
+        class SecondFeature extends Feature { id = 'second'; provides = [SharedAccess] }
+        export class Application extends DoxaApplication {
+          id = 'ambiguous-provides'
+          features = [FirstFeature, SecondFeature]
+        }
+      `),
+    ).rejects.toThrow('SharedAccess is already provided by Feature first')
+
+    await expect(
+      compileFixture(`
+        import { DoxaApplication, Feature } from '@doxajs/core'
+
+        class SharedAccess { static readonly id = 'shared-access' }
+        class AccessFeature extends Feature {
+          id = 'access'
+          providers = [SharedAccess]
+          provides = [SharedAccess]
+        }
+        export class Application extends DoxaApplication {
+          id = 'promoted-provides'
+          features = [AccessFeature]
+        }
+      `),
+    ).rejects.toThrow(
+      'SharedAccess cannot be both an infrastructure provider and an exported ordinary service',
+    )
+  })
+
+  it('composes an application PermissionSource with resource policies once per execution', async () => {
+    const runtime = await bootRuntime()
+    const result = await runtime.admit(
+      {
+        actor: { kind: 'user', id: 'permission-user' },
+        transport: { kind: 'test' },
+      },
+      async () => ({
+        details: await runtime.queries.execute(ContactDetails, undefined),
+        read: await runtime.authorization.decide('contact.read'),
+        update: await runtime.authorization.decide('contact.update', {
+          ownerId: 'permission-user',
+        }),
+        narrowed: await runtime.authorization.decide('contact.update', {
+          ownerId: 'different-user',
+        }),
+      }),
+    )
+
+    expect(result).toEqual({
+      details: 'contact-details',
+      read: {
+        effect: 'allow',
+        policy: 'permission-source:authorization/application',
+        code: 'permission_granted',
+      },
+      update: {
+        effect: 'allow',
+        policy: 'policy:authorization/contact',
+        code: 'allowed',
+      },
+      narrowed: {
+        effect: 'deny',
+        policy: 'policy:authorization/contact',
+        code: 'contact_owner_required',
+      },
+    })
+    expect(referenceTelemetry).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'metric',
+          name: 'doxa.authorization.decisions',
+          attributes: expect.objectContaining({
+            ability: 'contact.read',
+            effect: 'allow',
+            policy: 'permission-source:authorization/application',
+            code: 'permission_granted',
+          }),
+        }),
+      ]),
+    )
+    const permissionObservations = referenceObservations.filter(
+      (observation) => observation.name === 'permission-source:authorization/application',
+    )
+    expect(permissionObservations.length).toBeGreaterThan(0)
+    expect(JSON.stringify(permissionObservations)).not.toContain('"contact.read"')
+    expect(
+      operationLog.filter((entry) => entry.startsWith('permission-source:resolve:')),
+    ).toHaveLength(1)
+
+    const missingPermission = await runtime
+      .admit(
+        {
+          actor: { kind: 'user', id: 'read-only-user' },
+          transport: { kind: 'test' },
+        },
+        () => runtime.authorization.authorize('contact.update', { ownerId: 'read-only-user' }),
+      )
+      .catch((error: unknown) => error)
+    expect(missingPermission).toBeInstanceOf(AuthorizationError)
+    expect((missingPermission as AuthorizationError).decision).toEqual({
+      effect: 'deny',
+      policy: 'permission-source:authorization/application',
+      code: 'permission_required',
+    })
+    expect(
+      operationLog.filter((entry) => entry.startsWith('permission-source:resolve:')),
+    ).toHaveLength(2)
+
+    await expect(
+      runtime.admit(
+        {
+          actor: { kind: 'user', id: 'no-permission-user' },
+          transport: { kind: 'test' },
+        },
+        () => runtime.queries.execute(ContactDetails, undefined),
+      ),
+    ).rejects.toBeInstanceOf(AuthorizationError)
+
+    const sourceFailure = await runtime.admit(
+      {
+        actor: { kind: 'user', id: 'permission-source-error' },
+        transport: { kind: 'test' },
+      },
+      () => runtime.queries.execute(ContactDetails, undefined).catch((error: unknown) => error),
+    )
+    expect(sourceFailure).toBeInstanceOf(Error)
+    expect((sourceFailure as Error).message).toBe('Permission source unavailable.')
+    const recordedPermissionFailure = JSON.stringify(referenceObservations)
+    expect(recordedPermissionFailure).toContain('Permission source failed.')
+    expect(recordedPermissionFailure).not.toContain('Permission source unavailable.')
+
+    const primitiveFailure = await runtime
+      .admit(
+        {
+          actor: { kind: 'user', id: 'permission-source-primitive-error' },
+          transport: { kind: 'test' },
+        },
+        () => runtime.queries.execute(ContactDetails, undefined),
+      )
+      .catch((error: unknown) => error)
+    expect(primitiveFailure).toBe('primitive permission source details')
+    expect(JSON.stringify(referenceObservations)).not.toContain(
+      'primitive permission source details',
+    )
+
+    const resolutionsBeforeConcurrent = operationLog.filter((entry) =>
+      entry.startsWith('permission-source:resolve:'),
+    ).length
+    const concurrent = await runtime.admit(
+      {
+        actor: { kind: 'user', id: 'permission-user' },
+        transport: { kind: 'test' },
+      },
+      () =>
+        Promise.all([
+          runtime.authorization.decide('contact.read'),
+          runtime.authorization.decide('contact.update', { ownerId: 'permission-user' }),
+        ]),
+    )
+    expect(concurrent.map((decision) => decision.effect)).toEqual(['allow', 'allow'])
+    expect(
+      operationLog.filter((entry) => entry.startsWith('permission-source:resolve:')),
+    ).toHaveLength(resolutionsBeforeConcurrent + 1)
+
+    const resolutionsBeforeConstraint = operationLog.filter((entry) =>
+      entry.startsWith('permission-source:resolve:'),
+    ).length
+    const constrained = await runtime.admit(
+      {
+        actor: { kind: 'user', id: 'permission-user' },
+        authentication: {
+          state: 'authenticated',
+          identityId: 'permission-user',
+          method: 'bearer',
+          constraints: ['contact.read'],
+        },
+        transport: { kind: 'test' },
+      },
+      () => runtime.authorization.decide('contact.update', { ownerId: 'permission-user' }),
+    )
+    expect(constrained).toEqual({
+      effect: 'deny',
+      policy: 'doxa:credential-constraints',
+      code: 'credential_constraint_denied',
+    })
+    expect(
+      operationLog.filter((entry) => entry.startsWith('permission-source:resolve:')),
+    ).toHaveLength(resolutionsBeforeConstraint)
+
+    await expect(
+      runtime.admit(
+        {
+          actor: { kind: 'user', id: 'undeclared-user' },
+          transport: { kind: 'test' },
+        },
+        () => runtime.queries.execute(ContactDetails, undefined),
+      ),
+    ).rejects.toThrow(
+      'Permission source permission-source:authorization/application returned an ability outside its declared catalog',
+    )
+    expect(JSON.stringify(referenceObservations)).not.toContain('contact.delete')
+    await runtime.shutdown()
+  })
+
+  it('rejects recursive source-managed authorization', async () => {
+    const artifactsDirectory = await temporaryDirectory()
+    await compileApplication({
+      tsconfigPath: path.join(referenceApplication, 'tsconfig.json'),
+      applicationFile: path.join(referenceApplication, 'src/recursive-permission-application.ts'),
+      sourceRoot: path.join(referenceApplication, 'src'),
+      outputRoot: path.join(referenceApplication, 'dist'),
+      artifactsDirectory,
+    })
+    const runtime = await Doxa.boot(RecursivePermissionApplication, {
+      artifactsDirectory,
+      dotenvPath: false,
+      environment: {},
+    })
+
+    await expect(
+      runtime.admit(
+        {
+          actor: { kind: 'user', id: 'recursive-permission-user' },
+          transport: { kind: 'test' },
+        },
+        () => runtime.queries.execute(RecursiveContactDetails, undefined),
+      ),
+    ).rejects.toThrow(
+      'Permission source permission-source:recursive-authorization/recursive attempted recursive authorization while resolving abilities',
+    )
+    await runtime.shutdown()
+  })
+
+  it('rejects multiple application PermissionSources at compile time', async () => {
+    await expect(
+      compileFixture(`
+        import {
+          DoxaApplication, Feature, PermissionSource, type PermissionSourceRequest,
+        } from '@doxajs/core'
+
+        class FirstSource extends PermissionSource {
+          static readonly id = 'first'
+          static readonly abilities = ['contact.read']
+          resolve(_request: PermissionSourceRequest) { return [] }
+        }
+        class SecondSource extends PermissionSource {
+          static readonly id = 'second'
+          static readonly abilities = ['contact.read']
+          resolve(_request: PermissionSourceRequest) { return [] }
+        }
+        class FirstFeature extends Feature {
+          id = 'first'
+          permissionSources = [FirstSource]
+        }
+        class SecondFeature extends Feature {
+          id = 'second'
+          permissionSources = [SecondSource]
+        }
+        export class Application extends DoxaApplication {
+          id = 'multiple-permission-sources'
+          features = [FirstFeature, SecondFeature]
+        }
+      `),
+    ).rejects.toThrow('Applications may select at most one PermissionSource')
+  })
+
+  it('rejects duplicate and invalid PermissionSource ability catalogs', async () => {
+    await expect(
+      compileFixture(`
+        import {
+          DoxaApplication, Feature, PermissionSource, type PermissionSourceRequest,
+        } from '@doxajs/core'
+
+        class DuplicateSource extends PermissionSource {
+          static readonly id = 'duplicate'
+          static readonly abilities = ['contact.read', 'contact.read']
+          resolve(_request: PermissionSourceRequest) { return [] }
+        }
+        class AuthorizationFeature extends Feature {
+          id = 'authorization'
+          permissionSources = [DuplicateSource]
+        }
+        export class Application extends DoxaApplication {
+          id = 'duplicate-permission-abilities'
+          features = [AuthorizationFeature]
+        }
+      `),
+    ).rejects.toThrow('DuplicateSource.abilities must not contain duplicates')
+
+    await expect(
+      compileFixture(`
+        import {
+          DoxaApplication, Feature, PermissionSource, type PermissionSourceRequest,
+        } from '@doxajs/core'
+
+        class InvalidSource extends PermissionSource {
+          static readonly id = 'invalid'
+          static readonly abilities = ['Contact Read']
+          resolve(_request: PermissionSourceRequest) { return [] }
+        }
+        class AuthorizationFeature extends Feature {
+          id = 'authorization'
+          permissionSources = [InvalidSource]
+        }
+        export class Application extends DoxaApplication {
+          id = 'invalid-permission-abilities'
+          features = [AuthorizationFeature]
+        }
+      `),
+    ).rejects.toThrow('InvalidSource declares invalid ability Contact Read')
   })
 
   it('boots only from artifacts and follows dependency-derived lifecycle order', async () => {
@@ -816,6 +1265,17 @@ describe('foundational compile-to-boot slice', () => {
     })
 
     expect(() => assertManifest(manifest)).toThrow('invalid optional attributes')
+  })
+
+  it('rejects invalid permission-source manifest catalogs before runtime boot', async () => {
+    const artifactsDirectory = await temporaryDirectory()
+    const result = await compile(artifactsDirectory)
+    const manifest = JSON.parse(await readFile(result.manifestPath, 'utf8')) as {
+      permissionSource: { abilities: string[] }
+    }
+    manifest.permissionSource.abilities = ['contact.read', 'contact.read']
+
+    expect(() => assertManifest(manifest)).toThrow('permission source')
   })
 
   it('rejects an Application constructor that does not match the generated registry', async () => {
@@ -1082,6 +1542,34 @@ async function compile(artifactsDirectory: string) {
     sourceRoot: path.join(referenceApplication, 'src'),
     outputRoot: path.join(referenceApplication, 'dist'),
     artifactsDirectory,
+  })
+}
+
+async function compileFixture(source: string) {
+  const root = await mkdtemp(path.join(workspace, '.foundation-fixture-'))
+  temporaryDirectories.push(root)
+  await mkdir(path.join(root, 'src'))
+  await writeFile(
+    path.join(root, 'tsconfig.json'),
+    JSON.stringify({
+      extends: path.join(workspace, 'tsconfig.base.json'),
+      compilerOptions: {
+        composite: false,
+        rootDir: 'src',
+        outDir: 'dist',
+        declaration: false,
+        declarationMap: false,
+      },
+      include: ['src/**/*.ts'],
+    }),
+  )
+  await writeFile(path.join(root, 'src/application.ts'), source)
+  return await compileApplication({
+    tsconfigPath: path.join(root, 'tsconfig.json'),
+    applicationFile: path.join(root, 'src/application.ts'),
+    sourceRoot: path.join(root, 'src'),
+    outputRoot: path.join(root, 'dist'),
+    artifactsDirectory: path.join(root, '.doxa'),
   })
 }
 

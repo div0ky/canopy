@@ -8,5 +8,8 @@ The fail-closed semantic TypeScript compiler behind Praxis. It analyzes declarat
 Applications and Features and emits `.doxa/manifest.json`, `.doxa/registry.mjs`, and compiled
 application output.
 
+Compilation owns Feature privacy and `provides` exports, ordinary-service scopes, the optional
+application `PermissionSource`, its static ability catalog, and source/policy access composition.
+
 Application code should use `@doxajs/core`; application developers normally invoke this package
 through `doxa build` and `doxa dev`.

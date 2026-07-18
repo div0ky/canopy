@@ -26,6 +26,7 @@
     "@doxajs/opentelemetry": "0.1.0-alpha.16"
   },
   "changesets": [
+    "add-application-permission-source",
     "add-doxa-upgrade",
     "alpha-eight-release",
     "alpha-eleven-release",
@@ -35,6 +36,7 @@
     "alpha-fourteen-release",
     "alpha-nine-release",
     "alpha-seven-release",
+    "alpha-seventeen-release",
     "alpha-six-release",
     "alpha-sixteen-release",
     "alpha-ten-release",
@@ -42,6 +44,7 @@
     "alpha-three-release",
     "alpha-twelve-release",
     "alpha-two-release",
+    "clean-alpha-contracts",
     "complete-model-mutation",
     "config-driven-existing-auth",
     "doxajs-identity-theoria",

@@ -61,21 +61,44 @@ describe('Praxis command suite', () => {
   it('generates App roles beside the Feature created by doxa new', async () => {
     const root = await temporaryDirectory()
     const destination = path.join(root, 'example')
+    const output: string[] = []
     const errors: string[] = []
     const io = {
-      out: () => undefined,
+      out: (message: string) => output.push(message),
       error: (message: string) => errors.push(message),
     }
 
     expect(await runPraxis(['new', 'Example', `--directory=${destination}`], root, io)).toBe(0)
     expect(await runPraxis(['make:model', 'App/Contact'], destination, io)).toBe(0)
+    expect(
+      await runPraxis(['make:service', 'App/ApplicationAccess', '--provide'], destination, io),
+    ).toBe(0)
+    expect(
+      await runPraxis(
+        ['make:permission-source', 'App/ApplicationPermissions', '--abilities=contact.read'],
+        destination,
+        io,
+      ),
+    ).toBe(0)
     expect(await fileExists(path.join(destination, 'src/app/models/contact.ts'))).toBe(true)
-    expect(await readFile(path.join(destination, 'src/app/app.feature.ts'), 'utf8')).toContain(
-      'models = [Contact]',
-    )
+    const feature = await readFile(path.join(destination, 'src/app/app.feature.ts'), 'utf8')
+    expect(feature).toContain('models = [Contact]')
+    expect(feature).toContain('provides = [ApplicationAccess]')
+    expect(feature).toContain('permissionSources = [ApplicationPermissions]')
 
     await symlink(path.join(workspace, 'node_modules'), path.join(destination, 'node_modules'))
     expect(await runPraxis(['build'], destination, io)).toBe(0)
+    expect(await runPraxis(['permission-source:list', '--json'], destination, io)).toBe(0)
+    expect(JSON.parse(output.at(-1)!)).toEqual({
+      items: [
+        expect.objectContaining({
+          id: 'permission-source:app/application-permissions',
+          abilities: ['contact.read'],
+        }),
+      ],
+      total: 1,
+      truncated: false,
+    })
     expect(errors).toEqual([])
   })
 
@@ -361,6 +384,11 @@ describe('Praxis command suite', () => {
       ],
       ['make:policy', 'Commerce/OrderPolicy', '--abilities=orders.view,orders.ship'],
       [
+        'make:permission-source',
+        'Commerce/ApplicationPermissions',
+        '--abilities=orders.view,orders.ship',
+      ],
+      [
         'make:route',
         'Commerce/ListOrdersRoute',
         '--method=GET',
@@ -369,7 +397,7 @@ describe('Praxis command suite', () => {
       ],
       ['make:config', 'Commerce/CommerceConfig'],
       ['make:provider', 'Commerce/WarehouseProvider'],
-      ['make:service', 'Commerce/CalculateOrderTotal'],
+      ['make:service', 'Commerce/CalculateOrderTotal', '--provide'],
       [
         'make:command',
         'Commerce/RebuildProjections',
@@ -392,9 +420,11 @@ describe('Praxis command suite', () => {
       'jobs',
       'schedules',
       'policies',
+      'permissionSources',
       'routes',
       'configs',
       'providers',
+      'provides',
       'commands',
     ]) {
       expect(feature).toContain(`${field} = [`)
@@ -427,6 +457,12 @@ describe('Praxis command suite', () => {
     expect(
       await readFile(path.join(root, 'src/features/commerce/policies/order-policy.ts'), 'utf8'),
     ).toContain('orders.ship')
+    expect(
+      await readFile(
+        path.join(root, 'src/features/commerce/permission-sources/application-permissions.ts'),
+        'utf8',
+      ),
+    ).toContain('extends PermissionSource')
   })
 
   it('registers new Features in an existing Application and creates migrations and tests', async () => {

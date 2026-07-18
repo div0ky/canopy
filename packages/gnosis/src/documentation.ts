@@ -33,14 +33,21 @@ export function documentationIndex(version: string): readonly DocumentationSecti
       version,
       'operations.md',
       'Actions and queries',
-      'Actions represent intentional state changes and participate in the unit of work. Queries express reads and cannot hide durable mutations. Entry roles explicitly declare public access or a policy ability.',
+      'Actions represent intentional state changes and participate in the unit of work. Queries express reads and cannot hide durable mutations. Entry roles explicitly declare public access or an ability owned by a policy or application permission source.',
+    ),
+    section(
+      '@doxajs/core',
+      version,
+      'authorization.md',
+      'Application permission sources',
+      'One optional PermissionSource maps application-owned group and user permission facts to a literal stable Doxa ability catalog at most once per execution. Credential constraints deny first, and an optional resource Policy may narrow but never widen a source grant. Permission results are not ExecutionContext and never propagate through queues or trace baggage.',
     ),
     section(
       '@doxajs/praxis',
       version,
       'praxis.md',
       'Canonical command suite',
-      "Praxis is Doxa's only command suite. Use doxa build, doxa dev, doxa migrate, doxa make:*, and doxa inspect commands. Generated artifacts remain under .doxa and production roles consume prebuilt artifacts.",
+      "Praxis is Doxa's only command suite. Use doxa build, doxa dev, doxa migrate, doxa make:*, and inspection commands such as doxa permission-source:list. Generated artifacts remain under .doxa and production roles consume prebuilt artifacts.",
     ),
     section(
       '@doxajs/praxis',

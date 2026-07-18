@@ -100,4 +100,48 @@ describe('Doxa HTTP response envelopes', () => {
       data: null,
     })
   })
+
+  it('rejects declared and streamed request bodies above the configured byte limit', async () => {
+    const runtime = {
+      manifest: { routes: [{ id: 'route:test/body', method: 'POST', path: '/body' }] },
+      logger: new Logger(),
+      authenticateHttp: () =>
+        Promise.resolve({
+          actor: { kind: 'anonymous' },
+          authentication: { state: 'anonymous' },
+        }),
+      admit: async (_seed: unknown, work: (context: object) => Promise<unknown>) =>
+        work({ correlationId: 'body-limit-test', trace: {} }),
+      dispatchRoute: () => ({ accepted: true }),
+    } as unknown as DoxaRuntime
+    const http = new HonoHttpEngine(runtime, { maxRequestBodyBytes: 16 })
+
+    const declared = await http.fetch(
+      new Request('http://doxa.test/body', {
+        method: 'POST',
+        headers: { 'content-length': '17' },
+        body: 'small',
+      }),
+    )
+    expect(declared.status).toBe(413)
+    expect(await declared.json()).toEqual(
+      expect.objectContaining({ ok: false, code: 'payload_too_large' }),
+    )
+
+    const streamed = await http.fetch(
+      new Request('http://doxa.test/body', { method: 'POST', body: 'x'.repeat(17) }),
+    )
+    expect(streamed.status).toBe(413)
+    expect(await streamed.json()).toEqual(
+      expect.objectContaining({ ok: false, code: 'payload_too_large' }),
+    )
+
+    expect(
+      (
+        await http.fetch(
+          new Request('http://doxa.test/body', { method: 'POST', body: 'x'.repeat(16) }),
+        )
+      ).status,
+    ).toBe(200)
+  })
 })

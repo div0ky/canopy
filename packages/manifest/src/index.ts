@@ -1,4 +1,4 @@
-export const MANIFEST_FORMAT_VERSION = 4 as const
+export const MANIFEST_FORMAT_VERSION = 5 as const
 
 export type Scope = 'singleton' | 'execution' | 'transient'
 
@@ -319,6 +319,18 @@ export interface PolicyManifestEntry {
   readonly lifecycle: LifecycleManifestEntry
 }
 
+export interface PermissionSourceManifestEntry {
+  readonly id: string
+  readonly ownerId: string
+  readonly name: string
+  readonly exportName: string
+  readonly scope: 'execution'
+  readonly abilities: readonly string[]
+  readonly source: SourceProvenance
+  readonly dependencies: readonly DependencyManifestEntry[]
+  readonly lifecycle: LifecycleManifestEntry
+}
+
 export interface SignalManifestEntry {
   readonly id: string
   readonly ownerId: string
@@ -377,6 +389,7 @@ export interface DoxaManifest {
   readonly jobs: readonly JobManifestEntry[]
   readonly schedules: readonly ScheduleManifestEntry[]
   readonly policies: readonly PolicyManifestEntry[]
+  readonly permissionSource: PermissionSourceManifestEntry | null
   readonly signals: readonly SignalManifestEntry[]
   readonly signalHandlers: readonly SignalHandlerManifestEntry[]
   readonly commands: readonly CommandManifestEntry[]
@@ -438,6 +451,7 @@ export function assertManifest(value: unknown): asserts value is DoxaManifest {
     !Array.isArray(value.jobs) ||
     !Array.isArray(value.schedules) ||
     !Array.isArray(value.policies) ||
+    (value.permissionSource !== null && !isRecord(value.permissionSource)) ||
     !Array.isArray(value.signals) ||
     !Array.isArray(value.signalHandlers) ||
     !Array.isArray(value.commands)
@@ -447,6 +461,27 @@ export function assertManifest(value: unknown): asserts value is DoxaManifest {
 
   assertManifestEntry(value.application, 'application')
   assertAuthenticationManifest(value.authentication)
+  if (value.permissionSource) {
+    assertManifestEntry(value.permissionSource, 'permissionSource')
+    if (
+      !value.permissionSource.id.startsWith('permission-source:') ||
+      !nonEmptyString(value.permissionSource.ownerId) ||
+      !nonEmptyString(value.permissionSource.name) ||
+      !nonEmptyString(value.permissionSource.exportName) ||
+      value.permissionSource.scope !== 'execution' ||
+      !Array.isArray(value.permissionSource.abilities) ||
+      value.permissionSource.abilities.length === 0 ||
+      !value.permissionSource.abilities.every(validAbility) ||
+      new Set(value.permissionSource.abilities).size !== value.permissionSource.abilities.length ||
+      !Array.isArray(value.permissionSource.dependencies) ||
+      !value.permissionSource.dependencies.every(validDependency) ||
+      !validLifecycle(value.permissionSource.lifecycle)
+    ) {
+      throw new ManifestCompatibilityError(
+        `Doxa manifest permission source ${value.permissionSource.id} is invalid.`,
+      )
+    }
+  }
   for (const [section, entries] of Object.entries({
     plugins: value.plugins,
     features: value.features,
@@ -566,7 +601,7 @@ function assertAuthenticationManifest(value: Record<string, unknown>): void {
 function assertManifestEntry(
   value: unknown,
   section: string,
-): asserts value is Record<string, unknown> {
+): asserts value is Record<string, unknown> & { readonly id: string } {
   if (!isRecord(value) || !nonEmptyString(value.id)) {
     throw new ManifestCompatibilityError(`Doxa manifest ${section} entry must have a stable ID.`)
   }
@@ -601,6 +636,35 @@ function assertModelRelationship(modelId: string, value: Record<string, unknown>
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
+}
+
+function validAbility(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-z][a-z0-9._:-]{1,127}$/.test(value)
+}
+
+function validDependency(value: unknown): boolean {
+  return Boolean(
+    isRecord(value) &&
+    (value.kind === 'constructor' || value.kind === 'role') &&
+    nonEmptyString(value.parameter) &&
+    nonEmptyString(value.token) &&
+    (value.targetId === undefined || nonEmptyString(value.targetId)) &&
+    typeof value.optional === 'boolean' &&
+    isRecord(value.source) &&
+    nonEmptyString(value.source.file) &&
+    Number.isInteger(value.source.line) &&
+    Number.isInteger(value.source.column),
+  )
+}
+
+function validLifecycle(value: unknown): boolean {
+  return Boolean(
+    isRecord(value) &&
+    typeof value.start === 'boolean' &&
+    typeof value.drain === 'boolean' &&
+    typeof value.stop === 'boolean' &&
+    typeof value.dispose === 'boolean',
+  )
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

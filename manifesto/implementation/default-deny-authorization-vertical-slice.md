@@ -2,7 +2,7 @@
 
 - **Status:** Implemented proof
 - **Implemented:** 2026-07-10
-- **MVP status:** Incomplete
+- **MVP status:** Complete
 - **Depends on:**
   [Actor, Execution Context, and Authorization](../specifications/actor-execution-context-authorization.md)
 
@@ -11,13 +11,15 @@
 Authorization is now one Doxa runtime service rather than transport middleware:
 
 ```text
+Feature permissionSources = [ApplicationPermissions]
 Feature policies = [AccountPolicy, CounterPolicy]
-  → compiler validates stable abilities and one owning policy
-  → manifest v6 records policy graph and dependencies
+  → compiler validates stable abilities, one optional source, and at most one policy per ability
+  → manifest records source and policy graphs and dependencies
   → route entry authorizes before handler construction
   → Authorization is injectable in actions, queries, jobs, listeners, schedules, and services
-  → bearer constraints may deny before policy
-  → application policy evaluates current actor, tenant, context, and optional resource
+  → bearer constraints may deny before source resolution
+  → application permission source grants a base ability
+  → optional policy evaluates current actor, tenant, context, and resource to narrow that grant
   → structured decision is durably security-audited
 ```
 
@@ -38,9 +40,12 @@ export class CounterPolicy extends Policy<OwnedCounter> {
 }
 ```
 
-The Feature declares `policies = [CounterPolicy]`. The compiler rejects duplicate ability owners,
-invalid role classes, ambiguous IDs, invalid dependencies, and protected routes whose ability has no
-selected policy.
+The Feature declares `policies = [CounterPolicy]`. An application may also select one
+`PermissionSource`; the
+[application permission source proof](application-permission-source-vertical-slice.md) covers its
+authoring and composition. The compiler rejects duplicate policy ability owners, multiple sources,
+invalid role classes, ambiguous IDs, invalid dependencies, and protected entries whose ability has
+neither a selected policy nor a selected source catalog.
 
 Every route explicitly declares either `static access = 'public'` or a stable ability. Public is a
 visible opt-out; omission is a compilation failure. Protected routes authorize before their
@@ -48,9 +53,10 @@ constructor or handler runs.
 
 ## Decisions and denial
 
-All decisions contain `effect`, canonical manifest policy ID, and a stable code. An undeclared
-ability returns `doxa:default-deny / policy_missing`. `authorize()` throws a normalized error for
-denial; `decide()` supports tests, diagnostics, and deliberate conditional behavior.
+All decisions contain `effect`, a canonical manifest policy or permission-source ID, and a stable
+code. An undeclared ability returns `doxa:default-deny / policy_missing`. `authorize()` throws a
+normalized error for denial; `decide()` supports tests, diagnostics, and deliberate conditional
+behavior.
 
 Missing authentication becomes HTTP 401 without exposing policy detail. Other denial becomes a
 stable HTTP 403. Internal decisions retain the precise policy and code.
@@ -59,8 +65,9 @@ stable HTTP 403. Internal decisions retain the precise policy and code.
 
 An access token's constraints are upper bounds, never grants. Exact ability, global `*`, and named
 prefix wildcards are supported. If a constrained bearer lacks the requested ability, Doxa denies
-through `doxa:credential-constraints` before application policy can allow it. Constraints remain in
-queue execution envelopes so asynchronous work cannot gain authority through transport.
+through `doxa:credential-constraints` before a permission source or application policy can allow it.
+Constraints remain in queue execution envelopes so asynchronous work cannot gain authority through
+transport.
 
 ## Entry and resource phases
 
@@ -79,18 +86,10 @@ authorization call closed.
 
 ## Evidence
 
-The suite contains forty-two passing tests. It proves manifest ownership, automatic HTTP entry
-policy, anonymous 401 behavior, structured allow and deny, resource ownership, missing-policy
-default denial, bearer constraint denial, durable audit metadata, and the continued behavior of all
-prior slices.
+The current suite proves manifest ownership, every entry role, automatic HTTP entry authorization,
+anonymous 401 behavior, structured allow and deny, resource ownership, missing-owner default denial,
+bearer constraint denial, permission-source composition, durable audit metadata, testing fakes,
+diagnostics, metrics, and concurrent execution isolation.
 
-## Remaining authorization work
-
-- Compiled access declarations for future command entry roles when Praxis commands arrive.
-- Durable delegation grants, impersonation, tenant selection, and revalidation.
-- Policy decision capture in journal/outbox metadata in addition to the security audit.
-- Authorization fakes/assertions, diagnostics, metrics, and concurrent isolation conformance.
-
-## Next slice
-
-Implement signals and model observers with non-overlapping lifecycle semantics.
+Durable delegation grants and policy-decision capture in journal/outbox metadata remain potential
+post-MVP extensions; neither weakens the implemented default-deny entry and resource contract.

@@ -536,6 +536,7 @@ export class FakeQueueManager extends QueueManager {
         payload: schedule.input,
         policy: schedule.policy,
         context: {
+          version: 1,
           sourceExecutionId: envelopeId,
           correlationId: envelopeId,
           causationId: schedule.id,

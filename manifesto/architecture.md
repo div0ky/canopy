@@ -69,8 +69,8 @@ that owns mutable lifecycle and execution state without changing the compiled ap
 
 The manifest should make it possible to answer, before serving traffic:
 
-- Which features, providers, routes, handlers, policies, observers, listeners, jobs, and schedules
-  exist?
+- Which features, providers, exported services, permission sources, routes, handlers, policies,
+  observers, listeners, jobs, and schedules exist?
 - Which bindings and scopes will each capability use?
 - Which declarations conflict or are unreachable?
 - Which infrastructure capabilities does the application require?

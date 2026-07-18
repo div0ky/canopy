@@ -70,6 +70,7 @@ import {
   NoopObservationRecorder,
   type Policy,
   type PolicyDecision,
+  type PermissionSource,
   ReadOnlyExecutionError,
   type QueueDelivery,
   type QueueEnvelope,
@@ -127,6 +128,7 @@ import {
   type JobManifestEntry,
   type OperationManifestEntry,
   type ObserverManifestEntry,
+  type PermissionSourceManifestEntry,
   type ProviderManifestEntry,
   type PolicyManifestEntry,
   type RegistryModule,
@@ -244,6 +246,7 @@ interface ExecutionStore {
   readonly context: ExecutionContext
   readonly scope: ExecutionScope
   readonly operationStack: ('action' | 'job' | 'query')[]
+  permissionAbilities?: Promise<ReadonlySet<string>>
   job?: import('@doxajs/core').CurrentJobContext
 }
 
@@ -268,6 +271,7 @@ export class DoxaRuntime {
   #shutdownPromise?: Promise<void>
   readonly #storage = new AsyncLocalStorage<ExecutionStore>()
   readonly #traceStorage = new AsyncLocalStorage<TraceContext>()
+  readonly #permissionSourceResolution = new AsyncLocalStorage<boolean>()
   readonly #activeExecutions = new Map<Promise<unknown>, AbortController>()
   readonly #operationsByConstructor = new Map<Function, OperationManifestEntry>()
   readonly #modelsByConstructor = new Map<
@@ -778,7 +782,22 @@ export class DoxaRuntime {
 
                     const cleanupErrors = await scope.dispose(this.deadlines.dispose)
                     if (failed && cleanupErrors.length > 0) {
-                      throw new ExecutionFailureError(primaryError, cleanupErrors)
+                      const diagnosticError = safeDiagnosticError(primaryError)
+                      const combined = new ExecutionFailureError(
+                        primaryError instanceof PermissionSourceResolutionFailure
+                          ? primaryError.original
+                          : primaryError,
+                        cleanupErrors,
+                      )
+                      if (diagnosticError !== primaryError) {
+                        markPrivacySensitiveError(
+                          combined,
+                          typeof diagnosticError === 'string'
+                            ? diagnosticError
+                            : 'Privacy-sensitive execution failed during cleanup.',
+                        )
+                      }
+                      throw combined
                     }
                     if (failed) throw primaryError
                     if (cleanupErrors.length > 0) throw new ExecutionCleanupError(cleanupErrors)
@@ -798,6 +817,7 @@ export class DoxaRuntime {
       return result
     } catch (error) {
       await this.completeTelemetry(context, startedAt, startedAtWall, 'error', error, liveSpan)
+      if (error instanceof PermissionSourceResolutionFailure) throw error.original
       throw error
     } finally {
       this.#activeExecutions.delete(execution)
@@ -979,7 +999,7 @@ export class DoxaRuntime {
           )
           return output
         } catch (error) {
-          if (kind.startsWith('ai.')) markPrivacySensitiveError(error)
+          if (kind.startsWith('ai.')) markPrivacySensitiveError(error, 'AI operation failed.')
           await this.completeInstrumentedScope(
             { kind, name, attributes, ...(roleId ? { roleId } : {}) },
             context,
@@ -2083,6 +2103,7 @@ export class DoxaRuntime {
 
   private async handleQueueDelivery(delivery: QueueDelivery): Promise<void> {
     const { envelope, attempt } = delivery
+    assertQueueDelivery(envelope, attempt)
     const priorAttemptTrace =
       attempt > 1 ? await this.findQueueAttemptTrace(envelope.id, attempt - 1) : undefined
     let succeeded = false
@@ -2449,8 +2470,35 @@ export class DoxaRuntime {
         store.context,
       )
     }
+    const permissionSource = this.manifest.permissionSource
+    const sourceManagesAbility = permissionSource?.abilities.includes(ability) ?? false
+    if (permissionSource && sourceManagesAbility) {
+      const abilities = await this.resolvePermissionAbilities(store, permissionSource)
+      if (!abilities.has(ability)) {
+        return await this.recordAuthorizationDecision(
+          ability,
+          Object.freeze({
+            effect: 'deny',
+            policy: permissionSource.id,
+            code: 'permission_required',
+          }),
+          store.context,
+        )
+      }
+    }
     const manifest = this.#policiesByAbility.get(ability)
     if (!manifest) {
+      if (permissionSource && sourceManagesAbility) {
+        return await this.recordAuthorizationDecision(
+          ability,
+          Object.freeze({
+            effect: 'allow',
+            policy: permissionSource.id,
+            code: 'permission_granted',
+          }),
+          store.context,
+        )
+      }
       return await this.recordAuthorizationDecision(
         ability,
         Object.freeze({
@@ -2489,6 +2537,61 @@ export class DoxaRuntime {
       }),
       context,
     )
+  }
+
+  private async resolvePermissionAbilities(
+    store: ExecutionStore,
+    manifest: PermissionSourceManifestEntry,
+  ): Promise<ReadonlySet<string>> {
+    if (this.#permissionSourceResolution.getStore()) {
+      throw new RuntimeIntegrityError(
+        `Permission source ${manifest.id} attempted recursive authorization while resolving abilities.`,
+      )
+    }
+    store.permissionAbilities ??= this.observeObservation(
+      'authorization',
+      manifest.id,
+      { declaredAbilities: manifest.abilities.length },
+      async () => {
+        try {
+          const source = store.scope.resolve(manifest.id) as PermissionSource
+          const context = this.currentExecutionContext()
+          const resolved: readonly string[] = await this.#permissionSourceResolution.run(true, () =>
+            source.resolve({
+              actor: context.actor,
+              ...(context.tenant ? { tenant: context.tenant } : {}),
+              context,
+            }),
+          )
+          if (
+            !Array.isArray(resolved) ||
+            !resolved.every((ability) => typeof ability === 'string')
+          ) {
+            throw new PermissionSourceIntegrityError(
+              `Permission source ${manifest.id} must return an array of ability names.`,
+            )
+          }
+          const declared = new Set(manifest.abilities)
+          for (const ability of resolved) {
+            if (!declared.has(ability)) {
+              throw new PermissionSourceIntegrityError(
+                `Permission source ${manifest.id} returned an ability outside its declared catalog.`,
+              )
+            }
+          }
+          return new Set(resolved)
+        } catch (error) {
+          if (error instanceof PermissionSourceIntegrityError) throw error
+          if ((typeof error === 'object' && error !== null) || typeof error === 'function') {
+            markPrivacySensitiveError(error, 'Permission source failed.')
+            throw error
+          }
+          throw new PermissionSourceResolutionFailure(error)
+        }
+      },
+      manifest.id,
+    )
+    return await store.permissionAbilities
   }
 
   private async recordAuthorizationDecision(
@@ -2789,6 +2892,7 @@ async function loadArtifacts(artifactsDirectory: string): Promise<RuntimeArtifac
     ...manifest.jobs.map((entry) => entry.id),
     ...manifest.schedules.map((entry) => entry.id),
     ...manifest.policies.map((entry) => entry.id),
+    ...(manifest.permissionSource ? [manifest.permissionSource.id] : []),
     ...manifest.signals.map((entry) => entry.id),
     ...manifest.signalHandlers.map((entry) => entry.id),
     ...manifest.commands.map((entry) => entry.id),
@@ -3048,6 +3152,7 @@ class ExecutionScope {
     | ListenerManifestEntry
     | JobManifestEntry
     | PolicyManifestEntry
+    | PermissionSourceManifestEntry
     | SignalHandlerManifestEntry
     | ObserverManifestEntry
     | CommandManifestEntry
@@ -3061,6 +3166,7 @@ class ExecutionScope {
     | ListenerManifestEntry
     | JobManifestEntry
     | PolicyManifestEntry
+    | PermissionSourceManifestEntry
     | SignalManifestEntry
     | SignalHandlerManifestEntry
     | ObserverManifestEntry
@@ -3099,6 +3205,7 @@ class ExecutionScope {
         ...artifacts.manifest.listeners,
         ...artifacts.manifest.jobs,
         ...artifacts.manifest.policies,
+        ...(artifacts.manifest.permissionSource ? [artifacts.manifest.permissionSource] : []),
         ...artifacts.manifest.signalHandlers,
         ...artifacts.manifest.observers,
         ...artifacts.manifest.commands,
@@ -3114,6 +3221,7 @@ class ExecutionScope {
         ...artifacts.manifest.listeners,
         ...artifacts.manifest.jobs,
         ...artifacts.manifest.policies,
+        ...(artifacts.manifest.permissionSource ? [artifacts.manifest.permissionSource] : []),
         ...artifacts.manifest.signals,
         ...artifacts.manifest.signalHandlers,
         ...artifacts.manifest.observers,
@@ -3229,6 +3337,7 @@ class ExecutionScope {
       | ListenerManifestEntry
       | JobManifestEntry
       | PolicyManifestEntry
+      | PermissionSourceManifestEntry
       | SignalManifestEntry
       | SignalHandlerManifestEntry
       | ObserverManifestEntry
@@ -3744,6 +3853,7 @@ function humanizeSubsystem(subsystem: string): string {
 
 function queueContext(context: ExecutionContext): QueueExecutionEnvelope {
   return {
+    version: 1,
     sourceExecutionId: context.executionId,
     correlationId: context.correlationId,
     ...(context.causationId ? { causationId: context.causationId } : {}),
@@ -3834,6 +3944,244 @@ function queueSeed(
     ...(context.locale ? { locale: context.locale } : {}),
     ...(context.timeZone ? { timeZone: context.timeZone } : {}),
   }
+}
+
+function assertQueueDelivery(envelope: QueueEnvelope, attempt: number): void {
+  const invalid = (message: string): never => {
+    throw new OperationDispatchError(`Invalid queued work: ${message}`)
+  }
+  const record = envelope as unknown as Record<string, unknown>
+  if (!record || typeof record !== 'object' || Array.isArray(record)) {
+    invalid('envelope is not an object.')
+  }
+  if (!uuid(record.id)) invalid('id is not a UUID.')
+  if (!['job', 'listener', 'broadcast', 'mail', 'sms'].includes(String(record.kind))) {
+    invalid('kind is unsupported.')
+  }
+  if (!boundedText(record.targetId, 256)) invalid('targetId is invalid.')
+  if (!Number.isSafeInteger(attempt) || attempt < 1 || attempt > 101) {
+    invalid('attempt is invalid.')
+  }
+  const policy = record.policy as Record<string, unknown> | undefined
+  if (
+    !policy ||
+    !integerBetween(policy.retries, 0, 100) ||
+    !finiteBetween(policy.retryDelay, 0, 86_400) ||
+    typeof policy.backoff !== 'boolean' ||
+    !finiteBetween(policy.timeout, 1, 86_400)
+  ) {
+    invalid('retry policy is invalid.')
+  }
+  if (record.availableAt !== undefined && !validIsoDate(record.availableAt)) {
+    invalid('availableAt is invalid.')
+  }
+  if (record.idempotencyKey !== undefined && !boundedText(record.idempotencyKey, 512)) {
+    invalid('idempotencyKey is invalid.')
+  }
+
+  const context = record.context as Record<string, unknown> | undefined
+  if (!context || context.version !== 1) invalid('context version is unsupported.')
+  const validContext = context as Record<string, unknown>
+  if (!onlyKeys(validContext, QUEUE_CONTEXT_KEYS)) invalid('context includes unsupported fields.')
+  if (!uuid(validContext.sourceExecutionId)) invalid('sourceExecutionId is invalid.')
+  if (!boundedText(validContext.correlationId, 256)) invalid('correlationId is invalid.')
+  if (validContext.causationId !== undefined && !boundedText(validContext.causationId, 256)) {
+    invalid('causationId is invalid.')
+  }
+  assertQueuedActor(validContext.actor, 'actor', invalid)
+  assertQueuedActor(validContext.initiator, 'initiator', invalid)
+  if (!Array.isArray(validContext.delegation) || validContext.delegation.length > 16) {
+    invalid('delegation is invalid.')
+  }
+  const delegation = validContext.delegation as unknown[]
+  for (const [index, value] of delegation.entries()) {
+    const hop = value as Record<string, unknown> | undefined
+    if (!hop || typeof hop !== 'object') invalid(`delegation ${index} is invalid.`)
+    const validHop = hop as Record<string, unknown>
+    if (!onlyKeys(validHop, DELEGATION_KEYS)) {
+      invalid(`delegation ${index} includes unsupported fields.`)
+    }
+    assertQueuedActor(validHop.from, `delegation ${index} from`, invalid)
+    assertQueuedActor(validHop.to, `delegation ${index} to`, invalid)
+    if (!boundedText(validHop.grantId, 256) || !boundedText(validHop.reason, 512)) {
+      invalid(`delegation ${index} metadata is invalid.`)
+    }
+    if (validHop.expiresAt !== undefined && !validIsoDate(validHop.expiresAt)) {
+      invalid(`delegation ${index} expiry is invalid.`)
+    }
+  }
+  const tenant = validContext.tenant as Record<string, unknown> | undefined
+  if (
+    tenant !== undefined &&
+    (!tenant || !onlyKeys(tenant, TENANT_KEYS) || !boundedText(tenant.id, 256))
+  ) {
+    invalid('tenant context is invalid.')
+  }
+  if (validContext.locale !== undefined && !boundedText(validContext.locale, 128)) {
+    invalid('locale is invalid.')
+  }
+  if (validContext.timeZone !== undefined && !boundedText(validContext.timeZone, 128)) {
+    invalid('timeZone is invalid.')
+  }
+  const authentication = validContext.authentication as Record<string, unknown> | undefined
+  if (
+    !authentication ||
+    !onlyKeys(authentication, AUTHENTICATION_KEYS) ||
+    !['anonymous', 'authenticated'].includes(String(authentication.state)) ||
+    (authentication.identityId !== undefined && !boundedText(authentication.identityId, 256)) ||
+    (authentication.method !== undefined && !boundedText(authentication.method, 128)) ||
+    (authentication.assurance !== undefined &&
+      !['single-factor', 'multi-factor', 'phishing-resistant'].includes(
+        String(authentication.assurance),
+      )) ||
+    (authentication.credentialId !== undefined && !boundedText(authentication.credentialId, 256)) ||
+    (authentication.authenticatedAt !== undefined &&
+      !validIsoDate(authentication.authenticatedAt)) ||
+    (authentication.constraints !== undefined &&
+      (!Array.isArray(authentication.constraints) ||
+        authentication.constraints.length > 100 ||
+        !authentication.constraints.every((value) => boundedText(value, 128))))
+  ) {
+    invalid('authentication context is invalid.')
+  }
+  const validAuthentication = authentication as Record<string, unknown>
+  if (validAuthentication.state === 'anonymous' && validAuthentication.identityId !== undefined) {
+    invalid('anonymous authentication includes an identity.')
+  }
+  const trace = validContext.trace as Record<string, unknown> | undefined
+  if (!trace || !validTrace(trace)) invalid('trace context is invalid.')
+}
+
+function assertQueuedActor(
+  value: unknown,
+  label: string,
+  invalid: (message: string) => never,
+): void {
+  const actor = value as Record<string, unknown> | undefined
+  if (!actor || !['anonymous', 'user', 'service', 'system'].includes(String(actor.kind))) {
+    invalid(`${label} is invalid.`)
+  }
+  if (!onlyKeys(actor, ACTOR_KEYS)) invalid(`${label} includes unsupported fields.`)
+  if (actor.kind === 'anonymous' ? actor.id !== undefined : !boundedText(actor.id, 256)) {
+    invalid(`${label} identity is invalid.`)
+  }
+}
+
+function validTrace(trace: Record<string, unknown>): boolean {
+  return (
+    onlyKeys(trace, TRACE_KEYS) &&
+    (trace.traceId === undefined || validTraceId(trace.traceId)) &&
+    (trace.spanId === undefined || validSpanId(trace.spanId)) &&
+    (trace.parentSpanId === undefined || validSpanId(trace.parentSpanId)) &&
+    (trace.isRemote === undefined || typeof trace.isRemote === 'boolean') &&
+    (trace.parentIsRemote === undefined || typeof trace.parentIsRemote === 'boolean') &&
+    (trace.traceFlags === undefined || integerBetween(trace.traceFlags, 0, 255)) &&
+    (trace.links === undefined ||
+      (Array.isArray(trace.links) &&
+        trace.links.length <= 32 &&
+        trace.links.every((link) => validSpanLink(link))))
+  )
+}
+
+function validSpanLink(value: unknown): boolean {
+  const link = value as Record<string, unknown> | undefined
+  return Boolean(
+    link &&
+    onlyKeys(link, SPAN_LINK_KEYS) &&
+    validTraceId(link.traceId) &&
+    validSpanId(link.spanId) &&
+    (link.attributes === undefined || validJsonObject(link.attributes)),
+  )
+}
+
+function validJsonObject(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  try {
+    return JSON.stringify(value).length <= 16_384
+  } catch {
+    return false
+  }
+}
+
+function validTraceId(value: unknown): boolean {
+  return typeof value === 'string' && /^[0-9a-f]{32}$/i.test(value) && !/^0+$/.test(value)
+}
+
+function validSpanId(value: unknown): boolean {
+  return typeof value === 'string' && /^[0-9a-f]{16}$/i.test(value) && !/^0+$/.test(value)
+}
+
+function onlyKeys(record: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
+  return Object.keys(record).every((key) => allowed.has(key))
+}
+
+const QUEUE_CONTEXT_KEYS = new Set([
+  'version',
+  'sourceExecutionId',
+  'correlationId',
+  'causationId',
+  'actor',
+  'initiator',
+  'delegation',
+  'tenant',
+  'authentication',
+  'trace',
+  'locale',
+  'timeZone',
+])
+const ACTOR_KEYS = new Set(['kind', 'id'])
+const DELEGATION_KEYS = new Set(['from', 'to', 'grantId', 'reason', 'expiresAt'])
+const TENANT_KEYS = new Set(['id'])
+const AUTHENTICATION_KEYS = new Set([
+  'state',
+  'identityId',
+  'method',
+  'assurance',
+  'authenticatedAt',
+  'credentialId',
+  'constraints',
+])
+const TRACE_KEYS = new Set([
+  'traceId',
+  'spanId',
+  'parentSpanId',
+  'isRemote',
+  'parentIsRemote',
+  'traceFlags',
+  'links',
+])
+const SPAN_LINK_KEYS = new Set(['traceId', 'spanId', 'attributes'])
+
+function boundedText(value: unknown, maximum: number): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= maximum
+}
+
+function integerBetween(value: unknown, minimum: number, maximum: number): boolean {
+  return Number.isSafeInteger(value) && Number(value) >= minimum && Number(value) <= maximum
+}
+
+function finiteBetween(value: unknown, minimum: number, maximum: number): boolean {
+  return typeof value === 'number' && Number.isFinite(value) && value >= minimum && value <= maximum
+}
+
+function validIsoDate(value: unknown): boolean {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value))
+}
+
+class PermissionSourceIntegrityError extends RuntimeIntegrityError {}
+
+class PermissionSourceResolutionFailure extends Error {
+  constructor(readonly original: unknown) {
+    super('Permission source failed.')
+    markPrivacySensitiveError(this, 'Permission source failed.')
+  }
+}
+
+function uuid(value: unknown): boolean {
+  return (
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  )
 }
 
 function queueAttemptSpanId(envelopeId: string, attempt: number): string {

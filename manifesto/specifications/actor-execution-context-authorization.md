@@ -39,11 +39,13 @@ The initial actor kinds should be:
 - `system` — trusted framework work with a named, narrowly defined purpose.
 
 Actor kinds are not roles. Roles, memberships, ownership, and permissions are application facts
-evaluated by authorization policies.
+mapped to abilities by an application permission source and narrowed by authorization policies.
 
 Doxa's first-party storage and management model for those facts is intentionally deferred by
-[Decision 0022](../decisions/0022-defer-first-party-permissions.md). Applications may load them from
-existing tables or services without bypassing the common policy decision and audit path.
+[Decision 0022](../decisions/0022-defer-first-party-permissions.md). Applications load them from
+existing tables or services through the source contract accepted by
+[Decision 0034](../decisions/0034-application-permission-sources.md) without bypassing the common
+decision and audit path.
 
 ### Initiator
 
@@ -256,12 +258,58 @@ exposing sensitive reasoning to the caller.
 
 Doxa should support two policy phases:
 
-1. Entry policies run before dispatch for abilities that do not require a loaded resource.
-2. Resource policies run after the resource is loaded, within the action or query execution scope.
+1. Entry authorization runs before dispatch for abilities that do not require a loaded resource.
+2. Resource policy authorization runs after the resource is loaded, within the action or query
+   execution scope.
 
 Transport annotations such as `@Authenticated()` or `@Authorize('orders.create')` compile into the
 same manifest and policy pipeline used outside HTTP. Controllers do not implement a second
 authorization model.
+
+### Application permission source
+
+An application may select exactly one execution-scoped permission source:
+
+```ts
+export interface PermissionSourceRequest {
+  readonly actor: ActorRef
+  readonly tenant?: TenantRef
+  readonly context: ExecutionContext
+}
+
+export abstract class PermissionSource {
+  static readonly id: string
+  static readonly abilities: readonly string[]
+  abstract resolve(request: PermissionSourceRequest): readonly string[] | Promise<readonly string[]>
+}
+```
+
+The static catalog is literal, unique, uses stable ability names, and is recorded in the manifest.
+The source result must contain only declared abilities. Returning an undeclared ability is a runtime
+integrity failure. Loading failure propagates as an authorization infrastructure failure; neither
+case becomes an empty grant or a policy allow.
+
+Doxa resolves the source lazily on the first source-managed authorization in an execution and caches
+the resulting set for the remainder of that execution. The source may inject ordinary services,
+including an `ExecutionScoped` service exported from another Feature through `provides`.
+
+Authorization composition is normative:
+
+1. Credential constraints may deny an ability but never grant it.
+2. If the source declares the ability, the current source result must include it.
+3. A selected policy declaring the same ability may further narrow a source grant.
+4. A source grant is sufficient when no policy declares that ability.
+5. An ability outside the source catalog follows the existing policy-only path.
+6. The final structured allow or deny is recorded once through authorization audit and telemetry.
+
+The compiler rejects a protected entry ability absent from both the source catalog and the selected
+policies. It also rejects multiple sources, invalid or duplicate source abilities, non-source
+classes, invalid source lifecycle, and unresolved source dependencies.
+
+Source results are current application facts rather than causal context. They are not attached to
+`ExecutionContext` and are never serialized into jobs, events, telemetry baggage, or other
+asynchronous envelopes. Every asynchronous admission, retry, command, schedule firing, WebSocket
+message, and HTTP request evaluates current permissions again.
 
 ## Observability contract
 
@@ -315,6 +363,12 @@ not dynamically reinterpret history when a user, membership, or policy later cha
 - Missing required authentication produces a stable unauthenticated error.
 - Failed authorization produces a stable forbidden error externally and a structured policy decision
   internally.
+- Permission-source denial produces a structured `permission_required` decision before a narrowing
+  policy runs.
+- Permission-source loading and integrity failures fail closed as infrastructure faults and never
+  disclose raw permission facts.
+- A permission source that recursively requests source-managed authorization fails immediately
+  rather than awaiting its own execution-cached result.
 - Invalid propagated actor, delegation, tenant, or causal metadata rejects the execution before
   feature code runs.
 - Context loss inside an admitted execution is a framework fault and must be surfaced by diagnostics
@@ -338,6 +392,10 @@ app.authorization.assertDenied('orders.delete', 'orders.owner_required')
 app.context.assertCorrelationPreserved()
 app.context.assertInitiatedBy(user)
 ```
+
+Acting-as helpers exercise the selected permission source through ordinary admission. Captured
+decisions identify whether credential constraints, the permission source, a policy, or default deny
+produced the final result without exposing the source's raw records.
 
 Tests must also be able to assert the durable actor, initiator, correlation, causation, delegation,
 and policy metadata written to journal and outbox records.

@@ -142,10 +142,18 @@ export async function listenTheoria(options: TheoriaServerOptions): Promise<Theo
         data: null,
       })
     } catch (error) {
+      if (error instanceof TheoriaRequestError) {
+        return json(response, 400, {
+          ok: false,
+          code: 'invalid_query',
+          message: 'Theoria query parameters are invalid.',
+          data: null,
+        })
+      }
       return json(response, 500, {
         ok: false,
         code: 'theoria_error',
-        message: error instanceof Error ? error.message : 'Theoria failed.',
+        message: 'Theoria could not complete the request.',
         data: null,
       })
     }
@@ -173,6 +181,8 @@ function json(response: import('node:http').ServerResponse, status: number, body
   response.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
   })
   response.end(JSON.stringify(body))
 }
@@ -183,19 +193,21 @@ function pagination(url: URL): { readonly limit?: number; readonly beforeSequenc
   const limit = limitText === null ? undefined : Number(limitText)
   const beforeSequence = beforeText === null ? undefined : Number(beforeText)
   if (limit !== undefined && (!Number.isInteger(limit) || limit <= 0)) {
-    throw new TypeError('Theoria limit must be a positive integer.')
+    throw new TheoriaRequestError('Theoria limit must be a positive integer.')
   }
   if (
     beforeSequence !== undefined &&
     (!Number.isSafeInteger(beforeSequence) || beforeSequence <= 0)
   ) {
-    throw new TypeError('Theoria before cursor must be a positive safe integer.')
+    throw new TheoriaRequestError('Theoria before cursor must be a positive safe integer.')
   }
   return {
     ...(limit === undefined ? {} : { limit }),
     ...(beforeSequence === undefined ? {} : { beforeSequence }),
   }
 }
+
+class TheoriaRequestError extends Error {}
 
 function validateAccess(access: TheoriaAccess): void {
   if (access.mode === 'bearer') {

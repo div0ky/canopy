@@ -26,8 +26,8 @@ claiming they are complete.
 
 `app.config.ts` must make the application's selected Features and optional plugins visible without
 relying on package side effects, whole-workspace scanning, or runtime discovery. A Feature owns a
-coherent set of application models, actions, queries, routes, policies, providers, events,
-listeners, observers, jobs, and schedules.
+coherent set of application models, actions, queries, routes, policies, permission sources,
+providers, events, listeners, observers, jobs, and schedules.
 
 The MVP authoring shape is a concise, class-first table of contents:
 

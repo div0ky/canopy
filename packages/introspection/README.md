@@ -8,4 +8,8 @@ Typed, deterministic inspection records derived from the validated Doxa applicat
 and Gnosis share this package so human and agent tooling cannot develop competing interpretations of
 an application.
 
+The bounded graph includes the optional permission-source identity, declared ability catalog,
+dependencies, scope, and provenance. Introspection never invokes the source or reads application
+permission records.
+
 Ordinary application code should not import this package.

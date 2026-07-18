@@ -20,14 +20,15 @@ separately discovered artifact.
 role records, bounds lists, redacts credential-shaped values, and owns the generated Gnosis
 knowledge contract. Praxis JSON and MCP tools use the same functions.
 
-Manifest format 3 adds declared model relationships, related and pivot model IDs, and logical key
-metadata. The compiler resolves relationship helper declarations against models selected by Features
-and fails closed when a relationship points outside the application graph.
+This historical slice added declared model relationships, related and pivot model IDs, and logical
+key metadata to the then-current manifest format. The compiler resolves relationship helper
+declarations against models selected by Features and fails closed when a relationship points outside
+the application graph.
 
 `@doxajs/gnosis` uses the pinned official TypeScript MCP SDK. It exposes application information,
 graph, routes, models, actions, queries, events, listeners, observers, jobs, schedules, policies,
-commands, and deterministic version-matched documentation search. All tools are read-only,
-idempotent, bounded, and closed-world. Unknown models return stable structured errors.
+permission sources, commands, and deterministic version-matched documentation search. All tools are
+read-only, idempotent, bounded, and closed-world. Unknown models return stable structured errors.
 
 The sole application-data capability is `query_models`. It accepts a stable model ID, explicitly
 selected logical fields, bounded comparison filters and ordering, and at most 100 rows. Praxis boots

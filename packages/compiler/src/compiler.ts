@@ -22,6 +22,7 @@ import {
   type ModelRelationshipManifest,
   type OperationManifestEntry,
   type ObserverManifestEntry,
+  type PermissionSourceManifestEntry,
   type ProviderManifestEntry,
   type PolicyManifestEntry,
   type PluginManifestEntry,
@@ -48,6 +49,7 @@ const DECLARATION_FIELDS = new Set([
   'plugins',
   'framework',
   'configs',
+  'provides',
   'providers',
   'actions',
   'queries',
@@ -59,6 +61,7 @@ const DECLARATION_FIELDS = new Set([
   'jobs',
   'schedules',
   'policies',
+  'permissionSources',
   'signals',
   'signalHandlers',
   'commands',
@@ -187,6 +190,7 @@ export async function compileApplication(
   const providers: ProviderManifestEntry[] = []
   const providerByDeclaration = new Map<ts.ClassDeclaration, ProviderManifestEntry>()
   const providerRoots = new Map<ts.ClassDeclaration, { readonly ownerId: string }>()
+  const sharedServiceRoots = new Map<ts.ClassDeclaration, { readonly ownerId: string }>()
   const actions: OperationManifestEntry[] = []
   const queries: OperationManifestEntry[] = []
   const operationByDeclaration = new Map<ts.ClassDeclaration, OperationManifestEntry>()
@@ -218,6 +222,12 @@ export async function compileApplication(
   const policies: PolicyManifestEntry[] = []
   const policyByDeclaration = new Map<ts.ClassDeclaration, PolicyManifestEntry>()
   const policyRoots = new Map<ts.ClassDeclaration, { readonly ownerId: string }>()
+  let permissionSource: PermissionSourceManifestEntry | null = null
+  const permissionSourceByDeclaration = new Map<
+    ts.ClassDeclaration,
+    PermissionSourceManifestEntry
+  >()
+  const permissionSourceRoots = new Map<ts.ClassDeclaration, { readonly ownerId: string }>()
   const signals: SignalManifestEntry[] = []
   const signalByDeclaration = new Map<ts.ClassDeclaration, SignalManifestEntry>()
   const signalRoots = new Map<ts.ClassDeclaration, { readonly ownerId: string }>()
@@ -241,7 +251,60 @@ export async function compileApplication(
           `${requiredClassName(providerDeclaration)} is declared as a provider by multiple Features.`,
         )
       }
+      if (sharedServiceRoots.has(providerDeclaration)) {
+        fail(
+          providerDeclaration,
+          `${requiredClassName(providerDeclaration)} cannot be both an infrastructure provider and an exported ordinary service.`,
+        )
+      }
       providerRoots.set(providerDeclaration, { ownerId: feature.id })
+    }
+    for (const serviceDeclaration of readClassArray(featureDeclaration, 'provides', checker)) {
+      const frameworkBase = [
+        'Action',
+        'Query',
+        'Model',
+        'Observer',
+        'Route',
+        'Event',
+        'Listener',
+        'Job',
+        'Schedule',
+        'Policy',
+        'PermissionSource',
+        'Signal',
+        'SignalHandler',
+        'Command',
+        'Auth',
+        'TransactionManager',
+        'QueueManager',
+        'Cache',
+        'MailTransport',
+        'SmsTransport',
+        'BroadcastTransport',
+        'Telemetry',
+        'ObservationRecorder',
+      ].find((name) => extendsNamedClass(serviceDeclaration, name, checker))
+      if (frameworkBase || configurationByDeclaration.has(serviceDeclaration)) {
+        fail(
+          serviceDeclaration,
+          `${requiredClassName(serviceDeclaration)} is framework-facing and cannot be exported as an ordinary service through provides.`,
+        )
+      }
+      const existing = sharedServiceRoots.get(serviceDeclaration)
+      if (existing) {
+        fail(
+          serviceDeclaration,
+          `${requiredClassName(serviceDeclaration)} is already provided by Feature ${existing.ownerId}.`,
+        )
+      }
+      if (providerRoots.has(serviceDeclaration)) {
+        fail(
+          serviceDeclaration,
+          `${requiredClassName(serviceDeclaration)} cannot be both an infrastructure provider and an exported ordinary service.`,
+        )
+      }
+      sharedServiceRoots.set(serviceDeclaration, { ownerId: feature.id })
     }
   }
 
@@ -272,6 +335,16 @@ export async function compileApplication(
     registerOwnedRoots(featureDeclaration, 'jobs', feature.id, jobRoots, 'job')
     registerOwnedRoots(featureDeclaration, 'schedules', feature.id, scheduleRoots, 'schedule')
     registerOwnedRoots(featureDeclaration, 'policies', feature.id, policyRoots, 'policy')
+    for (const source of readClassArray(featureDeclaration, 'permissionSources', checker)) {
+      const existing = [...permissionSourceRoots.entries()][0]
+      if (existing) {
+        fail(
+          source,
+          `Applications may select at most one PermissionSource; ${requiredClassName(existing[0])} is already selected by ${existing[1].ownerId}.`,
+        )
+      }
+      permissionSourceRoots.set(source, { ownerId: feature.id })
+    }
     registerOwnedRoots(featureDeclaration, 'signals', feature.id, signalRoots, 'signal')
     registerOwnedRoots(
       featureDeclaration,
@@ -285,6 +358,9 @@ export async function compileApplication(
 
   for (const [providerDeclaration, root] of providerRoots) {
     registerProvider(providerDeclaration, root.ownerId, 'provider')
+  }
+  for (const [serviceDeclaration, root] of sharedServiceRoots) {
+    registerProvider(serviceDeclaration, root.ownerId, 'service')
   }
 
   for (const [operation, root] of operationRoots) {
@@ -320,6 +396,9 @@ export async function compileApplication(
   for (const [policy, root] of policyRoots) {
     registerPolicy(policy, root.ownerId)
   }
+  for (const [source, root] of permissionSourceRoots) {
+    permissionSource = registerPermissionSource(source, root.ownerId)
+  }
   for (const [signal, root] of signalRoots) registerSignal(signal, root.ownerId)
   for (const [handler, root] of signalHandlerRoots) registerSignalHandler(handler, root.ownerId)
   for (const [command, root] of commandRoots) registerCommand(command, root.ownerId)
@@ -348,6 +427,7 @@ export async function compileApplication(
     'policy ability',
   )
   const policyAbilities = new Set(policies.flatMap((policy) => policy.abilities))
+  const availableAbilities = new Set([...policyAbilities, ...(permissionSource?.abilities ?? [])])
   for (const entry of [
     ...routes,
     ...actions,
@@ -358,9 +438,9 @@ export async function compileApplication(
     ...signalHandlers,
     ...commands,
   ]) {
-    if (entry.access !== 'public' && !policyAbilities.has(entry.access)) {
+    if (entry.access !== 'public' && !availableAbilities.has(entry.access)) {
       throw new DoxaCompilationError(
-        `${entry.id} requires ability ${entry.access}, but no selected Policy declares it.`,
+        `${entry.id} requires ability ${entry.access}, but no selected Policy or PermissionSource declares it.`,
       )
     }
   }
@@ -459,6 +539,7 @@ export async function compileApplication(
     jobs: [...jobs].sort(byId),
     schedules: [...schedules].sort(byId),
     policies: [...policies].sort(byId),
+    permissionSource,
     signals: [...signals].sort(byId),
     signalHandlers: [...signalHandlers].sort(byId),
     commands: [...commands].sort(byId),
@@ -518,6 +599,10 @@ export async function compileApplication(
         declaration,
       })),
       [...policyByDeclaration.entries()].map(([declaration, entry]) => ({
+        id: entry.id,
+        declaration,
+      })),
+      [...permissionSourceByDeclaration.entries()].map(([declaration, entry]) => ({
         id: entry.id,
         declaration,
       })),
@@ -1024,6 +1109,7 @@ export async function compileApplication(
       'Listener',
       'Job',
       'Policy',
+      'PermissionSource',
       'SignalHandler',
       'Observer',
       'Command',
@@ -1112,6 +1198,7 @@ export async function compileApplication(
         const jobRoot = jobRoots.get(dependencyDeclaration)
         const scheduleRoot = scheduleRoots.get(dependencyDeclaration)
         const policyRoot = policyRoots.get(dependencyDeclaration)
+        const permissionSourceRoot = permissionSourceRoots.get(dependencyDeclaration)
         const signalRoot = signalRoots.get(dependencyDeclaration)
         const signalHandlerRoot = signalHandlerRoots.get(dependencyDeclaration)
         const commandRoot = commandRoots.get(dependencyDeclaration)
@@ -1134,6 +1221,7 @@ export async function compileApplication(
           jobRoot ||
           scheduleRoot ||
           policyRoot ||
+          permissionSourceRoot ||
           observerRoot ||
           signalRoot ||
           signalHandlerRoot ||
@@ -1151,6 +1239,7 @@ export async function compileApplication(
           )
         }
         const abstractDependency = hasModifier(dependencyDeclaration, ts.SyntaxKind.AbstractKeyword)
+        const sharedServiceRoot = sharedServiceRoots.get(dependencyDeclaration)
         targetId =
           builtinId ??
           capabilityProvider?.id ??
@@ -1159,7 +1248,7 @@ export async function compileApplication(
             ? undefined
             : registerProvider(
                 dependencyDeclaration,
-                providerRoot?.ownerId ?? ownerId,
+                providerRoot?.ownerId ?? sharedServiceRoot?.ownerId ?? ownerId,
                 providerRoot ? 'provider' : 'service',
               ).id)
       }
@@ -1948,6 +2037,7 @@ export async function compileApplication(
     const abilities = readRequiredStaticStringArray(declaration, 'abilities')
     if (abilities.length === 0)
       fail(declaration, `${name}.abilities must contain at least one ability.`)
+    for (const ability of abilities) assertAbilityName(declaration, ability)
     const entry: PolicyManifestEntry = {
       id: `policy:${ownerId}/${readRequiredStaticString(declaration, 'id')}`,
       ownerId,
@@ -1963,6 +2053,54 @@ export async function compileApplication(
     const complete = { ...entry, dependencies: dependenciesFor(declaration, ownerId) }
     policyByDeclaration.set(declaration, complete)
     policies.push(complete)
+    return complete
+  }
+
+  function registerPermissionSource(
+    declaration: ts.ClassDeclaration,
+    ownerId: string,
+  ): PermissionSourceManifestEntry {
+    assertConcreteClass(declaration)
+    if (!extendsNamedClass(declaration, 'PermissionSource', checker)) {
+      fail(declaration, `${requiredClassName(declaration)} must extend PermissionSource.`)
+    }
+    const resolve = declaration.members.find(
+      (member): member is ts.MethodDeclaration =>
+        ts.isMethodDeclaration(member) && propertyName(member.name) === 'resolve',
+    )
+    if (!resolve || resolve.parameters.length !== 1) {
+      fail(declaration, `${requiredClassName(declaration)} must define resolve(request).`)
+    }
+    const lifecycle = lifecycleOf(declaration, checker)
+    if (lifecycle.start || lifecycle.drain || lifecycle.stop) {
+      fail(
+        declaration,
+        `${requiredClassName(declaration)} may define dispose(), but permission sources cannot own application lifecycle phases.`,
+      )
+    }
+    const name = requiredClassName(declaration)
+    const abilities = readRequiredStaticStringArray(declaration, 'abilities')
+    if (abilities.length === 0) {
+      fail(declaration, `${name}.abilities must contain at least one ability.`)
+    }
+    if (new Set(abilities).size !== abilities.length) {
+      fail(declaration, `${name}.abilities must not contain duplicates.`)
+    }
+    for (const ability of abilities) assertAbilityName(declaration, ability)
+    const entry: PermissionSourceManifestEntry = {
+      id: `permission-source:${ownerId}/${readRequiredStaticString(declaration, 'id')}`,
+      ownerId,
+      name,
+      exportName: name,
+      scope: 'execution',
+      abilities: [...new Set(abilities)].sort(),
+      source: sourceOf(declaration, normalized.projectRoot),
+      dependencies: [],
+      lifecycle,
+    }
+    permissionSourceByDeclaration.set(declaration, entry)
+    const complete = { ...entry, dependencies: dependenciesFor(declaration, ownerId) }
+    permissionSourceByDeclaration.set(declaration, complete)
     return complete
   }
 
@@ -2528,6 +2666,7 @@ function renderRegistry(
   jobs: readonly RegisteredClass[],
   schedules: readonly RegisteredClass[],
   policies: readonly RegisteredClass[],
+  permissionSources: readonly RegisteredClass[],
   signals: readonly RegisteredClass[],
   signalHandlers: readonly RegisteredClass[],
   commands: readonly RegisteredClass[],
@@ -2547,6 +2686,7 @@ function renderRegistry(
     ...jobs,
     ...schedules,
     ...policies,
+    ...permissionSources,
     ...signals,
     ...signalHandlers,
     ...commands,
@@ -2726,6 +2866,12 @@ function readAccess(declaration: ts.ClassDeclaration): string {
     )
   }
   return access
+}
+
+function assertAbilityName(declaration: ts.ClassDeclaration, ability: string): void {
+  if (!/^[a-z][a-z0-9._:-]{1,127}$/.test(ability)) {
+    fail(declaration, `${requiredClassName(declaration)} declares invalid ability ${ability}.`)
+  }
 }
 
 function staticProperty(

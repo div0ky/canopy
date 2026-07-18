@@ -904,6 +904,14 @@ export function registerCompilationAndTheoriaTests(
       )
       expect((await fetch(new URL('/api/entries?kind=event', host.url))).status).toBe(200)
       expect((await fetch(new URL('/api/entries', host.url))).status).toBe(200)
+      const invalidQuery = await fetch(new URL('/api/executions?limit=not-a-number', host.url))
+      expect(invalidQuery.status).toBe(400)
+      expect(await invalidQuery.json()).toEqual({
+        ok: false,
+        code: 'invalid_query',
+        message: 'Theoria query parameters are invalid.',
+        data: null,
+      })
       expect((await fetch(new URL('/api/executions', host.url), { method: 'POST' })).status).toBe(
         405,
       )

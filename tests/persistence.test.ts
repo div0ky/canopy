@@ -1988,6 +1988,25 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     )
     const cookie = login.headers.get('set-cookie')!.split(';', 1)[0]!
 
+    const excessiveConstraints = await http.fetch(
+      new Request('http://doxa.test/auth/tokens', {
+        method: 'POST',
+        headers: {
+          cookie,
+          origin: 'http://doxa.test',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'too-many-constraints',
+          constraints: Array.from({ length: 101 }, (_, index) => `scope.${index}`),
+        }),
+      }),
+    )
+    expect(excessiveConstraints.status).toBe(422)
+    expect(await responseFailure(excessiveConstraints)).toEqual(
+      expect.objectContaining({ code: 'invalid_registration' }),
+    )
+
     const issued = await http.fetch(
       new Request('http://doxa.test/auth/tokens', {
         method: 'POST',
@@ -3696,9 +3715,15 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         `UPDATE legacy_login_only_users SET password_hash = $1 WHERE user_id = 'login-only-1'`,
         [phc],
       )
-      expect(
-        (await auth.login({ identifier: 'encore', password: 'legacy password' })).identity.id,
-      ).toBe('login-only-1')
+      const grant = await auth.login({ identifier: 'encore', password: 'legacy password' })
+      expect(grant.identity.id).toBe('login-only-1')
+      await pool.query(
+        `UPDATE legacy_login_only_users SET password_hash = $1 WHERE user_id = 'login-only-1'`,
+        [passwordHash],
+      )
+      await expect(
+        auth.reauthenticate('login-only-1', grant.session.id, 'legacy password'),
+      ).rejects.toMatchObject({ code: 'invalid_credentials' })
     } finally {
       await auth.dispose(lifecycleContext())
     }

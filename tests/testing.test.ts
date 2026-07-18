@@ -436,4 +436,38 @@ describe('@doxajs/testing', () => {
       await harness.shutdown()
     }
   })
+
+  it('rejects unsupported or credential-shaped queued context before job code runs', async () => {
+    resetRecordedJobAttempts()
+    const queue = new FakeQueueManager()
+    const transactions = new MemoryTransactionManager(queue)
+    const harness = await DoxaTestHarness.boot(Application, {
+      artifactsDirectory: artifacts,
+      dotenvPath: false,
+      environment: { DATABASE_CONNECTION_STRING: 'test-memory-database' },
+      authProviderId: 'provider:infrastructure/auth',
+      providerOverrides: {
+        'provider:infrastructure/transactions': transactions,
+        'provider:infrastructure/queues': queue,
+        'provider:infrastructure/cache': new MemoryCache(),
+        'provider:infrastructure/mail': new FakeMailTransport(),
+        'provider:infrastructure/sms': new FakeSmsTransport(),
+        'provider:infrastructure/telemetry': new MemoryTelemetry(),
+      },
+    })
+    try {
+      harness.actingAsSystem()
+      await harness.job(ProcessCounterJob, { key: 'invalid-context-version' })
+      ;(queue.queued[0]!.context as { version: number }).version = 2
+      await expect(queue.runNext()).rejects.toThrow('context version is unsupported')
+
+      await harness.job(ProcessCounterJob, { key: 'invalid-session-context' })
+      ;(queue.queued[0]!.context.authentication as unknown as Record<string, unknown>).sessionId =
+        'must-not-cross-the-queue-boundary'
+      await expect(queue.runNext()).rejects.toThrow('authentication context is invalid')
+      expect(recordedJobAttempts).toEqual([])
+    } finally {
+      await harness.shutdown()
+    }
+  })
 })

@@ -17,10 +17,25 @@ import { type DoxaRuntime, ExecutionAdmissionError } from '@doxajs/runtime'
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 
+const DEFAULT_MAX_REQUEST_BODY_BYTES = 1024 * 1024
+
+export interface HonoHttpEngineOptions {
+  readonly maxRequestBodyBytes?: number
+}
+
 export class HonoHttpEngine implements HttpEngine {
   readonly #app = new Hono()
+  readonly #maxRequestBodyBytes: number
 
-  constructor(private readonly runtime: DoxaRuntime) {
+  constructor(
+    private readonly runtime: DoxaRuntime,
+    options: HonoHttpEngineOptions = {},
+  ) {
+    const maximum = options.maxRequestBodyBytes ?? DEFAULT_MAX_REQUEST_BODY_BYTES
+    if (!Number.isSafeInteger(maximum) || maximum < 1) {
+      throw new TypeError('Hono maxRequestBodyBytes must be a positive safe integer.')
+    }
+    this.#maxRequestBodyBytes = maximum
     for (const route of runtime.manifest.routes) {
       this.#app.on(route.method, route.path, async (context) => {
         const startedAt = performance.now()
@@ -102,13 +117,18 @@ export class HonoHttpEngine implements HttpEngine {
   }
 
   async fetch(request: Request): Promise<Response> {
-    return await this.#app.fetch(request)
+    try {
+      return await this.#app.fetch(await boundedRequest(request, this.#maxRequestBodyBytes))
+    } catch (error) {
+      return errorResponse(error)
+    }
   }
 }
 
 export interface HonoHttpHostOptions {
   readonly port?: number
   readonly hostname?: string
+  readonly maxRequestBodyBytes?: number
 }
 
 export type HttpHostState = 'ready' | 'draining' | 'stopped'
@@ -130,7 +150,11 @@ export class HonoHttpHost {
     runtime: DoxaRuntime,
     options: HonoHttpHostOptions = {},
   ): Promise<HonoHttpHost> {
-    const engine = new HonoHttpEngine(runtime)
+    const engine = new HonoHttpEngine(runtime, {
+      ...(options.maxRequestBodyBytes === undefined
+        ? {}
+        : { maxRequestBodyBytes: options.maxRequestBodyBytes }),
+    })
     const server = serve({
       fetch: (request) => engine.fetch(request),
       port: options.port ?? 3000,
@@ -182,6 +206,52 @@ export class HonoHttpHost {
     }
     if (closeError) throw closeError
   }
+}
+
+async function boundedRequest(request: Request, maximum: number): Promise<Request> {
+  if (!request.body || request.method === 'GET' || request.method === 'HEAD') return request
+  const contentLength = request.headers.get('content-length')
+  if (contentLength !== null) {
+    if (!/^\d+$/.test(contentLength)) {
+      throw new HttpError(400, 'invalid_content_length', 'Content-Length must be a byte count.')
+    }
+    if (Number(contentLength) > maximum) throw payloadTooLarge(maximum)
+  }
+
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > maximum) {
+        await reader.cancel().catch(() => undefined)
+        throw payloadTooLarge(maximum)
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  const body = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    body.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  const headers = new Headers(request.headers)
+  if (contentLength !== null) headers.set('content-length', String(size))
+  return new Request(request, { body, headers })
+}
+
+function payloadTooLarge(maximum: number): HttpError {
+  return new HttpError(
+    413,
+    'payload_too_large',
+    `The request body exceeds the ${maximum}-byte limit.`,
+  )
 }
 
 function correlationIdFrom(request: Request): string | undefined {

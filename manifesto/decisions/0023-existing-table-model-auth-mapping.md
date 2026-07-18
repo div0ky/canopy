@@ -157,5 +157,6 @@ closed and revokes all Doxa sessions and tokens.
 ## Relationship to permissions
 
 First-party roles and permission storage are deferred in
-[Decision 0022](0022-defer-first-party-permissions.md). Existing-table mapping intentionally lands
-first so future permission sources can integrate with established role and membership schemas.
+[Decision 0022](0022-defer-first-party-permissions.md). Existing-table mapping landed first; the
+application permission source accepted by [Decision 0034](0034-application-permission-sources.md)
+now integrates established role and membership schemas without making them Doxa-owned storage.

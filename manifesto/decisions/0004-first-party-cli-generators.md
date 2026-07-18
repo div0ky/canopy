@@ -64,6 +64,7 @@ The initial generators should include:
 - `doxa make:controller`
 - `doxa make:resource`
 - `doxa make:policy`
+- `doxa make:permission-source`
 - `doxa make:event`
 - `doxa make:listener`
 - `doxa make:observer`
@@ -114,7 +115,8 @@ default.
 Generators provide opinionated placement defaults, but folder names have no runtime meaning.
 Commands must accept or infer the owning Feature, create direct TypeScript imports, and update its
 role arrays where the artifact is framework-facing. A generated ordinary service is discovered
-through constructor reachability and is not added to a Feature role array.
+through constructor reachability by default. `make:service --provide` explicitly adds it to
+`provides` when the service is an intentional cross-Feature API.
 
 Generated source follows Doxa's accepted defaults: kebab-case filenames, PascalCase classes, one
 primary framework-facing class per file, no required barrel files, colocated unit tests, and Feature
