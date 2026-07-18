@@ -32,7 +32,11 @@ import {
   required,
 } from './command-values.js'
 import { PraxisCommandError } from './errors.js'
-import { installGnosisRegistration, parseGnosisAgents } from './gnosis-registration.js'
+import {
+  GNOSIS_CLIENT_RELOAD_GUIDANCE,
+  installGnosisRegistration,
+  parseGnosisAgents,
+} from './gnosis-registration.js'
 
 export { PraxisCommandError } from './errors.js'
 
@@ -166,7 +170,7 @@ export async function runPraxis(
     }
     if (command === 'gnosis:install') {
       const files = await installGnosisRegistration(cwd, parseGnosisAgents(args))
-      io.out(`Registered Gnosis in ${files.join(', ')}. Your MCP client will start it on demand.`)
+      io.out(`Registered Gnosis in ${files.join(', ')}. ${GNOSIS_CLIENT_RELOAD_GUIDANCE}`)
       return 0
     }
     if (command === 'mcp') {

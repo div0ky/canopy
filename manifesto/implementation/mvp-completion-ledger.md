@@ -1,6 +1,6 @@
 # Doxa MVP Completion Ledger
 
-- **Status:** MVP acceptance ledger — complete
+- **Status:** MVP implementation acceptance complete; public security-stability claim blocked
 - **Started:** 2026-07-10
 - **Authority:** [MVP viability bar](../mvp.md)
 - **Completion rule:** A row is complete only when its public contract, production adapter or
@@ -10,6 +10,11 @@
 This ledger prevents a runnable demo from being mislabeled as a viable framework. Implementation
 proof means a risky seam works. MVP complete means an ordinary production-shaped application can use
 the entire promised model without assembling another framework beside Doxa.
+
+Implementation acceptance is not security-release readiness. The
+[current framework security audit](security-audit-2026-07-16.md) records unresolved critical and
+high findings that block a public security-stability claim and a 1.0 release even though the
+implemented MVP capability set is accepted.
 
 ## Ecosystem name
 
@@ -59,15 +64,15 @@ applications and tools do not depend on undocumented behavior.
 
 ## Security
 
-| Capability                    | State    | Acceptance evidence                                                                                                                               |
-| ----------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Email/password identities     | Complete | Registration, verification, reset/change, single-use challenges, breached-password hook, and audit are proven.                                    |
-| Browser sessions              | Complete | Digest-only storage, CSRF, rotation, bounded grace, replay rejection, listing, revocation, and pruning are proven.                                |
-| Opaque bearer access tokens   | Complete | Issuance, constraints, ambiguity rejection, rotation, revocation, audit, fakes, and CLI management are proven.                                    |
-| Authentication abuse controls | Complete | Durable hashed buckets, stable 429/Retry-After, recovery privacy, dummy verification, and audit are proven.                                       |
-| Authorization                 | Complete | Every entry role, application permission sources, resource decisions, default denial, bearer narrowing, audit, fakes, and diagnostics are proven. |
-| Auth testing                  | Complete | `actingAs`, HTTP identity override, stateful identity/session/token fakes, and revocation assertions are proven.                                  |
-| Security readiness            | Complete | Threat model, internal negative review, provenance/boundary audit, redaction, and a mandatory external pre-1.0 gate are documented.               |
+| Capability                       | State                      | Acceptance evidence                                                                                                                                                                                         |
+| -------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Email/password identities        | Complete                   | Registration, verification, reset/change, single-use challenges, breached-password hook, and audit are proven.                                                                                              |
+| Browser sessions                 | Complete                   | Digest-only storage, CSRF, rotation, bounded grace, replay rejection, listing, revocation, and pruning are proven.                                                                                          |
+| Opaque bearer access tokens      | Complete                   | Issuance, constraints, ambiguity rejection, rotation, revocation, audit, fakes, and CLI management are proven.                                                                                              |
+| Authentication abuse controls    | Complete                   | Durable hashed buckets, stable 429/Retry-After, recovery privacy, dummy verification, and audit are proven.                                                                                                 |
+| Authorization                    | Complete                   | Every entry role, application permission sources, resource decisions, default denial, bearer narrowing, audit, fakes, and diagnostics are proven.                                                           |
+| Auth testing                     | Complete                   | `actingAs`, HTTP identity override, stateful identity/session/token fakes, and revocation assertions are proven.                                                                                            |
+| Security review and release gate | Complete (release blocked) | Threat model, internal negative review, provenance/boundary audit, redaction, and a mandatory external pre-1.0 gate are documented; the current audit's critical and high findings remain release blockers. |
 
 ## Communications and infrastructure
 

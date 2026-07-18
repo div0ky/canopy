@@ -10,7 +10,10 @@ registration as an upgrade recipe. Each client launches the application's instal
 `doxa mcp` entrypoint on demand; developers do not start a daemon or standing process. The installer
 updates only the Gnosis entry and preserves unrelated agent configuration. It also creates or
 updates one marked Doxa guidance block in the root `AGENTS.md`, preserving guidance outside that
-block and failing closed on malformed or duplicate markers.
+block and failing closed on malformed or duplicate markers. Registration is discovered when a client
+opens the workspace or starts a task; Praxis output and the managed guidance now state that creation
+or upgrade inside an existing task requires a client reload or reopen and a new task before Gnosis
+tools can appear.
 
 Praxis compiles the application through the ordinary development build path and passes the resulting
 manifest directly to Gnosis; the server never scans source, boots the application, or trusts a

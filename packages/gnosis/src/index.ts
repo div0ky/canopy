@@ -357,6 +357,7 @@ export function renderGnosisGuidelines(): string {
   return `## Doxa application guidance
 
 - Use Gnosis MCP tools before inferring Doxa application structure from folder names or private implementation details.
+- If Gnosis tools are absent after creating or upgrading the application, do not treat registration files as proof that this task loaded them. Project MCP configuration is discovered when the client opens the workspace or starts a task; ask the developer to reload or reopen the client, approve project trust if prompted, and start a new agent task.
 - Call \`application_info\` when beginning substantial Doxa work and use \`search_docs\` for guidance matching the installed framework version.
 - Inspect declared roles with \`inspect_graph\`, \`list_routes\`, the relevant \`list_*\` tool, and \`describe_model\`.
 - Use \`query_models\` instead of raw SQL when application data is needed. Call \`describe_model\` first, request only necessary logical fields, and keep the result limit small.

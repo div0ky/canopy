@@ -68,7 +68,10 @@ the application in a supported client. The client launches Gnosis over stdio whe
 inspection, documentation, or a bounded non-production model read and stops it with the client
 session; there is no Gnosis daemon to start. Model reads use stable model IDs and logical
 attributes, never raw SQL, and run through a fresh read-only execution. A client may ask you to
-trust the project MCP server on first use.
+trust the project MCP server on first use. Project MCP configuration is discovered when the client
+opens the workspace or starts a task. If creation, upgrade, or `gnosis:install` ran inside an
+existing agent task, reload or reopen the client and start a new task; the current task cannot gain
+newly registered tools.
 
 Run `pnpm doxa gnosis:install --agent=all` only to regenerate deleted or customized registration.
 `doxa mcp` is the client entrypoint and protocol-debugging command, not an ordinary startup step.

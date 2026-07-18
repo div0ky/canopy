@@ -9,6 +9,9 @@ export type GnosisAgent = (typeof GNOSIS_AGENTS)[number]
 const serverCommand = 'node'
 const serverArguments = ['./node_modules/@doxajs/praxis/dist/bin.js', 'mcp'] as const
 
+export const GNOSIS_CLIENT_RELOAD_GUIDANCE =
+  'Reload or reopen your MCP client, approve project trust if prompted, and start a new agent task. Existing tasks do not acquire newly registered tools.'
+
 export async function installGnosisRegistration(
   applicationRoot: string,
   agents: readonly GnosisAgent[] = GNOSIS_AGENTS,

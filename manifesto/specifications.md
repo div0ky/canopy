@@ -6,6 +6,10 @@ implementation status: a capability marked complete there has an accepted public
 production behavior or adapter evidence, conformance coverage, reference-application evidence,
 diagnostics, and agreeing documentation.
 
+MVP implementation acceptance is not a security-stability decision. The
+[current framework security audit](implementation/security-audit-2026-07-16.md) has unresolved
+critical and high findings that block a public security-stability claim and a 1.0 release.
+
 Individual vertical-slice documents preserve the narrower status and remaining work that existed
 when each proof was written. Their historical `MVP status: Incomplete` notes do not override the
 later completion ledger.

@@ -529,6 +529,7 @@ describe('Praxis command suite', () => {
     const agents = await readFile(path.join(destination, 'AGENTS.md'), 'utf8')
     expect(agents).toContain('<doxa-gnosis-guidelines>')
     expect(agents).toContain('Use Gnosis MCP tools')
+    expect(agents).toContain('Project MCP configuration is discovered')
     expect(agents).toContain('Use `query_models` instead of raw SQL')
     expect(JSON.parse(await readFile(path.join(destination, '.mcp.json'), 'utf8'))).toEqual({
       mcpServers: {
@@ -782,7 +783,10 @@ describe('Praxis command suite', () => {
     expect(await readFile(path.join(root, '.codex/config.toml'), 'utf8')).toBe(codex)
     expect(await readFile(path.join(root, '.mcp.json'), 'utf8')).toBe(claude)
     expect(await readFile(path.join(root, 'AGENTS.md'), 'utf8')).toBe(agents)
-    expect(output.at(-1)).toContain('Your MCP client will start it on demand.')
+    expect(output.at(-1)).toContain(
+      'Reload or reopen your MCP client, approve project trust if prompted, and start a new agent task.',
+    )
+    expect(output.at(-1)).toContain('Existing tasks do not acquire newly registered tools.')
   })
 
   it('fails Gnosis installation closed on malformed managed guidance', async () => {
@@ -1091,6 +1095,7 @@ describe('Praxis command suite', () => {
       `${JSON.stringify(upgradeFixturePackage(currentPraxis.version), null, 2)}\n`,
     )
     const invocations: string[][] = []
+    const output: string[] = []
     expect(
       await runPraxis(
         [
@@ -1102,7 +1107,7 @@ describe('Praxis command suite', () => {
         ],
         application,
         {
-          out: () => undefined,
+          out: (message) => output.push(message),
           error: (message) => {
             throw new Error(message)
           },
@@ -1125,6 +1130,14 @@ describe('Praxis command suite', () => {
     expect(await fileExists(path.join(application, '.codex/config.toml'))).toBe(false)
     expect(await readFile(path.join(root, '.codex/config.toml'), 'utf8')).toContain(
       'cwd = "apps/doxaapp"',
+    )
+    expect(output).toContainEqual(
+      expect.stringContaining(
+        'Reload or reopen your MCP client, approve project trust if prompted, and start a new agent task.',
+      ),
+    )
+    expect(output).toContainEqual(
+      expect.stringContaining('Existing tasks do not acquire newly registered tools.'),
     )
   })
 

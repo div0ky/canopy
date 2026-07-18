@@ -31,7 +31,9 @@ when it creates or upgrades an application and maintains a Doxa guidance block i
 in the application workspace, including when the application is nested in a monorepo. Along with
 compiled application inspection and documentation, Gnosis can perform bounded non-production model
 reads through Doxa's read-only persistence path. Some clients ask you to trust a project MCP server
-the first time they use it.
+the first time they use it. Clients discover project MCP configuration when opening the workspace or
+starting a task. After creation, upgrade, or `gnosis:install`, reload or reopen the client and start
+a new task; an already-running task cannot acquire the newly registered tools.
 
 Regenerate one or more project registrations after removing or customizing them:
 

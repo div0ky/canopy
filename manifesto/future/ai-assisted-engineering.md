@@ -22,6 +22,10 @@ doxa mcp
 
 Developers do not run this as a standing process.
 
+Project MCP configuration is discovered when the client opens the workspace or starts a task.
+Creation, upgrade, or registration changes made inside an existing task require the developer to
+reload or reopen the client and start a new task before Gnosis tools become available.
+
 The local server runs over stdio and gives compatible coding agents read-only access to the actual
 Doxa application model: packages and versions, features, dependency graph, routes, models, schemas,
 actions, queries, policies, events, observers, listeners, jobs, schedules, migrations, diagnostics,

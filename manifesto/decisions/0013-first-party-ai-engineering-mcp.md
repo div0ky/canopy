@@ -86,7 +86,10 @@ Praxis must make that launch declarative rather than procedural for the develope
 receive project-scoped MCP configuration for supported agents, and framework upgrades add or update
 the same registration without replacing unrelated agent configuration. The registered command uses
 the application's installed Praxis package. `doxa mcp` remains available for protocol diagnostics,
-but documentation must not instruct developers to start it as a standing process.
+but documentation must not instruct developers to start it as a standing process. Project MCP
+configuration is discovered when the client opens the workspace or starts a task. Praxis must tell
+developers to reload or reopen the client and begin a new task after registration changes, because
+an already-running task cannot acquire a new tool surface.
 
 Doxa should use the official TypeScript MCP SDK behind a small protocol adapter and pin its version
 through the Doxa compatibility contract.
@@ -144,8 +147,10 @@ content outside the managed block and fails closed for malformed or duplicate ma
 
 The versioned guidance is owned by `@doxajs/gnosis` and must teach agents to prefer Gnosis's
 structured inspection and documentation tools over path inference, raw database access, or
-framework-private APIs. Praxis owns the filesystem merge because it already owns application
-creation, upgrades, and agent registration.
+framework-private APIs. It must also distinguish missing tools in the current task from missing
+registration and direct the developer to the client reload and new-task boundary after registration
+changes. Praxis owns the filesystem merge because it already owns application creation, upgrades,
+and agent registration.
 
 ## Bounded model-data inspection
 
