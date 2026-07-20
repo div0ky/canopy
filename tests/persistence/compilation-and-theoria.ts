@@ -165,6 +165,28 @@ export function registerCompilationAndTheoriaTests(
         },
       }),
       expect.objectContaining({
+        id: 'model:counters/legacy-customer-read-model',
+        entityType: 'model:counters/legacy-customer-read-model',
+        attributes: ['displayName', 'id'],
+        storage: {
+          kind: 'table',
+          table: 'legacy_customers',
+          primaryKey: 'customer_id',
+          versionColumn: 'lock_version',
+          timestamps: false,
+          columns: {
+            id: 'customer_id',
+            displayName: 'full_name',
+          },
+          managed: false,
+          readOnly: true,
+          attributeTypes: {
+            id: { kind: 'string', nullable: false, optional: false },
+            displayName: { kind: 'string', nullable: false, optional: false },
+          },
+        },
+      }),
+      expect.objectContaining({
         id: 'model:counters/legacy-note',
         storage: {
           kind: 'table',
