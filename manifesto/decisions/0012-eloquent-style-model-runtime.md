@@ -238,7 +238,7 @@ application ceremony for ordinary model work.
 - Persistence magic remains bounded by the accepted execution scope and transaction lifecycle.
 - The framework owns hydration, attachment, dirty tracking, lifecycle, optimistic concurrency, and
   model diagnostics.
-- Drizzle continues to own SQL construction, physical schema definitions, and database mechanics.
+- Drizzle continues to own SQL construction, private typed table mappings, and database mechanics.
 - Detached models and background work require explicit reload or reattachment through Doxa APIs.
 - Bulk writes that bypass hydration cannot claim normal model lifecycle semantics.
 - Declared observers remain the sole model lifecycle reaction mechanism; Doxa does not add a
@@ -272,7 +272,8 @@ until a separate accepted contract defines its lifecycle and bypass semantics.
 - Static retrieval requires a hidden global database connection outside execution context.
 - Dirty tracking forces persistence concerns into arbitrary domain properties.
 - Eloquent-style convenience makes actor, journal, outbox, or observer behavior ambiguous.
-- The model runtime requires rebuilding Drizzle's SQL, schema, or migration engines.
+- The model runtime requires rebuilding Drizzle's SQL construction or typed table-mapping layer, or
+  adding a separate schema-diff or migration-generation engine.
 
 ## References
 

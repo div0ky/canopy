@@ -175,7 +175,7 @@ should eventually expose:
 - Route, handler, listener, observer, job, and schedule listings.
 - Dependency-graph and execution-scope inspection.
 - Configuration and secret validation.
-- Database migration generation, application, and status.
+- Database migration creation, application, and status.
 - Worker and scheduler operation.
 - Framework health and compatibility diagnostics.
 - Test environment setup.

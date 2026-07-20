@@ -43,6 +43,22 @@ default root route and any other application-level routes. Mandatory HTTP, Postg
 cache, auth, and health declarations are generated under gitignored `.doxa/` and remain visible in
 the compiled manifest rather than user source. Folder names are organizational only.
 
+## Migrations
+
+Doxa uses a Laravel-like migration lifecycle. Create a timestamped migration stub, write the
+forward-only SQL yourself, inspect its status, and apply it explicitly:
+
+```sh
+pnpm doxa make:migration CreateContacts
+pnpm doxa migrate:status
+pnpm doxa migrate
+```
+
+Praxis orders framework and application migrations, records successful applications and checksums,
+and refuses drift when an applied file changes. Models remain independent from migrations: a model
+may map a compatible existing table, and `managed = false` declares that Doxa must not manage that
+table's schema. Doxa does not infer migrations from models or perform Drizzle-style schema diffs.
+
 ## Useful commands
 
 ```sh

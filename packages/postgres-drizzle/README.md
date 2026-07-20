@@ -11,8 +11,9 @@ outbox, communications ledger, and cache adapter implemented with Drizzle.
 pnpm add @doxajs/postgres-drizzle
 ```
 
-The package includes forward-only Doxa-owned migrations. Application models and domain code remain
-independent from Drizzle types.
+The package includes developer-reviewed, forward-only Doxa-owned migrations. Praxis applies those
+alongside developer-authored application SQL migrations. Application models and domain code remain
+independent from both migration ownership and Drizzle types.
 
 Mapped-table reads use the compiler-declared physical projection rather than `SELECT *`, and updates
 contain only the declared dirty patch plus adapter-owned timestamp/version changes. Readiness

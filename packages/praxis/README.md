@@ -17,6 +17,11 @@ pnpm dev
 
 Run `doxa --help` for the complete command surface.
 
+Praxis follows a Laravel-like migration lifecycle with developer-authored, forward-only SQL. Use
+`doxa make:migration <Name>` to create a timestamped stub, `doxa migrate:status` to inspect pending
+or drifted files, and `doxa migrate` to apply and track them. Models do not generate DDL, and
+Drizzle Studio is an inspection tool rather than a schema-diff or migration generator.
+
 Use `doxa permission-source:list` (or `--json`) to inspect the selected application permission
 source and its declared abilities without evaluating runtime permission records.
 
