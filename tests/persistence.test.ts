@@ -785,7 +785,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(errors.at(-1)).toContain('has changed; create a new migration instead')
   })
 
-  it('exposes model and auth storage ownership to Praxis and Gnosis', async () => {
+  it('exposes first-party auth table ownership to Praxis', async () => {
     const output: string[] = []
     const errors: string[] = []
     const io = {
