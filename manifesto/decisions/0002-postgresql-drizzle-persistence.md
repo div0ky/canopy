@@ -2,13 +2,15 @@
 
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
+- **Amended:** 2026-07-20 — Adopt developer-authored, Laravel-like forward migration workflow.
 - **Decision owners:** Doxa maintainers
 
 ## Decision
 
-Doxa will use PostgreSQL as its initial relational database and Drizzle ORM as its private schema,
-query, and transaction engine. Doxa will continue to own domain models, persistence semantics, units
-of work, lifecycles, repositories, journal behavior, and durable delivery.
+Doxa will use PostgreSQL as its initial relational database and Drizzle ORM as its private SQL,
+query, mapping, and transaction engine. Doxa will continue to own domain models, persistence
+semantics, units of work, lifecycles, repositories, journal behavior, durable delivery, and the
+migration lifecycle.
 
 Drizzle is the SQL engine beneath Doxa. It is not Doxa's domain-model API.
 
@@ -31,12 +33,13 @@ clear transaction scoping, instrumentation, and deterministic lifecycle manageme
 ## Why Drizzle
 
 Drizzle is a thin, typed layer over SQL with SQL-like and relational query APIs. Its transaction API
-exposes a transaction-scoped database object and supports nested savepoints. Its schema tooling can
-generate SQL migration artifacts that remain visible and reviewable.
+exposes a transaction-scoped database object and supports nested savepoints. Its schema definitions
+and SQL builder give Doxa adapters typed mappings for framework-owned tables without becoming the
+application's schema-authoring or migration API.
 
 These characteristics make Drizzle comparatively easy to contain inside a Doxa adapter. Doxa can use
-Drizzle for query construction, mapping, transactions, and schema tooling without asking feature
-code to adopt Drizzle as its application vocabulary.
+Drizzle for query construction, mapping, and transactions without asking feature code to adopt
+Drizzle as its application vocabulary.
 
 ## Why PostgreSQL
 
@@ -57,18 +60,20 @@ Domain and feature code must not import:
 - PostgreSQL driver types.
 - Drizzle or driver errors.
 
-Infrastructure code may use Drizzle directly when implementing repositories, read models,
-migrations, and the persistence adapter. The adapter translates database failures into stable Doxa
-persistence errors.
+Infrastructure code may use Drizzle directly when implementing repositories, read models, and the
+persistence adapter. The adapter translates database failures into stable Doxa persistence errors.
 
 The physical schema and the domain model have different responsibilities:
 
 - Doxa domain models are the source of truth for behavior, invariants, lifecycle, and emitted domain
   events.
-- Drizzle schema definitions are the source of truth for the physical PostgreSQL representation.
+- Reviewed forward-only SQL migrations are the source of truth for the physical PostgreSQL schema.
+- Private Drizzle schema definitions map framework-owned tables for typed adapter access and must
+  remain consistent with their reviewed migrations.
 - Adapter mappings translate between durable records and domain state.
 
-Doxa will not create a second column-definition language merely to compile it into Drizzle.
+Doxa model declarations are not a schema-definition language and do not generate DDL. A model may
+map a compatible existing table without Doxa owning that table's migration history.
 
 ## Transaction integration
 
@@ -96,15 +101,19 @@ mechanism but does not decide Doxa semantics.
 
 The migration workflow is:
 
-1. Define the physical schema in TypeScript using Drizzle.
-2. Generate SQL migrations through a Doxa CLI command backed by Drizzle Kit.
-3. Review and commit the generated SQL.
-4. Apply migrations as an explicit deployment step.
-5. Inspect migration state during diagnostics and readiness without mutating it.
+1. Create a timestamped forward migration with `doxa make:migration <Name>`.
+2. Author the production-safe SQL explicitly.
+3. Review and commit the migration artifact.
+4. Apply pending framework and application migrations with `doxa migrate` as an explicit deployment
+   step.
+5. Record successful applications, immutable checksums, and batches in `doxa_migrations`.
+6. Inspect migration state with `doxa migrate:status` without mutating it.
 
-Production applications must not apply migrations opportunistically during normal boot. Schema-push
-workflows are limited to disposable local development environments. Custom SQL migrations remain
-first-class when PostgreSQL capabilities cannot be expressed cleanly through the schema generator.
+This workflow is deliberately Laravel-like in ownership: developers author migrations while Praxis
+orders, applies, and tracks them. Unlike Laravel's conventional reversible migration classes, Doxa
+migrations are forward-only SQL and do not promise destructive rollback. Production applications
+must not apply migrations opportunistically during normal boot. Schema-diff and schema-push
+workflows are not part of the Doxa application contract.
 
 ## Prisma alternative
 
@@ -146,7 +155,8 @@ A vertical proof must demonstrate:
 7. An outbox worker can safely claim concurrent work and retry failed delivery.
 8. Traces and diagnostics connect the action, transaction, SQL operations, and outbox delivery.
 9. Tests can replace persistence through Doxa APIs without mocking Drizzle.
-10. Generated and custom migrations coexist in one reviewable workflow.
+10. Framework-owned and developer-authored application migrations coexist in one reviewable,
+    forward-only workflow.
 
 The proof should also measure whether repository mapping and transaction scoping remain simple
 enough to support the desired Doxa programming experience.
@@ -173,5 +183,4 @@ after-commit visibility, durable causal metadata, and the Drizzle boundary again
 - [Doxa Architecture: durable side effects](../architecture.md#durable-side-effects)
 - [Drizzle overview](https://orm.drizzle.team/docs/overview)
 - [Drizzle transactions](https://orm.drizzle.team/docs/transactions)
-- [Drizzle migrations](https://orm.drizzle.team/docs/migrations)
 - [Prisma ORM overview](https://www.prisma.io/docs/orm)

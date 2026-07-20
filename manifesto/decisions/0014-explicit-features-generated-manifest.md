@@ -284,8 +284,8 @@ Development watch mode, builds, tests, packaging, CLI inspection, and Gnosis gen
 current artifacts. Production artifacts include the generated files required by runtime boot.
 
 Developers must never hand-edit the manifest or registry. CI verifies deterministic generation.
-Source schema, application declarations, and reviewed SQL migrations remain committed inputs; the
-generated application graph does not.
+Application declarations and reviewed SQL migrations remain committed inputs; the generated
+application graph does not.
 
 ## Compilation ownership
 

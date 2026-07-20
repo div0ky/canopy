@@ -163,7 +163,7 @@ closed and revokes all Doxa sessions and tokens.
 - Additional columns, indexes, checks, and foreign keys outside the declared model projection are
   not imported into the manifest or Gnosis and do not fail readiness unless an undeclared required
   column makes inserts impossible.
-- Destructive or lossy conversion requires an explicit generated migration or import command.
+- Destructive or lossy conversion requires an explicit reviewed migration or import command.
 - Existing rows receive the same auth audit and application execution semantics as Doxa-owned rows.
 
 ## Required proof
