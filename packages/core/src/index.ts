@@ -358,10 +358,12 @@ export {
   DetachedModelError,
   Model,
   ModelIdentityMutationError,
+  ReadOnlyModelError,
   AuthOwnedModelAttributeError,
   ModelNotFoundError,
   ModelNotRegisteredError,
   StaleModelError,
+  UnknownModelAttributeError,
   type ModelAttributes,
   type ModelAttributePatch,
   type ModelChanges,
@@ -589,16 +591,39 @@ export type ModelStorage =
       readonly table: string
       readonly primaryKey: string
       readonly columns: Readonly<Record<string, string>>
+      readonly attributeTypes?: Readonly<
+        Record<
+          string,
+          {
+            readonly kind: 'string' | 'number' | 'boolean' | 'date' | 'json'
+            readonly nullable: boolean
+            readonly optional: boolean
+          }
+        >
+      >
       readonly optionalAttributes?: readonly string[]
       readonly versionColumn?: string
+      readonly versionSource?:
+        | { readonly kind: 'column'; readonly column: string }
+        | { readonly kind: 'xmin' }
+        | { readonly kind: 'none' }
       readonly timestamps: false | TableModelTimestamps
+      readonly managed?: boolean
+      readonly readOnly?: boolean
     }
+
+export interface CompiledModelStorage {
+  readonly entityType: string
+  readonly storage: ModelStorage
+}
 
 export interface SaveEntity<State extends JsonValue = JsonValue> {
   readonly type: string
   readonly id: string
   readonly expectedVersion?: number
   readonly state: State
+  /** Declared dirty state used for updates; inserts continue to use the complete declared state. */
+  readonly patch?: Readonly<Record<string, JsonValue>>
   /** Logical attributes removed from a previously persisted state; column adapters clear them. */
   readonly removedAttributes?: readonly string[]
   readonly storage?: ModelStorage
@@ -702,6 +727,8 @@ export class AfterCommitError extends PersistenceError {
 
 /** Infrastructure boundary used by the runtime for every action transaction. */
 export abstract class TransactionManager {
+  bindCompiledModels(_models: readonly CompiledModelStorage[]): void {}
+
   abstract read<Output>(
     context: ExecutionContext,
     work: (reader: ModelReader) => Promise<Output>,

@@ -8,6 +8,7 @@ export interface LegacyNoteAttributes extends ModelAttributes {
 export class LegacyNote extends Model<LegacyNoteAttributes> {
   static override readonly id = 'legacy-note'
   static override readonly table = 'legacy_notes'
+  static override readonly managed = false
 
   get body(): string {
     return this.attributes.body

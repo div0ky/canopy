@@ -1371,16 +1371,19 @@ export async function compileApplication(
     }
     const name = requiredClassName(declaration)
     const localId = readRequiredStaticString(declaration, 'id')
-    const optionalAttributes = compileOptionalModelAttributes(declaration)
+    const attributeTypes = compileModelAttributeTypes(declaration)
+    const attributes = Object.keys(attributeTypes).sort((left, right) => left.localeCompare(right))
+    const optionalAttributes = attributes.filter((attribute) => attributeTypes[attribute]!.optional)
     const entry: ModelManifestEntry = {
       id: `model:${ownerId}/${localId}`,
       ownerId,
       name,
       exportName: name,
       entityType: `model:${ownerId}/${localId}`,
-      attributes: compileModelAttributes(declaration),
+      attributes,
+      attributeTypes,
       relationships: [],
-      storage: compileModelStorage(declaration, optionalAttributes),
+      storage: compileModelStorage(declaration, attributes, attributeTypes, optionalAttributes),
       source: sourceOf(declaration, normalized.projectRoot),
     }
     modelByDeclaration.set(declaration, entry)
@@ -1516,7 +1519,9 @@ export async function compileApplication(
     return value.text
   }
 
-  function compileModelAttributes(declaration: ts.ClassDeclaration): readonly string[] {
+  function compileModelAttributeTypes(
+    declaration: ts.ClassDeclaration,
+  ): ModelManifestEntry['attributeTypes'] {
     const symbol = declaration.name ? checker.getSymbolAtLocation(declaration.name) : undefined
     if (!symbol) fail(declaration, 'Model attributes could not be resolved.')
     const modelType = checker.getDeclaredTypeOfSymbol(symbol)
@@ -1524,30 +1529,64 @@ export async function compileApplication(
     if (!attributes) {
       fail(declaration, `${requiredClassName(declaration)} must declare Model attribute types.`)
     }
-    const names = checker
+    const entries = checker
       .getPropertiesOfType(attributes)
-      .map((property) => property.name)
-      .filter((name) => validIdentifier(name))
-      .sort((left, right) => left.localeCompare(right))
-    if (!names.includes('id')) {
+      .filter((property) => validIdentifier(property.name))
+      .map((property) => {
+        const source = property.valueDeclaration ?? property.declarations?.[0] ?? declaration
+        const type = checker.getTypeOfSymbolAtLocation(property, source)
+        const members = type.isUnion() ? type.types : [type]
+        const nullable = members.some((member) => (member.flags & ts.TypeFlags.Null) !== 0)
+        const optional =
+          (property.flags & ts.SymbolFlags.Optional) !== 0 ||
+          members.some((member) => (member.flags & ts.TypeFlags.Undefined) !== 0)
+        const values = members.filter(
+          (member) => (member.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined)) === 0,
+        )
+        const kind = modelAttributeKind(values)
+        return [
+          property.name,
+          {
+            kind,
+            nullable,
+            optional,
+          },
+        ] as const
+      })
+      .sort(([left], [right]) => left.localeCompare(right))
+    if (!entries.some(([name]) => name === 'id')) {
       fail(declaration, `${requiredClassName(declaration)} model attributes must include id.`)
     }
-    return names
+    return Object.fromEntries(entries)
   }
 
-  function compileOptionalModelAttributes(declaration: ts.ClassDeclaration): readonly string[] {
-    const symbol = declaration.name ? checker.getSymbolAtLocation(declaration.name) : undefined
-    if (!symbol) fail(declaration, 'Model attributes could not be resolved.')
-    const attributes = modelAttributeType(checker.getDeclaredTypeOfSymbol(symbol))
-    if (!attributes) {
-      fail(declaration, `${requiredClassName(declaration)} must declare Model attribute types.`)
-    }
-    return checker
-      .getPropertiesOfType(attributes)
-      .filter((property) => (property.flags & ts.SymbolFlags.Optional) !== 0)
-      .map((property) => property.name)
-      .filter((name) => validIdentifier(name))
-      .sort((left, right) => left.localeCompare(right))
+  function modelAttributeKind(
+    types: readonly ts.Type[],
+  ): ModelManifestEntry['attributeTypes'][string]['kind'] {
+    if (
+      types.length > 0 &&
+      types.every(
+        (type) =>
+          (type.flags &
+            (ts.TypeFlags.String | ts.TypeFlags.StringLiteral | ts.TypeFlags.TemplateLiteral)) !==
+          0,
+      )
+    )
+      return 'string'
+    if (
+      types.length > 0 &&
+      types.every((type) => (type.flags & (ts.TypeFlags.Number | ts.TypeFlags.NumberLiteral)) !== 0)
+    )
+      return 'number'
+    if (
+      types.length > 0 &&
+      types.every(
+        (type) => (type.flags & (ts.TypeFlags.Boolean | ts.TypeFlags.BooleanLiteral)) !== 0,
+      )
+    )
+      return 'boolean'
+    if (types.length > 0 && types.every((type) => type.getSymbol()?.name === 'Date')) return 'date'
+    return 'json'
   }
 
   function modelAttributeType(type: ts.Type): ts.Type | undefined {
@@ -1564,10 +1603,20 @@ export async function compileApplication(
 
   function compileModelStorage(
     declaration: ts.ClassDeclaration,
+    attributes: readonly string[],
+    attributeTypes: ModelManifestEntry['attributeTypes'],
     optionalAttributes: readonly string[],
   ): ModelManifestEntry['storage'] {
     const tableValue = readOptionalStaticJson(declaration, 'table')
-    if (tableValue === undefined) return { kind: 'entity-state' }
+    if (tableValue === undefined) {
+      if (staticProperty(declaration, 'managed') || staticProperty(declaration, 'readOnly')) {
+        fail(
+          declaration,
+          `${requiredClassName(declaration)} may declare managed or readOnly only when static table is present.`,
+        )
+      }
+      return { kind: 'entity-state' }
+    }
     if (typeof tableValue !== 'string' || !validQualifiedIdentifier(tableValue)) {
       fail(
         declaration,
@@ -1586,6 +1635,12 @@ export async function compileApplication(
         fail(
           declaration,
           `${requiredClassName(declaration)}.columns contains an invalid attribute or PostgreSQL column name.`,
+        )
+      }
+      if (!attributes.includes(attribute)) {
+        fail(
+          declaration,
+          `${requiredClassName(declaration)}.columns maps undeclared attribute ${attribute}.`,
         )
       }
     }
@@ -1626,14 +1681,40 @@ export async function compileApplication(
         `${requiredClassName(declaration)}.timestamps must be false, true, or { createdAt, updatedAt } column names.`,
       )
     }
+    const columns = Object.fromEntries(
+      attributes.map((attribute) => [
+        attribute,
+        attribute === 'id' ? primaryKeyValue : (columnsValue[attribute] ?? attribute),
+      ]),
+    )
+    const duplicateColumn = Object.values(columns).find(
+      (column, index, all) => all.indexOf(column) !== index,
+    )
+    if (duplicateColumn) {
+      fail(
+        declaration,
+        `${requiredClassName(declaration)} maps more than one attribute to physical column ${duplicateColumn}.`,
+      )
+    }
+    const managed = readOptionalStaticBoolean(declaration, 'managed', true)
+    const readOnly = readOptionalStaticBoolean(declaration, 'readOnly', false)
     return {
       kind: 'table',
       table: tableValue,
       primaryKey: primaryKeyValue,
-      columns: { ...columnsValue, id: primaryKeyValue },
+      columns,
+      attributeTypes,
       ...(optionalAttributes.length > 0 ? { optionalAttributes } : {}),
       ...(typeof versionValue === 'string' ? { versionColumn: versionValue } : {}),
+      versionSource:
+        typeof versionValue === 'string'
+          ? { kind: 'column', column: versionValue }
+          : readOnly
+            ? { kind: 'none' }
+            : { kind: 'xmin' },
       timestamps,
+      managed,
+      readOnly,
     }
   }
 

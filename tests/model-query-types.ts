@@ -9,6 +9,7 @@ function modelQueryTypeProofs(): void {
   Counter.with({ notes: (query) => query.where('rank', '>=', 1).orderBy('body') })
   CounterNote.query().whereBelongsTo(new Counter({ id: 'counter', value: 1 }), 'counter')
   Counter.query().whereHas('notes', (query) => query.where('rank', '>=', 1))
+  Counter.prototype.getAttribute('value')
   Counter.prototype.setAttribute('value', 2)
   Counter.prototype.setAttribute('label', undefined)
   Counter.prototype.fill({ value: 2, label: undefined })
@@ -35,6 +36,8 @@ function modelQueryTypeProofs(): void {
   Counter.prototype.fill({ id: 'other' })
   // @ts-expect-error Unknown model attributes fail at compilation.
   Counter.prototype.setAttribute('unknown', true)
+  // @ts-expect-error Unknown model attributes cannot be read through a permissive string overload.
+  Counter.prototype.getAttribute('password')
   // @ts-expect-error Attribute values retain their declared types.
   Counter.prototype.fill({ value: 'two' })
   // @ts-expect-error Required attributes cannot be removed.

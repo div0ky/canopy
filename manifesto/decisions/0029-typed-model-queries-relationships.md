@@ -82,6 +82,9 @@ writable execution.
   semantics.
 - Partial projections and aggregates return scalar or purpose-built results; they do not masquerade
   as partially hydrated models.
+- A fully hydrated mapped model means the model's complete declared attribute projection, not a
+  complete physical table row. Direct, eager, paginated, and cursor reads never select or hydrate
+  undeclared physical columns.
 
 ## Required proof
 

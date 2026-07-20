@@ -74,6 +74,11 @@ cursor
 `get`, `first`, pagination, and cursor iteration return fully hydrated models. `value`, `pluck`, and
 aggregates return scalars and must not construct partial models.
 
+For mapped tables, "fully hydrated" means every attribute in the compiler-declared model contract.
+It does not mean every physical column in the relation. All model-producing terminals, eager loads,
+relationship loads, refreshes, and cursor batches must select the explicit declared physical
+projection and reject missing or unexpected adapter fields.
+
 `firstOrFail` uses the stable Doxa model-not-found failure. Invalid plans, attributes,
 relationships, operators, or cursors use stable query errors and must fail before returning partial
 results.
@@ -103,6 +108,8 @@ Every model query requires an active Doxa execution and `ModelSession`.
 - Overlapping results for the same model identity return the same object instance.
 - `retrieved` fires only when an identity is newly hydrated into that session.
 - Query-mode `save`, `create`, and `delete` fail with `ReadOnlyExecutionError` before persistence.
+- A model declared `readOnly = true` remains readable in any session, but its `save`, `create`, and
+  `delete` paths fail with `ReadOnlyModelError` before lifecycle observers or persistence.
 - A query or cursor used after the execution closes fails with the stable stale-model/session error.
 
 ## Relationships
@@ -199,6 +206,10 @@ parameterization and must never concatenate untrusted values into SQL.
 The first-party memory adapter must implement the same comparison, null, ordering, pagination,
 cursor, identity, and relationship semantics. Adapter-specific capabilities cannot appear on the
 ordinary builder without first becoming Doxa contracts.
+
+Mapped adapters operate only on the compiled declared attribute set. They must neither select nor
+hydrate undeclared physical columns, and updates must translate only the declared dirty patch plus
+adapter-owned timestamp and version changes.
 
 ## Diagnostics
 

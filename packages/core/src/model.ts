@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from 'node:util'
 
 import { currentModelSession } from './model-session-context.js'
 import {
+  PersistenceError,
   ReadOnlyExecutionError,
   type JsonValue,
   type ModelReader,
@@ -43,6 +44,8 @@ export type ModelConstructor<
   readonly versionColumn?: string
   readonly columns?: Readonly<Record<string, string>>
   readonly timestamps?: boolean | { readonly createdAt: string; readonly updatedAt: string }
+  readonly managed?: boolean
+  readonly readOnly?: boolean
   readonly relationships?: Readonly<Record<string, ModelRelationship>>
 }
 
@@ -171,6 +174,22 @@ export class AuthOwnedModelAttributeError extends Error {
   }
 }
 
+export class UnknownModelAttributeError extends Error {
+  override readonly name = 'UnknownModelAttributeError'
+
+  constructor(readonly attribute: string) {
+    super(`Model attribute ${attribute} is not declared.`)
+  }
+}
+
+export class ReadOnlyModelError extends Error {
+  override readonly name = 'ReadOnlyModelError'
+
+  constructor(readonly model: string) {
+    super(`${model} is read-only and cannot be persisted.`)
+  }
+}
+
 const MODEL_INTERNALS = Symbol('doxa.model.internals')
 
 interface PendingJournalFact {
@@ -195,6 +214,7 @@ interface ModelInternals<Attributes extends ModelAttributes> {
   readonly recentlyCreated: boolean
   readonly session: ModelSession | undefined
   readonly relations: ReadonlyMap<string, Model | readonly Model[] | undefined>
+  readonly declaredAttributes: ReadonlySet<string> | undefined
   changes(): ModelChanges<Attributes>
   generatedIdentity(id: string): void
   replace(attributes: Attributes, version: number, exists: boolean): void
@@ -215,6 +235,8 @@ export abstract class Model<
   static readonly versionColumn?: string
   static readonly columns?: Readonly<Record<string, string>>
   static readonly timestamps?: boolean | { readonly createdAt: string; readonly updatedAt: string }
+  static readonly managed?: boolean
+  static readonly readOnly?: boolean
   static readonly relationships?: Readonly<Record<string, ModelRelationship>>
 
   #attributes: ModelAttributeState<Attributes>
@@ -226,11 +248,13 @@ export abstract class Model<
   #version: number | undefined
   #recentlyCreated = false
   #session: ModelSession | undefined
+  readonly #constructedAttributes: ReadonlySet<string>
   readonly #relations = new Map<string, Model | readonly Model[] | undefined>()
   declare protected readonly __doxaRelations: Relations
 
   constructor(attributes: Attributes) {
     this.#attributes = modelAttributeState(attributes)
+    this.#constructedAttributes = new Set(Object.keys(attributes))
   }
 
   protected get attributes(): ModelAttributeState<Attributes> {
@@ -262,6 +286,7 @@ export abstract class Model<
     this: ModelConstructor<Instance, Attributes>,
     attributes: NoInfer<Attributes>,
   ): Promise<Instance> {
+    if (this.readOnly) throw new ReadOnlyModelError(this.name)
     const model = requireCurrentSession().make(this, attributes)
     await model.save()
     return model
@@ -358,16 +383,16 @@ export abstract class Model<
     return this.#recentlyCreated
   }
 
-  getAttribute<Key extends keyof Attributes>(key: Key): Attributes[Key]
-  getAttribute(key: string): unknown
-  getAttribute(key: string): unknown {
-    return clone((this.attributes as Record<string, unknown>)[key])
+  getAttribute<Key extends keyof Attributes>(key: Key): Attributes[Key] {
+    this.assertDeclaredAttribute(String(key))
+    return clone((this.attributes as Record<string, unknown>)[String(key)]) as Attributes[Key]
   }
 
   setAttribute<Key extends MutableModelAttributeKey<Attributes>>(
     key: Key,
     value: ModelAttributeValue<Attributes, Key>,
   ): this {
+    this.assertDeclaredAttribute(String(key))
     if (key === ('id' as Key)) throw new ModelIdentityMutationError()
     const attributes = this.attributes as Record<string, unknown>
     if (value === undefined) delete attributes[key]
@@ -457,6 +482,7 @@ export abstract class Model<
       recentlyCreated: this.#recentlyCreated,
       session: this.#session,
       relations: this.#relations,
+      declaredAttributes: this.#session?.declaredAttributesFor(this),
       changes: () => this.currentChanges(),
       generatedIdentity: (id) => {
         this.#attributes = modelAttributeState({ ...this.attributes, id } as Attributes)
@@ -512,6 +538,11 @@ export abstract class Model<
     return changes
   }
 
+  private assertDeclaredAttribute(attribute: string): void {
+    const declared = this.#session?.declaredAttributesFor(this) ?? this.#constructedAttributes
+    if (!declared.has(attribute)) throw new UnknownModelAttributeError(attribute)
+  }
+
   private attachedSession(): ModelSession {
     const current = currentModelSession<ModelSession>()
     if (!this.#session)
@@ -535,6 +566,7 @@ export class ModelSession {
         readonly entityType: string
         readonly storage: ModelStorage
         readonly attributes?: ReadonlySet<string>
+        readonly optionalAttributes?: ReadonlySet<string>
         readonly attributeNormalizers?: ReadonlyMap<string, (value: unknown) => unknown>
         readonly authOwnedAttributes?: ReadonlySet<string>
         readonly clearAttributeOnChange?: ReadonlyMap<string, string>
@@ -548,6 +580,10 @@ export class ModelSession {
 
   get active(): boolean {
     return this.#active
+  }
+
+  declaredAttributesFor(model: Model): ReadonlySet<string> | undefined {
+    return this.definitionFor(model.constructor as Function).attributes
   }
 
   async find<Attributes extends ModelAttributes, Instance extends Model<Attributes>>(
@@ -564,7 +600,7 @@ export class ModelSession {
       this.reader.findEntity(type, id, definition.storage),
     )
     if (!persisted) return undefined
-    const attributes = clone(persisted.state) as unknown as Attributes
+    const attributes = this.validatedAttributes<Attributes>(definition, persisted.state)
     const model = new Constructor(attributes)
     model[MODEL_INTERNALS]().attached(this, attributes, persisted.version)
     this.#identityMap.set(identity, model)
@@ -586,13 +622,17 @@ export class ModelSession {
     attributes: Attributes,
   ): Instance {
     this.assertActive()
+    const definition = this.definitionFor(Constructor)
     this.assertWritable()
-    const type = this.definitionFor(Constructor).entityType
-    const identity = `${type}/${attributes.id}`
+    const validated = this.validatedAttributes<Attributes>(
+      definition,
+      attributes as unknown as JsonValue,
+    )
+    const identity = `${definition.entityType}/${validated.id}`
     if (this.#identityMap.has(identity)) {
-      throw new Error(`${Constructor.name} ${attributes.id} is already attached to this execution.`)
+      throw new Error(`${Constructor.name} ${validated.id} is already attached to this execution.`)
     }
-    const model = new Constructor(clone(attributes))
+    const model = new Constructor(validated)
     model[MODEL_INTERNALS]().attached(this, {})
     this.#identityMap.set(identity, model)
     return model
@@ -600,15 +640,19 @@ export class ModelSession {
 
   async save<Attributes extends ModelAttributes>(model: Model<Attributes>): Promise<boolean> {
     this.assertAttached(model)
-    this.assertWritable()
     const internals = model[MODEL_INTERNALS]()
+    const definition = this.definitionFor(model.constructor as Function)
+    if (definition.storage.kind === 'table' && definition.storage.readOnly) {
+      throw new ReadOnlyModelError(model.constructor.name)
+    }
+    this.assertWritable()
+    this.validatedAttributes<Attributes>(definition, internals.attributes as unknown as JsonValue)
     let changes = model.isDirty() ? internals.changes() : {}
     const hasDurableWork = internals.pendingJournal.length > 0 || internals.pendingOutbox.length > 0
     if (Object.keys(changes).length === 0 && !hasDurableWork) return false
     const created = !internals.exists
     await this.observers?.dispatch('saving', model)
     await this.observers?.dispatch(created ? 'creating' : 'updating', model)
-    const definition = this.definitionFor(model.constructor as Function)
     changes = model.isDirty() ? internals.changes() : {}
     for (const attribute of definition.authOwnedAttributes ?? []) {
       if (
@@ -627,22 +671,36 @@ export class ModelSession {
     for (const [changed, cleared] of definition.clearAttributeOnChange ?? []) {
       if (Object.hasOwn(changes, changed)) attributes[cleared] = null
     }
+    this.validatedAttributes<Attributes>(definition, internals.attributes as unknown as JsonValue)
     changes = model.isDirty() ? internals.changes() : {}
     const type = definition.entityType
     const removedAttributes = Object.keys(changes).filter(
       (attribute) => !Object.hasOwn(internals.attributes, attribute),
     )
     const pendingIdentity = model.id
-    const saved = await this.observeOperation(definition, 'save', () =>
-      this.writer().saveEntity({
-        type,
-        id: model.id,
-        ...(internals.version !== undefined ? { expectedVersion: internals.version } : {}),
-        state: clone(internals.attributes) as unknown as JsonValue,
-        ...(removedAttributes.length > 0 ? { removedAttributes } : {}),
-        storage: definition.storage,
-      }),
-    )
+    const patch = Object.fromEntries(
+      Object.keys(changes)
+        .filter((attribute) => Object.hasOwn(internals.attributes, attribute))
+        .map((attribute) => [
+          attribute,
+          clone((internals.attributes as unknown as Record<string, JsonValue>)[attribute]!),
+        ]),
+    ) as Record<string, JsonValue>
+    const hasStateChanges = Object.keys(changes).length > 0
+    const saved =
+      !created && !hasStateChanges
+        ? internals.version!
+        : await this.observeOperation(definition, 'save', () =>
+            this.writer().saveEntity({
+              type,
+              id: model.id,
+              ...(internals.version !== undefined ? { expectedVersion: internals.version } : {}),
+              state: clone(internals.attributes) as unknown as JsonValue,
+              ...(internals.version !== undefined ? { patch } : {}),
+              ...(removedAttributes.length > 0 ? { removedAttributes } : {}),
+              storage: definition.storage,
+            }),
+          )
     const version = typeof saved === 'number' ? saved : saved.version
     if (typeof saved !== 'number' && saved.id && saved.id !== pendingIdentity) {
       internals.generatedIdentity(saved.id)
@@ -675,12 +733,15 @@ export class ModelSession {
 
   async delete<Attributes extends ModelAttributes>(model: Model<Attributes>): Promise<void> {
     this.assertAttached(model)
-    this.assertWritable()
     const internals = model[MODEL_INTERNALS]()
+    const definition = this.definitionFor(model.constructor as Function)
+    if (definition.storage.kind === 'table' && definition.storage.readOnly) {
+      throw new ReadOnlyModelError(model.constructor.name)
+    }
+    this.assertWritable()
     if (!internals.exists || internals.version === undefined) {
       throw new DetachedModelError('Cannot delete a model that has not been persisted.')
     }
-    const definition = this.definitionFor(model.constructor as Function)
     const type = definition.entityType
     await this.observeOperation(definition, 'delete', () =>
       this.writer().deleteEntity(type, model.id, internals.version!, definition.storage),
@@ -716,7 +777,7 @@ export class ModelSession {
     )
     if (!persisted) throw new ModelNotFoundError(model.constructor.name, model.id)
     model[MODEL_INTERNALS]().replace(
-      clone(persisted.state) as unknown as Attributes,
+      this.validatedAttributes<Attributes>(definition, persisted.state),
       persisted.version,
       true,
     )
@@ -900,6 +961,7 @@ export class ModelSession {
     readonly entityType: string
     readonly storage: ModelStorage
     readonly attributes?: ReadonlySet<string>
+    readonly optionalAttributes?: ReadonlySet<string>
     readonly attributeNormalizers?: ReadonlyMap<string, (value: unknown) => unknown>
     readonly authOwnedAttributes?: ReadonlySet<string>
     readonly clearAttributeOnChange?: ReadonlyMap<string, string>
@@ -923,12 +985,42 @@ export class ModelSession {
     const identity = `${type}/${persisted.id}`
     const existing = this.#identityMap.get(identity)
     if (existing) return existing as Instance
-    const attributes = clone(persisted.state) as unknown as Attributes
+    const definition = this.definitionFor(Constructor)
+    const attributes = this.validatedAttributes<Attributes>(definition, persisted.state)
     const model = new Constructor(attributes)
     model[MODEL_INTERNALS]().attached(this, attributes, persisted.version)
     this.#identityMap.set(identity, model)
     await this.observers?.dispatch('retrieved', model)
     return model
+  }
+
+  private validatedAttributes<Attributes extends ModelAttributes>(
+    definition: {
+      readonly entityType: string
+      readonly storage: ModelStorage
+      readonly attributes?: ReadonlySet<string>
+      readonly optionalAttributes?: ReadonlySet<string>
+    },
+    state: JsonValue,
+  ): Attributes {
+    if (typeof state !== 'object' || state === null || Array.isArray(state)) {
+      throw new PersistenceError(
+        `Model ${definition.entityType} persistence state must be an object.`,
+      )
+    }
+    const attributes = definition.attributes
+    if (attributes) {
+      const keys = Object.keys(state)
+      const unexpected = keys.find((key) => !attributes.has(key))
+      const missing = [...attributes].find(
+        (key) => !Object.hasOwn(state, key) && !definition.optionalAttributes?.has(key),
+      )
+      if (unexpected) throw new UnknownModelAttributeError(unexpected)
+      if (missing) {
+        throw new PersistenceError(`Model attribute ${missing} is missing from persistence state.`)
+      }
+    }
+    return clone(state) as unknown as Attributes
   }
 
   private async eagerLoad<

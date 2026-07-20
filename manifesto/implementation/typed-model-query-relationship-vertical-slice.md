@@ -22,6 +22,10 @@ parameterized Drizzle SQL for both entity-state and mapped-table storage; the fi
 adapter evaluates the same plan. Feature code never receives database tables, SQL fragments, or an
 adapter builder.
 
+Mapped-table model terminals, relationships, eager loads, pages, and cursor batches select only the
+compiled declared physical projection. "Hydrated model" means all declared logical attributes, not
+all columns in the underlying relation.
+
 ## Execution boundary
 
 `ModelReader` is the read-only persistence contract. `UnitOfWork` extends it with durable mutation,
@@ -75,8 +79,8 @@ query handler proves:
 7. action-mode query-then-save through the writable transaction; and
 8. matching behavior in PostgreSQL and the first-party memory adapter.
 
-`pnpm verify` passes the repository-wide format, lint, type, site, 129-test coverage, boundary,
-documentation, package, changeset, and production-security audits.
+Repository-wide verification covers formatting, lint, types, sites, boundaries, documentation,
+packages, changesets, security audits, and the shared PostgreSQL/memory query conformance suite.
 
 ## Deliberate deferrals
 

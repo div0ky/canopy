@@ -60,7 +60,7 @@ describe('Gnosis read-only local engineering server', () => {
   })
 
   it('compiles model relationships into the canonical manifest', () => {
-    expect(manifest.formatVersion).toBe(5)
+    expect(manifest.formatVersion).toBe(6)
     expect(manifest.frameworkVersion).toBe(compilerVersion)
     expect(manifest.models.find((model) => model.id.endsWith('/counter'))?.relationships).toEqual([
       {
@@ -97,7 +97,7 @@ describe('Gnosis read-only local engineering server', () => {
     expect(applicationInfo(manifest)).toEqual(
       expect.objectContaining({
         applicationId: 'persistence-reference-app',
-        manifestFormatVersion: 5,
+        manifestFormatVersion: 6,
         frameworkVersion: compilerVersion,
       }),
     )
@@ -425,7 +425,7 @@ describe('Gnosis read-only local engineering server', () => {
       expect(result.structuredContent).toEqual(
         expect.objectContaining({
           applicationId: 'garden',
-          manifestFormatVersion: 5,
+          manifestFormatVersion: 6,
           gnosisVersion,
         }),
       )

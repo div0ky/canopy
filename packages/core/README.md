@@ -57,6 +57,22 @@ if (customer.isDirty()) await customer.save()
 implicitly. `id` cannot be changed after construction. Use intention-revealing model methods for
 changes that enforce invariants or raise domain events, journal facts, or outbox messages.
 
+Mapped models declare their complete logical persistence projection on the model:
+
+```ts
+export class Customer extends Model<CustomerAttributes> {
+  static override readonly table = 'legacy_customers'
+  static override readonly managed = false
+  static override readonly readOnly = true
+  static override readonly columns = { displayName: 'full_name' } as const
+}
+```
+
+`managed` defaults true and controls Doxa/Praxis migration management only. `readOnly` defaults
+false and independently rejects create, save, and delete before observers or persistence. Doxa never
+hydrates undeclared physical columns, unknown attribute access fails, and mapped updates write only
+declared dirty attributes plus required timestamp/version infrastructure.
+
 See the [Doxa repository](https://github.com/div0ky/doxajs) for documentation and support.
 
 ## Broadcasting

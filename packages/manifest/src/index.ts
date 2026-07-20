@@ -1,4 +1,4 @@
-export const MANIFEST_FORMAT_VERSION = 5 as const
+export const MANIFEST_FORMAT_VERSION = 6 as const
 
 export type Scope = 'singleton' | 'execution' | 'transient'
 
@@ -112,6 +112,16 @@ export interface ModelManifestEntry {
   readonly exportName: string
   readonly entityType: string
   readonly attributes: readonly string[]
+  readonly attributeTypes: Readonly<
+    Record<
+      string,
+      {
+        readonly kind: 'string' | 'number' | 'boolean' | 'date' | 'json'
+        readonly nullable: boolean
+        readonly optional: boolean
+      }
+    >
+  >
   readonly relationships: readonly ModelRelationshipManifest[]
   readonly storage:
     | { readonly kind: 'entity-state' }
@@ -120,9 +130,16 @@ export interface ModelManifestEntry {
         readonly table: string
         readonly primaryKey: string
         readonly columns: Readonly<Record<string, string>>
+        readonly attributeTypes: ModelManifestEntry['attributeTypes']
         readonly optionalAttributes?: readonly string[]
         readonly versionColumn?: string
+        readonly versionSource:
+          | { readonly kind: 'column'; readonly column: string }
+          | { readonly kind: 'xmin' }
+          | { readonly kind: 'none' }
         readonly timestamps: false | { readonly createdAt: string; readonly updatedAt: string }
+        readonly managed: boolean
+        readonly readOnly: boolean
       }
   readonly source: SourceProvenance
 }
@@ -417,7 +434,7 @@ export function assertManifest(value: unknown): asserts value is DoxaManifest {
 
   if (value.formatVersion !== MANIFEST_FORMAT_VERSION) {
     throw new ManifestCompatibilityError(
-      `Unsupported Doxa manifest format ${String(value.formatVersion)}; expected ${MANIFEST_FORMAT_VERSION}.`,
+      `Unsupported Doxa manifest format ${String(value.formatVersion)}; expected ${MANIFEST_FORMAT_VERSION}. Run doxa build to rebuild the application artifacts.`,
     )
   }
 
@@ -504,9 +521,31 @@ export function assertManifest(value: unknown): asserts value is DoxaManifest {
     for (const entry of entries) assertManifestEntry(entry, section)
   }
   for (const model of value.models) {
-    if (!Array.isArray(model.attributes) || !model.attributes.every(nonEmptyString)) {
+    if (
+      !Array.isArray(model.attributes) ||
+      !model.attributes.every(nonEmptyString) ||
+      new Set(model.attributes).size !== model.attributes.length
+    ) {
       throw new ManifestCompatibilityError(
         `Doxa manifest model ${model.id} has invalid attributes.`,
+      )
+    }
+    if (
+      !isRecord(model.attributeTypes) ||
+      Object.keys(model.attributeTypes).length !== model.attributes.length ||
+      (model.attributes as unknown[]).some((attribute: unknown) => {
+        if (typeof attribute !== 'string') return true
+        const contract = model.attributeTypes[attribute]
+        return (
+          !isRecord(contract) ||
+          !['string', 'number', 'boolean', 'date', 'json'].includes(String(contract.kind)) ||
+          typeof contract.nullable !== 'boolean' ||
+          typeof contract.optional !== 'boolean'
+        )
+      })
+    ) {
+      throw new ManifestCompatibilityError(
+        `Doxa manifest model ${model.id} has invalid attribute type contracts.`,
       )
     }
     if (!Array.isArray(model.relationships)) {
@@ -515,10 +554,49 @@ export function assertManifest(value: unknown): asserts value is DoxaManifest {
       )
     }
     if (
-      isRecord(model.storage) &&
-      model.storage.kind === 'table' &&
-      model.storage.optionalAttributes !== undefined
+      !isRecord(model.storage) ||
+      (model.storage.kind !== 'entity-state' && model.storage.kind !== 'table')
     ) {
+      throw new ManifestCompatibilityError(`Doxa manifest model ${model.id} has invalid storage.`)
+    }
+    if (
+      model.storage.kind === 'table' &&
+      (!nonEmptyString(model.storage.table) ||
+        !nonEmptyString(model.storage.primaryKey) ||
+        typeof model.storage.managed !== 'boolean' ||
+        typeof model.storage.readOnly !== 'boolean' ||
+        !isRecord(model.storage.columns) ||
+        !isRecord(model.storage.attributeTypes) ||
+        Object.keys(model.storage.columns).length !== model.attributes.length ||
+        Object.keys(model.storage.attributeTypes).length !== model.attributes.length ||
+        new Set(Object.values(model.storage.columns)).size !== model.attributes.length ||
+        model.storage.columns.id !== model.storage.primaryKey ||
+        (model.storage.versionColumn !== undefined &&
+          !nonEmptyString(model.storage.versionColumn)) ||
+        !validModelVersionSource(model.storage) ||
+        (model.storage.timestamps !== false &&
+          (!isRecord(model.storage.timestamps) ||
+            !nonEmptyString(model.storage.timestamps.createdAt) ||
+            !nonEmptyString(model.storage.timestamps.updatedAt))) ||
+        (model.attributes as unknown[]).some((attribute: unknown) => {
+          if (typeof attribute !== 'string' || !nonEmptyString(model.storage.columns[attribute]))
+            return true
+          const topLevel = model.attributeTypes[attribute]
+          const storageContract = model.storage.attributeTypes[attribute]
+          return (
+            !isRecord(topLevel) ||
+            !isRecord(storageContract) ||
+            storageContract.kind !== topLevel.kind ||
+            storageContract.nullable !== topLevel.nullable ||
+            storageContract.optional !== topLevel.optional
+          )
+        }))
+    ) {
+      throw new ManifestCompatibilityError(
+        `Doxa manifest model ${model.id} has an invalid table projection contract.`,
+      )
+    }
+    if (model.storage.kind === 'table' && model.storage.optionalAttributes !== undefined) {
       const optionalAttributes = model.storage.optionalAttributes
       if (
         !Array.isArray(optionalAttributes) ||
@@ -526,12 +604,24 @@ export function assertManifest(value: unknown): asserts value is DoxaManifest {
         new Set(optionalAttributes).size !== optionalAttributes.length ||
         optionalAttributes.some(
           (attribute) => attribute === 'id' || !model.attributes.includes(attribute),
+        ) ||
+        model.attributes.some(
+          (attribute: string) =>
+            Boolean(model.attributeTypes[attribute]?.optional) !==
+            optionalAttributes.includes(attribute),
         )
       ) {
         throw new ManifestCompatibilityError(
           `Doxa manifest model ${model.id} has invalid optional attributes.`,
         )
       }
+    } else if (
+      model.storage.kind === 'table' &&
+      model.attributes.some((attribute: string) => model.attributeTypes[attribute]?.optional)
+    ) {
+      throw new ManifestCompatibilityError(
+        `Doxa manifest model ${model.id} has invalid optional attributes.`,
+      )
     }
     for (const relationship of model.relationships) {
       if (
@@ -632,6 +722,18 @@ function assertModelRelationship(modelId: string, value: Record<string, unknown>
       `Doxa manifest model ${modelId} has an invalid ${String(value.kind)} relationship.`,
     )
   }
+}
+
+function validModelVersionSource(storage: Record<string, unknown>): boolean {
+  const source = storage.versionSource
+  if (!isRecord(source)) return false
+  if (source.kind === 'column') {
+    return nonEmptyString(source.column) && storage.versionColumn === source.column
+  }
+  if (source.kind === 'xmin') {
+    return storage.versionColumn === undefined && storage.readOnly === false
+  }
+  return source.kind === 'none' && storage.versionColumn === undefined && storage.readOnly === true
 }
 
 function nonEmptyString(value: unknown): value is string {

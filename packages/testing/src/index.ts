@@ -615,8 +615,10 @@ class MemoryUnitOfWork extends UnitOfWork {
   async findEntity<State extends JsonValue>(
     type: string,
     id: string,
+    storage: import('@doxajs/core').ModelStorage = { kind: 'entity-state' },
   ): Promise<PersistedEntity<State> | undefined> {
-    return this.state.entities.get(`${type}/${id}`) as PersistedEntity<State> | undefined
+    const entity = this.state.entities.get(`${type}/${id}`)
+    return entity ? (projectMemoryEntity(entity, storage) as PersistedEntity<State>) : undefined
   }
   async queryEntities<State extends JsonValue>(
     type: string,
@@ -628,7 +630,10 @@ class MemoryUnitOfWork extends UnitOfWork {
       matches.map((entity) => ({ ...(entity.state as Record<string, unknown>), __entity: entity })),
       plan,
     )
-    return states.map((state) => state.__entity as PersistedEntity<State>)
+    return states.map(
+      (state) =>
+        projectMemoryEntity(state.__entity as PersistedEntity, _storage) as PersistedEntity<State>,
+    )
   }
   async aggregateEntities(
     type: string,
@@ -661,20 +666,54 @@ class MemoryUnitOfWork extends UnitOfWork {
     )
   }
   async saveEntity<State extends JsonValue>(entity: SaveEntity<State>): Promise<number> {
+    if (entity.storage?.kind === 'table' && entity.storage.readOnly) {
+      throw new Error(`Mapped model ${entity.type} is read-only.`)
+    }
+    if (entity.storage?.kind === 'table') {
+      const declared = new Set(Object.keys(entity.storage.columns))
+      const written = entity.expectedVersion === undefined ? entity.state : (entity.patch ?? {})
+      if (typeof written !== 'object' || written === null || Array.isArray(written)) {
+        throw new Error(`Mapped model ${entity.type} state must be an object.`)
+      }
+      for (const attribute of Object.keys(written)) {
+        if (!declared.has(attribute))
+          throw new Error(`Mapped model write contains undeclared attribute ${attribute}.`)
+      }
+      for (const attribute of entity.removedAttributes ?? []) {
+        if (!declared.has(attribute))
+          throw new Error(`Mapped model write contains undeclared attribute ${attribute}.`)
+      }
+    }
     const key = `${entity.type}/${entity.id}`
     const current = this.state.entities.get(key)
     if (current?.version !== entity.expectedVersion)
       throw new Error(`Optimistic concurrency conflict for ${key}.`)
     const version = (current?.version ?? 0) + 1
+    const state: Record<string, JsonValue> =
+      current && entity.storage?.kind === 'table'
+        ? {
+            ...(current.state as Record<string, JsonValue>),
+            ...(entity.patch ?? {}),
+          }
+        : (structuredClone(entity.state) as Record<string, JsonValue>)
+    for (const attribute of entity.removedAttributes ?? []) delete state[attribute]
     this.state.entities.set(key, {
       type: entity.type,
       id: entity.id,
       version,
-      state: structuredClone(entity.state),
+      state,
     })
     return version
   }
-  async deleteEntity(type: string, id: string, expectedVersion: number): Promise<void> {
+  async deleteEntity(
+    type: string,
+    id: string,
+    expectedVersion: number,
+    storage: import('@doxajs/core').ModelStorage = { kind: 'entity-state' },
+  ): Promise<void> {
+    if (storage.kind === 'table' && storage.readOnly) {
+      throw new Error(`Mapped model ${type} is read-only.`)
+    }
     const key = `${type}/${id}`
     if (this.state.entities.get(key)?.version !== expectedVersion)
       throw new Error(`Optimistic concurrency conflict for ${key}.`)
@@ -701,6 +740,22 @@ class MemoryUnitOfWork extends UnitOfWork {
   }
   async commit(): Promise<void> {
     for (const callback of this.#afterCommit) await callback()
+  }
+}
+
+function projectMemoryEntity(
+  entity: PersistedEntity,
+  storage: import('@doxajs/core').ModelStorage,
+): PersistedEntity {
+  if (storage.kind !== 'table') return entity
+  const state = entity.state as Record<string, JsonValue>
+  return {
+    ...entity,
+    state: Object.fromEntries(
+      Object.keys(storage.columns)
+        .filter((attribute) => Object.hasOwn(state, attribute))
+        .map((attribute) => [attribute, structuredClone(state[attribute]!)]),
+    ) as Record<string, JsonValue>,
   }
 }
 

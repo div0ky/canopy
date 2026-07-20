@@ -20,5 +20,9 @@ gain Gnosis tools. Reload or reopen the client and start a new task after regist
 the new task still lacks them, inspect the client's MCP startup error; registration files alone do
 not prove that the server initialized.
 
+Model knowledge contains only compiler-declared logical/physical attributes, type/nullability,
+relationships, concurrency source, `managed`, and `readOnly`. Gnosis does not inspect or expose
+unrelated physical columns.
+
 `list_permission_sources` exposes the compiled source catalog and graph metadata without loading
 group memberships, user grants, or other runtime permission facts.

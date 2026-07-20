@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
-- **Amended:** 2026-07-14
+- **Amended:** 2026-07-20
 - **Decision owners:** Doxa maintainers
 
 ## Decision
@@ -57,6 +57,10 @@ identity is fixed at construction: neither API accepts `id`, and runtime calls t
 TypeScript fail with `ModelIdentityMutationError`. Assigning `undefined` to an optional attribute
 removes it. Doxa does not add an equivalent `assign` alias.
 
+Attribute access is closed over the compiler-declared logical attribute set. There is no permissive
+`getAttribute(string)` overload; runtime reads, writes, fills, construction, refresh, and adapter
+hydration that name an undeclared attribute fail with `UnknownModelAttributeError`.
+
 Intention-revealing model behavior remains the primary API when a change enforces invariants or
 raises journal facts, domain events, or outbox messages. Public attribute mutation is the concise
 path for already-validated ordinary state changes; it does not synthesize those domain effects.
@@ -106,6 +110,8 @@ persist(Order).using(
 Simple metadata is compiled and validated by Doxa. Advanced mapping is infrastructure composition.
 In neither path does feature or domain code import a table object or adapter. The complete
 existing-table contract is recorded by [Decision 0023](0023-existing-table-model-auth-mapping.md).
+For a table mapping, "complete" means the model's complete declared projection, not every column in
+the physical relation.
 
 ## Save semantics
 
@@ -119,7 +125,8 @@ Saving a model will:
 3. Calculate dirty state.
 4. Run pre-persistence lifecycle observers.
 5. Validate framework and model invariants.
-6. Write entity state through the registered mapper.
+6. Insert the complete declared insertable state, or update only the declared dirty patch
+   recalculated after pre-save observers.
 7. Enforce optimistic concurrency using the model version.
 8. Collect explicit domain events.
 9. Stage journal and outbox records in the active transaction.
@@ -130,9 +137,17 @@ The write occurs when `save()` is awaited, but the surrounding action transactio
 the handler and required pre-commit phases complete. A later failure rolls back the state, journal,
 and outbox writes together.
 
+If a persisted model has journal or outbox work but no state changes, Doxa stages that durable work
+without issuing a row update or incrementing its model version. Removing an optional mapped
+attribute writes SQL `NULL` only to that declared physical column.
+
 Saving a detached model throws a stable detached-model error. Saving after its execution has ended
 throws a stale-execution error. Saving inside a query or other read-only execution throws a stable
 read-only-execution error.
+
+A table-mapped model may independently declare `static readOnly = true`. Such a model remains
+available to all read paths in writable and read-only executions, but create, save, and delete fail
+with `ReadOnlyModelError` before observers or persistence.
 
 ## Operation and entrypoint boundaries
 
@@ -190,6 +205,9 @@ A successful save marks the current values clean and retains the last saved chan
 Dirty tracking must use persistence mappings rather than proxies over arbitrary model properties.
 Derived fields, private caches, collaborators, and transient state are not persisted merely because
 they exist on the object.
+
+Mapped-table hydration and dehydration are strict projections. Undeclared physical columns are never
+model state and cannot be written back by an unrelated save.
 
 ## Static retrieval
 

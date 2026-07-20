@@ -26,7 +26,7 @@ export function documentationIndex(version: string): readonly DocumentationSecti
       version,
       'models.md',
       'Models and relationships',
-      'Models declare stable IDs, logical attribute types, storage ownership, and relationships. Query builders use logical attributes, remain read-only, and never expose SQL or adapter types to feature code.',
+      'Models declare stable IDs, logical attribute types, storage mappings, migration management, read-only access, and relationships. Query builders use logical attributes, remain read-only, and never expose SQL or adapter types to feature code.',
     ),
     section(
       '@doxajs/core',

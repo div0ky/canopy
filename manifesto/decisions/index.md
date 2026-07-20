@@ -156,7 +156,8 @@ observable programming contract remains to be specified.
 22. [Defer first-party roles and permission storage](0022-defer-first-party-permissions.md) —
     Deferred on 2026-07-10; default-deny policies and stable abilities remain core.
 23. [Map models and authentication to existing tables](0023-existing-table-model-auth-mapping.md) —
-    Accepted on 2026-07-10; implementation follows the MVP.
+    Accepted on 2026-07-10 and amended on 2026-07-20 with strict declared projections, patch writes,
+    and independent migration-management and read-only settings.
 24. [Use role-scoped injection and plain constructor-injected services](0024-role-injection-with-plain-services.md)
     — Accepted for the MVP on 2026-07-11.
 25. [Build Theoria as Doxa's first-party development debugger](0025-first-party-theoria-debugger.md)

@@ -143,8 +143,8 @@ Doxa may be called an MVP only when:
 
 ## Post-MVP compatibility commitments
 
-| Capability                        | State                    | Direction                                                                                                                                        |
-| --------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Existing-table model mapping      | MVP common path complete | Laravel-like table/key/column/timestamp/version metadata; advanced multi-record mappers remain future work.                                      |
-| Existing-table auth mapping       | MVP common path complete | Explicit external identity/credential mapping with Doxa-owned session, token, challenge, abuse, and audit tables.                                |
-| First-party roles and permissions | Deferred                 | Stable abilities, application permission sources, and policies are core; Doxa-owned storage and assignment wait for broader production evidence. |
+| Capability                        | State                    | Direction                                                                                                                                                                                              |
+| --------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Existing-table model mapping      | MVP common path complete | Strict declared projections, patch writes, independent managed/read-only modes, readiness validation, and Laravel-like physical metadata are proven; advanced multi-record mappers remain future work. |
+| Existing-table auth mapping       | MVP common path complete | Explicit external identity/credential mapping with Doxa-owned session, token, challenge, abuse, and audit tables.                                                                                      |
+| First-party roles and permissions | Deferred                 | Stable abilities, application permission sources, and policies are core; Doxa-owned storage and assignment wait for broader production evidence.                                                       |

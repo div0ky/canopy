@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 
 import {
   AfterCommitError,
+  type CompiledModelStorage,
   type Disposes,
   type ExecutionContext,
   type JournalFact,
@@ -63,12 +64,20 @@ export class PostgresTransactionManager extends TransactionManager implements St
   #connectionString: string
   #maximumConnections: number | undefined
   #applicationName: string | undefined
+  #compiledModels: readonly CompiledModelStorage[] = []
 
   constructor(options: PostgresTransactionOptions) {
     super()
     this.#connectionString = options.connectionString
     this.#maximumConnections = options.maximumConnections
     this.#applicationName = options.applicationName
+  }
+
+  override bindCompiledModels(models: readonly CompiledModelStorage[]): void {
+    if (this.#pool) {
+      throw new PersistenceError('Compiled model storage must be bound before PostgreSQL starts.')
+    }
+    this.#compiledModels = models
   }
 
   async start(context: LifecycleContext): Promise<void> {
@@ -80,6 +89,7 @@ export class PostgresTransactionManager extends TransactionManager implements St
     })
     try {
       await pool.query('select 1')
+      await validateCompiledModelStorage(pool, this.#compiledModels)
       this.#pool = pool
       this.#database = drizzle(pool, { schema: persistenceSchema })
     } catch (error) {
@@ -242,8 +252,9 @@ class PostgresUnitOfWork extends UnitOfWork {
       })
     }
     const version = versionExpression(storage)
+    const projection = mappedProjection(storage)
     const result = await this.session.execute(sql`
-      SELECT *, ${version} AS ${sql.identifier('__doxa_version')}
+      SELECT ${projection}, ${version} AS ${sql.identifier('__doxa_version')}
       FROM ${qualifiedIdentifier(storage.table)}
       ${where}
       ${order}
@@ -369,8 +380,9 @@ class PostgresUnitOfWork extends UnitOfWork {
     storage: Extract<ModelStorage, { readonly kind: 'table' }>,
   ): Promise<PersistedEntity<State> | undefined> {
     const version = versionExpression(storage)
+    const projection = mappedProjection(storage)
     const result = await this.session.execute(sql`
-      SELECT *, ${version} AS ${sql.identifier('__doxa_version')}
+      SELECT ${projection}, ${version} AS ${sql.identifier('__doxa_version')}
       FROM ${qualifiedIdentifier(storage.table)}
       WHERE ${sql.identifier(storage.primaryKey)} = ${id}
       LIMIT 1
@@ -390,12 +402,20 @@ class PostgresUnitOfWork extends UnitOfWork {
     entity: SaveEntity<State>,
     storage: Extract<ModelStorage, { readonly kind: 'table' }>,
   ): Promise<number | SavedEntity> {
+    if (storage.readOnly) {
+      throw new PersistenceError(`Mapped model ${entity.type} is read-only.`)
+    }
     if (typeof entity.state !== 'object' || entity.state === null || Array.isArray(entity.state)) {
       throw new PersistenceError(`Mapped model ${entity.type} state must be a JSON object.`)
     }
-    const values = dehydrateMappedState(entity.state as Record<string, JsonValue>, storage)
+    const update = entity.expectedVersion !== undefined
+    const values = dehydrateMappedState(
+      (update ? entity.patch : entity.state) as Record<string, JsonValue>,
+      storage,
+    )
     if (entity.expectedVersion !== undefined) {
       for (const attribute of entity.removedAttributes ?? []) {
+        assertMappedAttribute(attribute, storage)
         values.set(mappedColumn(attribute, storage), null)
       }
     }
@@ -456,6 +476,9 @@ class PostgresUnitOfWork extends UnitOfWork {
     expectedVersion: number,
     storage: Extract<ModelStorage, { readonly kind: 'table' }>,
   ): Promise<void> {
+    if (storage.readOnly) {
+      throw new PersistenceError(`Mapped model ${type} is read-only.`)
+    }
     const result = await this.session.execute(sql`
       DELETE FROM ${qualifiedIdentifier(storage.table)}
       WHERE ${sql.identifier(storage.primaryKey)} = ${id}
@@ -762,9 +785,36 @@ function qualifiedIdentifier(value: string): SQL {
 }
 
 function versionExpression(storage: Extract<ModelStorage, { readonly kind: 'table' }>): SQL {
-  return storage.versionColumn
-    ? sql`${sql.identifier(storage.versionColumn)}`
-    : sql.raw('(xmin::text)::bigint')
+  const source = mappedModelVersionSource(storage)
+  if (source.kind === 'column') return sql`${sql.identifier(source.column)}`
+  return source.kind === 'none' ? sql`0` : sql.raw('(xmin::text)::bigint')
+}
+
+/** @internal Pure version-source contract used by adapter conformance tests. */
+export function mappedModelVersionSource(
+  storage: Extract<ModelStorage, { readonly kind: 'table' }>,
+):
+  | { readonly kind: 'column'; readonly column: string }
+  | { readonly kind: 'none' }
+  | { readonly kind: 'xmin' } {
+  const derived:
+    | { readonly kind: 'column'; readonly column: string }
+    | { readonly kind: 'none' }
+    | { readonly kind: 'xmin' } = storage.versionColumn
+    ? { kind: 'column', column: storage.versionColumn }
+    : storage.readOnly
+      ? { kind: 'none' }
+      : { kind: 'xmin' }
+  if (
+    storage.versionSource &&
+    (storage.versionSource.kind !== derived.kind ||
+      (storage.versionSource.kind === 'column' &&
+        derived.kind === 'column' &&
+        storage.versionSource.column !== derived.column))
+  ) {
+    throw new PersistenceError('Mapped model version source is inconsistent with its storage mode.')
+  }
+  return storage.versionSource ?? derived
 }
 
 function versionPredicate(
@@ -776,35 +826,62 @@ function versionPredicate(
     : sql`(xmin::text)::bigint = ${expectedVersion}`
 }
 
-function hydrateMappedState(
+/** @internal Strict projected-row hydration used by adapter conformance tests. */
+export function hydrateMappedState(
   row: Readonly<Record<string, unknown>>,
   storage: Extract<ModelStorage, { readonly kind: 'table' }>,
 ): Record<string, JsonValue> {
-  const inverse = new Map(
-    Object.entries(storage.columns).map(([attribute, column]) => [column, attribute]),
-  )
-  const explicitlyMapped = new Set(Object.values(storage.columns))
   const optionalAttributes = new Set(storage.optionalAttributes ?? [])
-  const infrastructure = new Set<string>([
-    '__doxa_version',
-    ...(storage.versionColumn && !explicitlyMapped.has(storage.versionColumn)
-      ? [storage.versionColumn]
-      : []),
-    ...(storage.timestamps
-      ? [storage.timestamps.createdAt, storage.timestamps.updatedAt].filter(
-          (column) => !explicitlyMapped.has(column),
-        )
-      : []),
-  ])
+  const projection = mappedModelProjection(storage)
   const state: Record<string, JsonValue> = {}
-  for (const [column, value] of Object.entries(row)) {
-    if (infrastructure.has(column)) continue
-    const attribute = inverse.get(column) ?? column
+  const expected = new Set([...projection.map((entry) => entry.alias), '__doxa_version'])
+  const unexpected = Object.keys(row).find((column) => !expected.has(column))
+  if (unexpected) {
+    throw new PersistenceError(`Mapped model query returned undeclared column ${unexpected}.`)
+  }
+  for (const { attribute, column, alias } of projection) {
+    if (!Object.hasOwn(row, alias)) {
+      throw new PersistenceError(`Mapped model query did not return declared column ${column}.`)
+    }
+    const value = row[alias]
     if (value === null && optionalAttributes.has(attribute)) continue
+    if (value === null && storage.attributeTypes?.[attribute]?.nullable === false) {
+      throw new PersistenceError(
+        `Mapped model query returned NULL for required attribute ${attribute}.`,
+      )
+    }
     state[attribute] = databaseJsonValue(value)
   }
-  state.id = String(row[storage.primaryKey])
+  const id = projection.find((entry) => entry.attribute === 'id')
+  if (!id) {
+    throw new PersistenceError('Mapped model projection does not declare the id attribute.')
+  }
+  state.id = String(row[id.alias])
   return state
+}
+
+function mappedProjection(storage: Extract<ModelStorage, { readonly kind: 'table' }>): SQL {
+  return sql.join(
+    mappedModelProjection(storage).map(
+      ({ column, alias }) => sql`${sql.identifier(column)} AS ${sql.identifier(alias)}`,
+    ),
+    sql`, `,
+  )
+}
+
+/** @internal Pure projection contract used by adapter conformance tests. */
+export function mappedModelProjection(
+  storage: Extract<ModelStorage, { readonly kind: 'table' }>,
+): readonly {
+  readonly attribute: string
+  readonly column: string
+  readonly alias: string
+}[] {
+  return Object.entries(storage.columns).map(([attribute, column], index) => ({
+    attribute,
+    column,
+    alias: `__doxa_attribute_${index}`,
+  }))
 }
 
 function dehydrateMappedState(
@@ -813,9 +890,19 @@ function dehydrateMappedState(
 ): Map<string, unknown> {
   const values = new Map<string, unknown>()
   for (const [attribute, value] of Object.entries(state)) {
+    assertMappedAttribute(attribute, storage)
     values.set(mappedColumn(attribute, storage), value)
   }
   return values
+}
+
+function assertMappedAttribute(
+  attribute: string,
+  storage: Extract<ModelStorage, { readonly kind: 'table' }>,
+): void {
+  if (!Object.hasOwn(storage.columns, attribute)) {
+    throw new PersistenceError(`Mapped model write contains undeclared attribute ${attribute}.`)
+  }
 }
 
 function mappedColumn(
@@ -843,6 +930,251 @@ function databaseJsonValue(value: unknown): JsonValue {
   throw new PersistenceError(
     `Mapped PostgreSQL value of type ${typeof value} is not JSON-compatible.`,
   )
+}
+
+export interface ModelColumnMetadata {
+  readonly name: string
+  readonly type: string
+  readonly typeKind: string
+  readonly baseType?: string
+  readonly notNull: boolean
+  readonly generated: boolean
+  readonly identity: boolean
+  readonly hasDefault: boolean
+}
+
+async function validateCompiledModelStorage(
+  pool: Pool,
+  models: readonly CompiledModelStorage[],
+): Promise<void> {
+  for (const model of models) {
+    if (model.storage.kind !== 'table') continue
+    await validateMappedModelStorage(pool, model.entityType, model.storage)
+  }
+}
+
+async function validateMappedModelStorage(
+  pool: Pool,
+  entityType: string,
+  storage: Extract<ModelStorage, { readonly kind: 'table' }>,
+): Promise<void> {
+  const relation = await pool.query<{ relkind: string }>(
+    `SELECT c.relkind
+     FROM pg_class c
+     WHERE c.oid = to_regclass($1)`,
+    [storage.table],
+  )
+  const relkind = relation.rows[0]?.relkind
+  if (!relkind) {
+    throw new PersistenceError(
+      `Mapped model ${entityType} relation ${storage.table} does not exist.`,
+    )
+  }
+  const view = relkind === 'v' || relkind === 'm'
+
+  const result = await pool.query<{
+    name: string
+    type: string
+    type_kind: string
+    base_type: string | null
+    not_null: boolean
+    generated: string
+    identity: string
+    has_default: boolean
+  }>(
+    `SELECT a.attname AS name,
+            t.typname AS type,
+            t.typtype AS type_kind,
+            bt.typname AS base_type,
+            a.attnotnull AS not_null,
+            a.attgenerated AS generated,
+            a.attidentity AS identity,
+            a.atthasdef AS has_default
+     FROM pg_attribute a
+     JOIN pg_type t ON t.oid = a.atttypid
+     LEFT JOIN pg_type bt ON bt.oid = t.typbasetype
+     WHERE a.attrelid = to_regclass($1)
+       AND a.attnum > 0
+       AND NOT a.attisdropped`,
+    [storage.table],
+  )
+  const columns = new Map<string, ModelColumnMetadata>(
+    result.rows.map((row) => [
+      row.name,
+      {
+        name: row.name,
+        type: row.type,
+        typeKind: row.type_kind,
+        ...(row.base_type ? { baseType: row.base_type } : {}),
+        notNull: row.not_null,
+        generated: Boolean(row.generated),
+        identity: Boolean(row.identity),
+        hasDefault: row.has_default,
+      },
+    ]),
+  )
+  const primary = view
+    ? []
+    : (
+        await pool.query<{ name: string }>(
+          `SELECT a.attname AS name
+           FROM pg_index i
+           JOIN pg_attribute a
+             ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey::smallint[])
+           WHERE i.indrelid = to_regclass($1)
+             AND i.indisprimary
+           ORDER BY array_position(i.indkey::smallint[], a.attnum)`,
+          [storage.table],
+        )
+      ).rows.map((row) => row.name)
+  validateMappedModelReadiness(entityType, storage, relkind, [...columns.values()], primary)
+}
+
+/** @internal Pure readiness contract used by adapter conformance tests. */
+export function validateMappedModelReadiness(
+  entityType: string,
+  storage: Extract<ModelStorage, { readonly kind: 'table' }>,
+  relationKind: string | undefined,
+  columnMetadata: readonly ModelColumnMetadata[],
+  primaryKeyColumns: readonly string[],
+): void {
+  if (!relationKind) {
+    throw new PersistenceError(
+      `Mapped model ${entityType} relation ${storage.table} does not exist.`,
+    )
+  }
+  const view = relationKind === 'v' || relationKind === 'm'
+  if (view && !storage.readOnly) {
+    throw new PersistenceError(
+      `Mapped model ${entityType} relation ${storage.table} is a view and must declare readOnly = true.`,
+    )
+  }
+  if (!['r', 'p', 'v', 'm'].includes(relationKind)) {
+    throw new PersistenceError(
+      `Mapped model ${entityType} relation ${storage.table} has an unsupported PostgreSQL relation kind.`,
+    )
+  }
+  const columns = new Map(columnMetadata.map((column) => [column.name, column]))
+  for (const [attribute, column] of Object.entries(storage.columns)) {
+    const metadata = columns.get(column)
+    if (!metadata) {
+      throw new PersistenceError(
+        `Mapped model ${entityType} attribute ${attribute} references missing column ${column}.`,
+      )
+    }
+    const contract = storage.attributeTypes?.[attribute]
+    if (
+      contract &&
+      !compatiblePostgresType(
+        contract.kind,
+        metadata,
+        attribute === 'id' && contract.kind === 'string',
+      )
+    ) {
+      throw new PersistenceError(
+        `Mapped model ${entityType} attribute ${attribute} is incompatible with PostgreSQL type ${metadata.type}.`,
+      )
+    }
+    if (contract && !view) {
+      const permitsNull = contract.optional || contract.nullable
+      if (permitsNull === metadata.notNull) {
+        throw new PersistenceError(
+          `Mapped model ${entityType} attribute ${attribute} has incompatible nullability for column ${column}.`,
+        )
+      }
+    }
+    if (!storage.readOnly && attribute !== 'id' && (metadata.generated || metadata.identity)) {
+      throw new PersistenceError(
+        `Writable mapped model ${entityType} attribute ${attribute} uses generated column ${column}.`,
+      )
+    }
+  }
+
+  for (const infrastructure of [
+    storage.versionColumn,
+    ...(storage.timestamps ? [storage.timestamps.createdAt, storage.timestamps.updatedAt] : []),
+  ].filter((column): column is string => Boolean(column))) {
+    if (!columns.has(infrastructure)) {
+      throw new PersistenceError(
+        `Mapped model ${entityType} references missing infrastructure column ${infrastructure}.`,
+      )
+    }
+  }
+  if (storage.versionColumn) {
+    const version = columns.get(storage.versionColumn)!
+    if (
+      !compatiblePostgresType('number', version) ||
+      !version.notNull ||
+      (!storage.readOnly && (version.generated || version.identity))
+    ) {
+      throw new PersistenceError(
+        `Mapped model ${entityType} version column ${storage.versionColumn} must be a writable non-null numeric column.`,
+      )
+    }
+  }
+  if (storage.timestamps) {
+    for (const timestamp of [storage.timestamps.createdAt, storage.timestamps.updatedAt]) {
+      const metadata = columns.get(timestamp)!
+      if (
+        !compatiblePostgresType('date', metadata) ||
+        (!storage.readOnly && (metadata.generated || metadata.identity))
+      ) {
+        throw new PersistenceError(
+          `Writable mapped model ${entityType} timestamp column ${timestamp} must be a writable PostgreSQL date or timestamp column.`,
+        )
+      }
+    }
+  }
+
+  if (!view) {
+    if (primaryKeyColumns.length !== 1 || primaryKeyColumns[0] !== storage.primaryKey) {
+      throw new PersistenceError(
+        `Mapped model ${entityType} requires single-column primary key ${storage.primaryKey}.`,
+      )
+    }
+  }
+
+  if (!storage.readOnly) {
+    const supplied = new Set([
+      ...Object.values(storage.columns),
+      storage.versionColumn,
+      ...(storage.timestamps ? [storage.timestamps.createdAt, storage.timestamps.updatedAt] : []),
+    ])
+    const impossible = [...columns.values()].find(
+      (column) =>
+        !supplied.has(column.name) &&
+        column.notNull &&
+        !column.hasDefault &&
+        !column.generated &&
+        !column.identity,
+    )
+    if (impossible) {
+      throw new PersistenceError(
+        `Writable mapped model ${entityType} cannot insert because undeclared column ${impossible.name} is required and has no default.`,
+      )
+    }
+  }
+}
+
+function compatiblePostgresType(
+  kind: NonNullable<
+    Extract<ModelStorage, { readonly kind: 'table' }>['attributeTypes']
+  >[string]['kind'],
+  metadata: Pick<ModelColumnMetadata, 'type' | 'typeKind' | 'baseType'>,
+  allowNumericString = false,
+): boolean {
+  const type = metadata.baseType ?? metadata.type
+  if (kind === 'json') return true
+  if (kind === 'string' && metadata.typeKind === 'e') return true
+  if (kind === 'string')
+    return (
+      new Set(['text', 'varchar', 'bpchar', 'citext', 'uuid', 'name', 'inet']).has(type) ||
+      (allowNumericString && new Set(['numeric', 'int2', 'int4', 'int8']).has(type))
+    )
+  if (kind === 'number')
+    return new Set(['int2', 'int4', 'int8', 'float4', 'float8', 'numeric']).has(type)
+  if (kind === 'boolean') return type === 'bool'
+  return new Set(['date', 'timestamp', 'timestamptz']).has(type)
 }
 
 function numberVersion(value: unknown, type: string, id: string): number {

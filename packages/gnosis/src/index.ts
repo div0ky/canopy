@@ -100,6 +100,7 @@ const modelInspectionSchema = z.object({
   exportName: z.string(),
   entityType: z.string(),
   attributes: z.array(z.string()),
+  attributeTypes: z.record(z.string(), z.record(z.string(), z.unknown())),
   relationships: z.array(z.record(z.string(), z.unknown())),
   storage: z.record(z.string(), z.unknown()),
   source: sourceSchema,

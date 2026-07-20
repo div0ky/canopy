@@ -280,6 +280,7 @@ export class DoxaRuntime {
       readonly entityType: string
       readonly storage: import('@doxajs/core').ModelStorage
       readonly attributes?: ReadonlySet<string>
+      readonly optionalAttributes?: ReadonlySet<string>
       readonly attributeNormalizers?: ReadonlyMap<string, (value: unknown) => unknown>
       readonly authOwnedAttributes?: ReadonlySet<string>
       readonly clearAttributeOnChange?: ReadonlyMap<string, string>
@@ -393,6 +394,9 @@ export class DoxaRuntime {
           entityType: model.entityType,
           storage: model.storage,
           ...(model.attributes ? { attributes: new Set(model.attributes) } : {}),
+          optionalAttributes: new Set(
+            model.attributes.filter((attribute) => model.attributeTypes[attribute]?.optional),
+          ),
           ...(attributeNormalizers.size ? { attributeNormalizers } : {}),
           ...(authOwnedAttributes.size ? { authOwnedAttributes } : {}),
           ...(clearAttributeOnChange.size ? { clearAttributeOnChange } : {}),
@@ -595,6 +599,12 @@ export class DoxaRuntime {
       observations,
       options.eventTestHook,
       logger,
+    )
+    transactions?.bindCompiledModels(
+      artifacts.manifest.models.map((model) => ({
+        entityType: model.entityType,
+        storage: model.storage,
+      })),
     )
     const compiledAuth = authentication as
       | (Auth & {
@@ -1509,7 +1519,11 @@ export class DoxaRuntime {
                     Object.fromEntries(
                       fields.map((field) => [
                         field,
-                        serializeModelRecordValue(model.getAttribute(field)),
+                        serializeModelRecordValue(
+                          (model as unknown as { getAttribute(key: string): unknown }).getAttribute(
+                            field,
+                          ),
+                        ),
                       ]),
                     ),
                   ),
@@ -2870,7 +2884,9 @@ async function loadArtifacts(artifactsDirectory: string): Promise<RuntimeArtifac
   }
   const registry = imported as RegistryModule
   if (registry.formatVersion !== MANIFEST_FORMAT_VERSION) {
-    throw new RuntimeIntegrityError(`Registry format ${registry.formatVersion} is not supported.`)
+    throw new RuntimeIntegrityError(
+      `Registry format ${registry.formatVersion} is not supported. Run doxa build to rebuild the application artifacts.`,
+    )
   }
   if (registry.buildHash !== manifest.buildHash) {
     throw new RuntimeIntegrityError(

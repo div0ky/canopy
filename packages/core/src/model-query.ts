@@ -485,9 +485,9 @@ export class ModelQuery<
       throw new ModelQueryError('Invalid belongsTo relationship.')
     return this.where(
       definition.foreignKey as AttributeName<Attributes>,
-      related.getAttribute(definition.ownerKey) as AttributeValue<
-        Attributes[AttributeName<Attributes>]
-      >,
+      (related as unknown as { getAttribute(key: string): unknown }).getAttribute(
+        definition.ownerKey,
+      ) as AttributeValue<Attributes[AttributeName<Attributes>]>,
     )
   }
 
