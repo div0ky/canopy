@@ -2744,7 +2744,11 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(
       (
         await pool.query(
-          `SELECT 1 FROM doxa_journal_entries WHERE entity_type = 'model:counters/legacy-customer' AND entity_id = 'legacy-existing'`,
+          `SELECT 1
+             FROM doxa_journal_entries
+            WHERE entity_type = 'model:counters/legacy-customer'
+              AND entity_id = 'legacy-existing'
+              AND fact_type = 'legacy-customer.renamed'`,
         )
       ).rowCount,
     ).toBe(1)
