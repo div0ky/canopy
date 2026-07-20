@@ -529,7 +529,8 @@ Doxa is not:
 - A wrapper that renames every method from its dependencies.
 - A generic dependency injection container project.
 - A generic HTTP framework.
-- A database engine, SQL query builder, or migration engine written from scratch.
+- A database engine, generic SQL query builder, or schema-diff migration generator written from
+  scratch.
 - A queue transport written from scratch.
 - A universal compatibility layer for arbitrary infrastructure choices.
 - A Laravel syntax clone.
