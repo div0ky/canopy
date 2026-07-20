@@ -37,7 +37,9 @@ framework = {
 Model fields use logical attributes; credential fields deliberately use physical columns and never
 enter ordinary Model state. `login-only` may use either a selected Model or a raw table mapping and
 omits registration, verification, recovery, reset, and password-change routes. Use
-`doxa auth:storage` or Gnosis `describe_authentication` to inspect the compiled mapping safely.
+`doxa auth:storage` or Gnosis `describe_authentication` to inspect the compiled mapping safely. When
+the selected identity table is maintained outside Doxa migrations, its Model declares
+`static managed = false`; this is separate from the authentication `mode` shown above.
 
 The public credential API uses `identifier` rather than an `email` alias. Identifiers can be exact,
 lowercase, validated email, or email-with-default-domain normalized. Mapped readiness fails closed

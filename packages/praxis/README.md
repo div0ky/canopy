@@ -20,6 +20,10 @@ Run `doxa --help` for the complete command surface.
 Use `doxa permission-source:list` (or `--json`) to inspect the selected application permission
 source and its declared abilities without evaluating runtime permission records.
 
+`doxa model:list` reports mapped-table migration management and runtime read-only status as
+independent settings, alongside the declared physical projection, primary key, and concurrency
+source.
+
 Generate the source with
 `doxa make:permission-source Feature/ApplicationPermissions --abilities=contact.read,contact.update`.
 Use `doxa make:service Feature/ApplicationAccess --provide` when its ordinary service adapter must

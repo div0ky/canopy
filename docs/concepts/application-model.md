@@ -89,6 +89,28 @@ Actions and jobs query models through their writable transaction. Query handlers
 identity-mapped model experience through a read-only session; `create`, `save`, and `delete` throw
 `ReadOnlyExecutionError` there.
 
+## Mapped tables
+
+A model's declaration is its complete persistence projection:
+
+```ts
+class Contact extends Model<ContactAttributes> {
+  static override readonly table = 'contacts'
+  static override readonly managed = false
+  static override readonly readOnly = true
+  static override readonly columns = { displayName: 'display_name' } as const
+}
+```
+
+`managed = true` is the default and means Doxa/Praxis manages the relation through the existing
+reviewed migration workflow. `managed = false` opts it out of create, alter, and drop migrations.
+This is independent from write access: `readOnly = true` keeps every read path available while
+making create, save, and delete throw `ReadOnlyModelError` before observers or SQL.
+
+Doxa selects and hydrates only declared attributes. Additional physical columns remain outside the
+model and Gnosis contracts, and updates write only changed declared fields plus required
+timestamp/version infrastructure.
+
 ## Relationships and eager loading
 
 Declare relationships with Doxa model references and logical keys. Pivot-backed many-to-many

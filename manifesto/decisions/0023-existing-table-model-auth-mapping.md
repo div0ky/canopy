@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
-- **Amended:** 2026-07-14
+- **Amended:** 2026-07-20
 - **Implementation:** Config-driven identity contract and direct table mapping are implemented and
   proven
 - **Decision owners:** Doxa maintainers
@@ -24,6 +24,7 @@ The common path should remain on the model and contain no Drizzle objects or SQL
 ```ts
 export class Customer extends Model<CustomerAttributes> {
   static table = 'legacy_customers'
+  static managed = false
   static primaryKey = 'customer_id'
   static versionColumn = 'lock_version'
   static timestamps = false
@@ -38,7 +39,11 @@ export class Customer extends Model<CustomerAttributes> {
 
 Defaults should make mapped declarations smaller:
 
-- Models use Doxa's entity-state storage until `static table` opts into an external table.
+- Models use Doxa's entity-state storage until `static table` opts into a mapped table.
+- Mapped tables are migration-managed by Doxa by default. `static managed = false` opts the table
+  out of Doxa/Praxis create, alter, and drop migrations without changing runtime write access.
+- `static readOnly = true` independently permits retrieval while rejecting `create()`, `save()`, and
+  `delete()` before observers or persistence.
 - Primary key defaults to `id`.
 - Attribute names map directly unless `columns` overrides them.
 - Timestamps default off; `static timestamps = true` maps `createdAt` and `updatedAt` to
@@ -53,6 +58,19 @@ Defaults should make mapped declarations smaller:
 The compiler records and validates the mapping. The runtime still owns hydration, identity maps,
 dirty tracking, observers, `save()`, transactions, optimistic concurrency, journal, and outbox.
 Changing the table must not downgrade those guarantees.
+
+The compiled model contract is the complete logical attribute set, its physical column projection,
+TypeScript type and nullability, primary key, timestamps, version source, relationships, `managed`,
+and `readOnly`. It is deliberately not a catalog of the physical database. Every mapped-model read
+selects only those declared physical columns. Hydration rejects missing or unexpected fields, and
+runtime attribute APIs reject undeclared keys with `UnknownModelAttributeError`. Updates write only
+the declared dirty patch recalculated after pre-save observers, plus adapter-owned timestamp and
+version columns; they never dehydrate and write back an entire database row.
+
+Read-only models may be queried, eager loaded, paginated, cursor-iterated, aggregated, and
+refreshed. In-memory changes are permitted, but `create()`, `save()`, and `delete()` throw
+`ReadOnlyModelError` before lifecycle observers or SQL. Views and materialized views must use this
+mode until writable-view semantics receive a separate decision.
 
 Composite keys, joined persistence, transformed values, multiple records, and unusual write
 procedures use an explicit infrastructure mapper. That mapper is an advanced escape hatch, not
@@ -127,12 +145,22 @@ changes invalidate verification and outstanding challenges. Eligibility predicat
 every cookie, bearer, password, and sensitive credential resolution; an ineligible identity fails
 closed and revokes all Doxa sessions and tokens.
 
-## Migration and ownership rules
+## Migration management rules
 
 - Praxis migrations create always-owned session, token, challenge, abuse, and audit tables plus only
   the identity, credential, or sidecar tables selected by the compiled storage contract.
-- Praxis reports mapped tables as externally owned and never alters them implicitly.
-- Mapping validation is read-only during build and readiness checks.
+- A mapped model is `managed = true` by default. `managed = false` excludes its relation from
+  Doxa/Praxis migration management. Management does not imply write access; `readOnly` is the
+  independent persistence setting.
+- The existing reviewed SQL migration workflow remains authoritative. Model declarations do not
+  generate DDL automatically.
+- PostgreSQL readiness inspection is read-only. It validates relation existence, declared columns,
+  type/nullability compatibility, the single-column primary key, timestamp/version sources,
+  generated-column safety, view mode, and whether a writable model can insert without supplying
+  undeclared required columns.
+- Additional columns, indexes, checks, and foreign keys outside the declared model projection are
+  not imported into the manifest or Gnosis and do not fail readiness unless an undeclared required
+  column makes inserts impossible.
 - Destructive or lossy conversion requires an explicit generated migration or import command.
 - Existing rows receive the same auth audit and application execution semantics as Doxa-owned rows.
 
@@ -149,10 +177,14 @@ closed and revokes all Doxa sessions and tokens.
    have known-answer and negative-path proof.
 7. Missing mapped columns, invalid identifiers, incompatible types/nullability, non-unique
    normalized identifiers, and non-writable managed mappings fail before readiness.
-8. Praxis migration status and diagnostics distinguish owned from externally mapped tables.
-9. First-party memory fakes reproduce the mapped attribute contract.
+8. Praxis reports `managed` and `readOnly` independently.
+9. PostgreSQL and first-party memory adapters select, hydrate, expose, dirty, and update only
+   declared attributes; unrelated password, token, vendor, and trigger-maintained columns remain
+   untouched.
 10. Login-only route generation omits unsupported identity and credential mutation flows.
 11. Praxis and Gnosis expose safe mapping metadata but never credential values.
+12. Read-only models support every model read path and reject create, save, and delete before
+    observers and persistence.
 
 ## Relationship to permissions
 
