@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import { compileApplication } from '@doxajs/compiler'
+import { ReadOnlyModelError, UnknownModelAttributeError } from '@doxajs/core'
 import {
   DoxaTestHarness,
   FakeMailTransport,
@@ -20,8 +21,10 @@ import { AssignCounterTag } from '../examples/persistence-app/dist/counters/acti
 import { CreateCounterNote } from '../examples/persistence-app/dist/counters/actions/create-counter-note.js'
 import { RenameCounter } from '../examples/persistence-app/dist/counters/actions/rename-counter.js'
 import { QueueNotifications } from '../examples/persistence-app/dist/counters/actions/queue-notifications.js'
+import { RecordLegacyCustomerActivity } from '../examples/persistence-app/dist/counters/actions/record-legacy-customer-activity.js'
 import { SaveCounter } from '../examples/persistence-app/dist/counters/actions/save-counter.js'
 import { SaveLegacyCustomer } from '../examples/persistence-app/dist/counters/actions/save-legacy-customer.js'
+import { ExerciseReadOnlyLegacyCustomer } from '../examples/persistence-app/dist/counters/actions/exercise-read-only-legacy-customer.js'
 import { InspectCounterQueries } from '../examples/persistence-app/dist/counters/queries/inspect-counter-queries.js'
 import { CounterIncremented } from '../examples/persistence-app/dist/counters/events/counter-incremented.js'
 import { CounterSaved } from '../examples/persistence-app/dist/counters/events/counter-saved.js'
@@ -185,14 +188,18 @@ describe('@doxajs/testing', () => {
       expect(
         await harness.action(SaveLegacyCustomer, { id: 'mapped-memory', displayName: 'Mapped' }),
       ).toEqual({ id: 'mapped-memory', displayName: 'Mapped', version: 1, created: true })
+      const mapped = transactions.state.entities.get(
+        'model:counters/legacy-customer/mapped-memory',
+      )!
+      ;(mapped.state as Record<string, unknown>).passwordHash = 'must-survive'
       await harness.action(SaveLegacyCustomer, {
         id: 'mapped-memory',
-        displayName: 'Mapped',
+        displayName: 'Mapped again',
         nickname: 'Temporary',
       })
       await harness.action(SaveLegacyCustomer, {
         id: 'mapped-memory',
-        displayName: 'Mapped',
+        displayName: 'Mapped again',
         nickname: undefined,
       })
       expect(
@@ -201,13 +208,74 @@ describe('@doxajs/testing', () => {
         expect.objectContaining({
           state: {
             id: 'mapped-memory',
-            displayName: 'Mapped',
+            displayName: 'Mapped again',
             active: true,
             nullableCode: null,
+            passwordHash: 'must-survive',
           },
           version: 3,
         }),
       )
+      expect(await harness.action(RecordLegacyCustomerActivity, 'mapped-memory')).toEqual({
+        saved: true,
+        version: 3,
+      })
+      expect(
+        transactions.state.entities.get('model:counters/legacy-customer/mapped-memory')?.version,
+      ).toBe(3)
+      expect(transactions.state.journal.at(-1)?.type).toBe('legacy-customer.activity-recorded')
+      expect(transactions.state.outbox.at(-1)?.type).toBe('legacy-customer.activity-recorded')
+      transactions.state.entities.set(
+        'model:counters/legacy-customer-read-model/mapped-read-only',
+        {
+          type: 'model:counters/legacy-customer-read-model',
+          id: 'mapped-read-only',
+          version: 1,
+          state: {
+            id: 'mapped-read-only',
+            displayName: 'Read only',
+            passwordHash: 'never-hydrated',
+          },
+        },
+      )
+      expect(
+        await harness.action(ExerciseReadOnlyLegacyCustomer, {
+          id: 'mapped-read-only',
+          operation: 'read',
+        }),
+      ).toBe('Read only')
+      expect(
+        await harness.action(ExerciseReadOnlyLegacyCustomer, {
+          id: 'mapped-read-only',
+          operation: 'read-suite',
+        }),
+      ).toBe('Read only:1:1:1:1')
+      expect(
+        await harness.action(ExerciseReadOnlyLegacyCustomer, {
+          id: 'mapped-read-only-made',
+          operation: 'make',
+        }),
+      ).toBe('Changed in memory')
+      await expect(
+        harness.action(ExerciseReadOnlyLegacyCustomer, {
+          id: 'mapped-read-only',
+          operation: 'unknown',
+        }),
+      ).rejects.toBeInstanceOf(UnknownModelAttributeError)
+      await expect(
+        harness.action(ExerciseReadOnlyLegacyCustomer, {
+          id: 'mapped-read-only',
+          operation: 'fill-unknown',
+        }),
+      ).rejects.toBeInstanceOf(UnknownModelAttributeError)
+      for (const operation of ['save', 'delete', 'create'] as const) {
+        await expect(
+          harness.action(ExerciseReadOnlyLegacyCustomer, {
+            id: operation === 'create' ? 'mapped-read-only-created' : 'mapped-read-only',
+            operation,
+          }),
+        ).rejects.toBeInstanceOf(ReadOnlyModelError)
+      }
     } finally {
       await harness.shutdown()
     }

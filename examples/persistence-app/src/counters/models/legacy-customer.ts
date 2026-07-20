@@ -11,6 +11,7 @@ export interface LegacyCustomerAttributes extends ModelAttributes {
 export class LegacyCustomer extends Model<LegacyCustomerAttributes> {
   static override readonly id = 'legacy-customer'
   static override readonly table = 'legacy_customers'
+  static override readonly managed = false
   static override readonly primaryKey = 'customer_id'
   static override readonly versionColumn = 'lock_version'
   static override readonly timestamps = true
@@ -38,5 +39,10 @@ export class LegacyCustomer extends Model<LegacyCustomerAttributes> {
     this.attributes.displayName = displayName
     this.journal('legacy-customer.renamed', { displayName })
     this.outbox('legacy-customer.changed', { customerId: this.id })
+  }
+
+  recordActivity(): void {
+    this.journal('legacy-customer.activity-recorded', { customerId: this.id })
+    this.outbox('legacy-customer.activity-recorded', { customerId: this.id })
   }
 }

@@ -64,7 +64,7 @@ Usage: doxa <command> [arguments]
 Build and inspect:
   build                 Compile the application manifest and registry
   route:list            List compiled HTTP routes
-  model:list            List models and physical storage ownership
+  model:list            List models and physical storage management/access
   graph                 Summarize the compiled application graph
   gnosis                Generate Gnosis-readable application knowledge
   gnosis:install        Register Gnosis with project MCP clients [--agent=codex,claude,cursor,vscode|all]
@@ -238,11 +238,18 @@ export async function runPraxis(
           for (const model of models.items) {
             const storage = model.storage as
               | { kind: 'entity-state' }
-              | { kind: 'table'; table: string; primaryKey: string; versionColumn?: string }
+              | {
+                  kind: 'table'
+                  table: string
+                  primaryKey: string
+                  versionColumn?: string
+                  managed: boolean
+                  readOnly: boolean
+                }
             const storageDescription =
               storage.kind === 'entity-state'
-                ? 'doxa doxa_entity_states'
-                : `external ${storage.table} key=${storage.primaryKey} version=${storage.versionColumn ?? 'xmin'}`
+                ? 'doxa_entity_states managed=true readOnly=false'
+                : `${storage.table} managed=${storage.managed} readOnly=${storage.readOnly} key=${storage.primaryKey} version=${storage.versionColumn ?? 'xmin'}`
             io.out(`${String(model.id)} ${storageDescription}`)
           }
       } else {

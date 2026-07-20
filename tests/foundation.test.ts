@@ -12,6 +12,7 @@ import {
   RoleInjectionError,
   SecretString,
   StaleModelError,
+  UnknownModelAttributeError,
   sanitizeObservationAttributes,
   sanitizeObservationError,
   validateModelQueryPlan,
@@ -63,6 +64,8 @@ const workspace = path.resolve(import.meta.dirname, '..')
 const referenceApplication = path.join(workspace, 'examples/reference-app')
 const temporaryDirectories: string[] = []
 
+class ModelRuntimeAttributeProof extends Model<{ id: string; name: string }> {}
+
 describe('foundational compile-to-boot slice', () => {
   beforeEach(() => {
     resetLifecycleLog()
@@ -86,6 +89,24 @@ describe('foundational compile-to-boot slice', () => {
     expect(String(secret)).toBe('[REDACTED]')
     expect(JSON.stringify({ secret })).toBe('{"secret":"[REDACTED]"}')
     expect(secret.reveal()).toBe('database-password')
+  })
+
+  it('rejects undeclared runtime attribute access on detached models', () => {
+    const model = new ModelRuntimeAttributeProof({ id: 'proof', name: 'Declared' })
+    expect(() =>
+      (
+        model as unknown as {
+          getAttribute(key: string): unknown
+        }
+      ).getAttribute('password'),
+    ).toThrow(UnknownModelAttributeError)
+    expect(() =>
+      (
+        model as unknown as {
+          fill(attributes: Record<string, unknown>): ModelRuntimeAttributeProof
+        }
+      ).fill({ vendorState: 'undeclared' }),
+    ).toThrow(UnknownModelAttributeError)
   })
 
   it('compiles the public production Theoria profile and capture policy', () => {
@@ -678,6 +699,107 @@ describe('foundational compile-to-boot slice', () => {
     )
   })
 
+  it('compiles strict mapped-model projections and independent management modes', async () => {
+    const result = await compileFixture(`
+      import { DoxaApplication, Feature, Model } from '@doxajs/core'
+
+      interface ContactAttributes {
+        id: string
+        displayName: string
+        nickname?: string | null
+        active: boolean
+      }
+      class ManagedContact extends Model<ContactAttributes> {
+        static readonly id = 'managed-contact'
+        static readonly table = 'managed_contacts'
+        static readonly columns = { displayName: 'display_name' }
+      }
+      class ReadOnlyManagedContact extends Model<ContactAttributes> {
+        static readonly id = 'read-only-managed-contact'
+        static readonly table = 'read_only_managed_contacts'
+        static readonly readOnly = true
+      }
+      class ExternalContact extends Model<ContactAttributes> {
+        static readonly id = 'external-contact'
+        static readonly table = 'external_contacts'
+        static readonly managed = false
+      }
+      class ReadOnlyExternalContact extends Model<ContactAttributes> {
+        static readonly id = 'read-only-external-contact'
+        static readonly table = 'read_only_external_contacts'
+        static readonly managed = false
+        static readonly readOnly = true
+      }
+      class ContactFeature extends Feature {
+        id = 'contacts'
+        models = [
+          ManagedContact,
+          ReadOnlyManagedContact,
+          ExternalContact,
+          ReadOnlyExternalContact,
+        ]
+      }
+      export class Application extends DoxaApplication {
+        id = 'mapped-model-contract'
+        features = [ContactFeature]
+      }
+    `)
+
+    const byName = Object.fromEntries(result.manifest.models.map((model) => [model.name, model]))
+    expect(byName.ManagedContact).toMatchObject({
+      attributes: ['active', 'displayName', 'id', 'nickname'],
+      attributeTypes: {
+        active: { kind: 'boolean', nullable: false, optional: false },
+        displayName: { kind: 'string', nullable: false, optional: false },
+        id: { kind: 'string', nullable: false, optional: false },
+        nickname: { kind: 'string', nullable: true, optional: true },
+      },
+      storage: {
+        kind: 'table',
+        columns: {
+          active: 'active',
+          displayName: 'display_name',
+          id: 'id',
+          nickname: 'nickname',
+        },
+        managed: true,
+        readOnly: false,
+      },
+    })
+    expect(byName.ReadOnlyManagedContact?.storage).toMatchObject({
+      managed: true,
+      readOnly: true,
+    })
+    expect(byName.ExternalContact?.storage).toMatchObject({
+      managed: false,
+      readOnly: false,
+    })
+    expect(byName.ReadOnlyExternalContact?.storage).toMatchObject({
+      managed: false,
+      readOnly: true,
+    })
+  })
+
+  it('requires literal mapped-model management settings', async () => {
+    await expect(
+      compileFixture(`
+        import { DoxaApplication, Feature, Model } from '@doxajs/core'
+        const managed = false
+        interface ContactAttributes { id: string }
+        class Contact extends Model<ContactAttributes> {
+          static readonly id = 'contact'
+          static readonly table = 'contacts'
+          static readonly managed = managed
+        }
+        class ContactFeature extends Feature { id = 'contacts'; models = [Contact] }
+        export class Application extends DoxaApplication {
+          id = 'invalid-mapped-model-contract'
+          features = [ContactFeature]
+        }
+      `),
+    ).rejects.toThrow('Contact.managed must be a boolean literal')
+  })
+
   it('keeps unprovided concrete services private to their Feature', async () => {
     await expect(
       compileFixture(`
@@ -1259,8 +1381,23 @@ describe('foundational compile-to-boot slice', () => {
     manifest.models.push({
       id: 'model:test/item',
       attributes: ['id'],
+      attributeTypes: {
+        id: { kind: 'string', nullable: false, optional: false },
+      },
       relationships: [],
-      storage: { kind: 'table', optionalAttributes: ['not-declared'] },
+      storage: {
+        kind: 'table',
+        table: 'items',
+        primaryKey: 'id',
+        columns: { id: 'id' },
+        attributeTypes: {
+          id: { kind: 'string', nullable: false, optional: false },
+        },
+        timestamps: false,
+        managed: true,
+        readOnly: false,
+        optionalAttributes: ['not-declared'],
+      },
       source: { file: 'test.ts', line: 1, column: 1 },
     })
 

@@ -10,10 +10,12 @@ import { DeleteCounter } from './actions/delete-counter.js'
 import { DispatchProcessCounter } from './actions/dispatch-process-counter.js'
 import { DispatchCounterSignal } from './actions/dispatch-counter-signal.js'
 import { ExerciseCache } from './actions/exercise-cache.js'
+import { ExerciseReadOnlyLegacyCustomer } from './actions/exercise-read-only-legacy-customer.js'
 import { QueueNotifications } from './actions/queue-notifications.js'
 import { InspectCounter } from './actions/inspect-counter.js'
 import { IncrementMatchingCounters } from './actions/increment-matching-counters.js'
 import { RefreshCounter } from './actions/refresh-counter.js'
+import { RecordLegacyCustomerActivity } from './actions/record-legacy-customer-activity.js'
 import { RenameCounter } from './actions/rename-counter.js'
 import { RequestCounterNotification } from './actions/request-counter-notification.js'
 import { SaveCounter } from './actions/save-counter.js'
@@ -41,6 +43,7 @@ import { RecordCounterIncrementedAfterCommit } from './listeners/record-counter-
 import { RecordCounterSaved } from './listeners/record-counter-saved.js'
 import { Counter, CounterNote, CounterTag, CounterTagAssignment } from './models/counter.js'
 import { LegacyCustomer } from './models/legacy-customer.js'
+import { LegacyCustomerReadModel } from './models/legacy-customer-read-model.js'
 import { LegacyNote } from './models/legacy-note.js'
 import { CounterObserver } from './observers/counter.observer.js'
 import { AttemptCounterWrite } from './queries/attempt-counter-write.js'
@@ -54,7 +57,15 @@ import { CounterPolicy } from './policies/counter.policy.js'
 export class CountersFeature extends Feature {
   id = 'counters'
   providers = [CounterEventRecorder]
-  models = [Counter, CounterNote, CounterTag, CounterTagAssignment, LegacyCustomer, LegacyNote]
+  models = [
+    Counter,
+    CounterNote,
+    CounterTag,
+    CounterTagAssignment,
+    LegacyCustomer,
+    LegacyCustomerReadModel,
+    LegacyNote,
+  ]
   observers = [CounterObserver]
   actions = [
     BroadcastCounter,
@@ -66,6 +77,7 @@ export class CountersFeature extends Feature {
     InspectCounter,
     IncrementMatchingCounters,
     RefreshCounter,
+    RecordLegacyCustomerActivity,
     DeleteCounter,
     SaveDetachedCounter,
     CaptureCounter,
@@ -73,6 +85,7 @@ export class CountersFeature extends Feature {
     DispatchProcessCounter,
     DispatchCounterSignal,
     ExerciseCache,
+    ExerciseReadOnlyLegacyCustomer,
     QueueNotifications,
     RequestCounterNotification,
     SecureIncrementCounter,

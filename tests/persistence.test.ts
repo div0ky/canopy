@@ -24,6 +24,8 @@ import {
   EventDispatchError,
   SignalDispatchError,
   ModelNotFoundError,
+  ReadOnlyModelError,
+  UnknownModelAttributeError,
   OptimisticConcurrencyError,
   ObservationRecorder,
   isRecentPasswordAuthentication,
@@ -71,6 +73,7 @@ import { DeleteCounter } from '../examples/persistence-app/dist/counters/actions
 import { DispatchProcessCounter } from '../examples/persistence-app/dist/counters/actions/dispatch-process-counter.js'
 import { DispatchCounterSignal } from '../examples/persistence-app/dist/counters/actions/dispatch-counter-signal.js'
 import { ExerciseCache } from '../examples/persistence-app/dist/counters/actions/exercise-cache.js'
+import { ExerciseReadOnlyLegacyCustomer } from '../examples/persistence-app/dist/counters/actions/exercise-read-only-legacy-customer.js'
 import { QueueNotifications } from '../examples/persistence-app/dist/counters/actions/queue-notifications.js'
 import { CounterTouched } from '../examples/persistence-app/dist/counters/signals/counter-touched.js'
 import { CounterCreated } from '../examples/persistence-app/dist/counters/events/counter-created.js'
@@ -82,6 +85,7 @@ import { SaveDetachedCounter } from '../examples/persistence-app/dist/counters/a
 import { InspectCounter } from '../examples/persistence-app/dist/counters/actions/inspect-counter.js'
 import { IncrementMatchingCounters } from '../examples/persistence-app/dist/counters/actions/increment-matching-counters.js'
 import { RefreshCounter } from '../examples/persistence-app/dist/counters/actions/refresh-counter.js'
+import { RecordLegacyCustomerActivity } from '../examples/persistence-app/dist/counters/actions/record-legacy-customer-activity.js'
 import { RenameCounter } from '../examples/persistence-app/dist/counters/actions/rename-counter.js'
 import { SaveCounter } from '../examples/persistence-app/dist/counters/actions/save-counter.js'
 import { InspectCounterQueries } from '../examples/persistence-app/dist/counters/queries/inspect-counter-queries.js'
@@ -165,6 +169,8 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         enabled boolean NOT NULL,
         nickname text,
         nullable_code text,
+        password_hash text NOT NULL DEFAULT 'never-selected',
+        vendor_state text NOT NULL DEFAULT 'externally-managed',
         lock_version integer NOT NULL DEFAULT 1,
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now()
@@ -2624,16 +2630,22 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       full_name: string
       enabled: boolean
       nickname: string | null
+      password_hash: string
+      vendor_state: string
       lock_version: number
       updated_at: Date
     }>(`
-      SELECT full_name, enabled, nickname, lock_version, updated_at FROM legacy_customers WHERE customer_id = 'legacy-existing'
+      SELECT full_name, enabled, nickname, password_hash, vendor_state, lock_version, updated_at
+      FROM legacy_customers
+      WHERE customer_id = 'legacy-existing'
     `)
     expect(existing.rows[0]).toEqual(
       expect.objectContaining({
         full_name: 'After',
         enabled: true,
         nickname: null,
+        password_hash: 'never-selected',
+        vendor_state: 'externally-managed',
         lock_version: 9,
       }),
     )
@@ -2643,12 +2655,68 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       saved: false,
       version: 9,
     })
+    expect(await runAction(runtime, RecordLegacyCustomerActivity, 'legacy-existing')).toEqual({
+      saved: true,
+      version: 9,
+    })
+    const afterActivity = await pool.query<{ lock_version: number; updated_at: Date }>(`
+      SELECT lock_version, updated_at
+      FROM legacy_customers
+      WHERE customer_id = 'legacy-existing'
+    `)
+    expect(afterActivity.rows[0]).toEqual({
+      lock_version: 9,
+      updated_at: existing.rows[0]!.updated_at,
+    })
     expect(
       (
         await pool.query(
           `SELECT 1 FROM doxa_entity_states WHERE entity_type = 'model:counters/legacy-customer'`,
         )
       ).rowCount,
+    ).toBe(0)
+
+    expect(
+      await runAction(runtime, ExerciseReadOnlyLegacyCustomer, {
+        id: 'legacy-existing',
+        operation: 'read',
+      }),
+    ).toBe('After')
+    expect(
+      await runAction(runtime, ExerciseReadOnlyLegacyCustomer, {
+        id: 'legacy-existing',
+        operation: 'read-suite',
+      }),
+    ).toBe('After:1:1:1:1')
+    expect(
+      await runAction(runtime, ExerciseReadOnlyLegacyCustomer, {
+        id: 'read-only-made',
+        operation: 'make',
+      }),
+    ).toBe('Changed in memory')
+    await expect(
+      runAction(runtime, ExerciseReadOnlyLegacyCustomer, {
+        id: 'legacy-existing',
+        operation: 'unknown',
+      }),
+    ).rejects.toBeInstanceOf(UnknownModelAttributeError)
+    await expect(
+      runAction(runtime, ExerciseReadOnlyLegacyCustomer, {
+        id: 'legacy-existing',
+        operation: 'fill-unknown',
+      }),
+    ).rejects.toBeInstanceOf(UnknownModelAttributeError)
+    for (const operation of ['save', 'delete', 'create'] as const) {
+      await expect(
+        runAction(runtime, ExerciseReadOnlyLegacyCustomer, {
+          id: operation === 'create' ? 'read-only-created' : 'legacy-existing',
+          operation,
+        }),
+      ).rejects.toBeInstanceOf(ReadOnlyModelError)
+    }
+    expect(
+      (await pool.query(`SELECT 1 FROM legacy_customers WHERE customer_id = 'read-only-created'`))
+        .rowCount,
     ).toBe(0)
     expect(
       (
@@ -2661,6 +2729,20 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       (
         await pool.query(
           `SELECT 1 FROM doxa_outbox_messages WHERE message_type = 'legacy-customer.changed'`,
+        )
+      ).rowCount,
+    ).toBe(1)
+    expect(
+      (
+        await pool.query(
+          `SELECT 1 FROM doxa_journal_entries WHERE fact_type = 'legacy-customer.activity-recorded'`,
+        )
+      ).rowCount,
+    ).toBe(1)
+    expect(
+      (
+        await pool.query(
+          `SELECT 1 FROM doxa_outbox_messages WHERE message_type = 'legacy-customer.activity-recorded'`,
         )
       ).rowCount,
     ).toBe(1)
