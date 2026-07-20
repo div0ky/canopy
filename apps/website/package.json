@@ -12,7 +12,7 @@
   "dependencies": {
     "@astrojs/markdown-remark": "7.2.1",
     "@astrojs/sitemap": "3.7.3",
-    "@fontsource-variable/jetbrains-mono": "5.2.8",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
     "@fontsource-variable/manrope": "5.2.8",
     "@fontsource-variable/newsreader": "5.2.8",
     "@tailwindcss/vite": "4.3.2",
