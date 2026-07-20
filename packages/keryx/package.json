@@ -43,7 +43,7 @@
   },
   "dependencies": {
     "@doxajs/core": "workspace:*",
-    "ws": "8.21.0"
+    "ws": "8.21.1"
   },
   "devDependencies": {
     "@types/ws": "8.18.1"
