@@ -394,24 +394,20 @@ describe('Gnosis read-only local engineering server', () => {
   })
 
   it('is spawned by generated project registration without a manual start', async () => {
-    const registration = JSON.parse(
-      await readFile(path.join(generatedApplication, '.mcp.json'), 'utf8'),
-    ) as {
-      mcpServers: {
-        gnosis: { command: string; args: string[]; cwd: string }
-      }
-    }
-    expect(registration.mcpServers.gnosis).toEqual({
-      command: 'node',
-      args: ['./node_modules/@doxajs/praxis/dist/bin.js', 'mcp'],
-      cwd: '.',
-      env: {},
-    })
+    const registrationFile = path.join(generatedApplication, '.codex/config.toml')
+    const registration = await readFile(registrationFile, 'utf8')
+    expect(registration).toContain('command = "node"')
+    expect(registration).toContain('args = ["./node_modules/@doxajs/praxis/dist/bin.js","mcp"]')
+    expect(registration).toContain(`cwd = ${JSON.stringify(generatedApplication)}`)
+    const cwd = registration.match(/^cwd = "([^"]+)"$/m)?.[1]
+    if (cwd === undefined) throw new Error('generated Codex registration is missing cwd')
+    expect(cwd).toBe(generatedApplication)
+    expect(path.isAbsolute(cwd)).toBe(true)
     const client = new Client({ name: 'gnosis-stdio-test', version: '1.0.0' })
     const transport = new StdioClientTransport({
-      command: registration.mcpServers.gnosis.command,
-      args: registration.mcpServers.gnosis.args,
-      cwd: path.resolve(generatedApplication, registration.mcpServers.gnosis.cwd),
+      command: 'node',
+      args: ['./node_modules/@doxajs/praxis/dist/bin.js', 'mcp'],
+      cwd,
       env: { ...getDefaultEnvironment(), CI: '1' },
       stderr: 'pipe',
     })

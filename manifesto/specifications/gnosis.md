@@ -40,7 +40,10 @@ registered `doxa mcp` entrypoint on demand inside the application workspace, own
 lifetime, and stops it with the client session. A client may still require its normal first-use
 workspace trust confirmation. Project MCP registration is discovered at client workspace or task
 startup. A task already running when Praxis creates or updates registration does not acquire the new
-tool surface; the developer must reload or reopen the client and start a new task.
+tool surface; the developer must reload or reopen the client and start a new task. Registration
+files do not prove successful initialization, so continued absence requires inspecting the client's
+MCP startup error. Codex does not anchor a configured relative MCP working directory to the task
+workspace, so its registered application `cwd` must be absolute.
 
 `doxa mcp` is an integration and diagnostic entrypoint, not the ordinary developer workflow. It
 compiles the development application through the ordinary Praxis build path before starting Gnosis.
@@ -166,3 +169,5 @@ Protocol changes remain isolated inside `@doxajs/gnosis`.
     the same registration through the Doxa upgrade path.
 12. Registration and upgrade output state that project MCP configuration requires a client reload or
     reopen and a new agent task before newly registered tools become available.
+13. Codex registration writes the absolute application working directory, including both root
+    applications and applications nested in monorepos.

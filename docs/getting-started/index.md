@@ -71,7 +71,10 @@ attributes, never raw SQL, and run through a fresh read-only execution. A client
 trust the project MCP server on first use. Project MCP configuration is discovered when the client
 opens the workspace or starts a task. If creation, upgrade, or `gnosis:install` ran inside an
 existing agent task, reload or reopen the client and start a new task; the current task cannot gain
-newly registered tools.
+newly registered tools. If a new task still lacks them, inspect the client's MCP startup error;
+registration files alone do not prove that the server initialized. Codex currently passes a
+configured relative MCP working directory directly to its process launcher instead of anchoring it
+to the task workspace, so Praxis writes an absolute application path for Codex.
 
 Run `pnpm doxa gnosis:install --agent=all` only to regenerate deleted or customized registration.
 `doxa mcp` is the client entrypoint and protocol-debugging command, not an ordinary startup step.

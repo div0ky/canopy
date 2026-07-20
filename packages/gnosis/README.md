@@ -16,7 +16,9 @@ selected logical model fields; it does not accept SQL or expose mutation. Praxis
 managed Doxa guidance block in the application's root `AGENTS.md`. Clients may require their normal
 first-use project trust confirmation. Clients discover project MCP configuration when opening the
 workspace or starting a task, so an agent task already running during creation or upgrade cannot
-gain Gnosis tools. Reload or reopen the client and start a new task after registration changes.
+gain Gnosis tools. Reload or reopen the client and start a new task after registration changes. If
+the new task still lacks them, inspect the client's MCP startup error; registration files alone do
+not prove that the server initialized.
 
 `list_permission_sources` exposes the compiled source catalog and graph metadata without loading
 group memberships, user grants, or other runtime permission facts.

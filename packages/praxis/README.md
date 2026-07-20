@@ -33,7 +33,11 @@ compiled application inspection and documentation, Gnosis can perform bounded no
 reads through Doxa's read-only persistence path. Some clients ask you to trust a project MCP server
 the first time they use it. Clients discover project MCP configuration when opening the workspace or
 starting a task. After creation, upgrade, or `gnosis:install`, reload or reopen the client and start
-a new task; an already-running task cannot acquire the newly registered tools.
+a new task; an already-running task cannot acquire the newly registered tools. If a new task still
+lacks them, inspect the client's MCP startup error; registration files alone do not prove that the
+server initialized. Praxis writes Codex's application working directory as an absolute path because
+Codex does not anchor a configured relative MCP working directory to the task workspace, while
+preserving each other client's own path convention.
 
 Regenerate one or more project registrations after removing or customizing them:
 

@@ -13,7 +13,9 @@ updates one marked Doxa guidance block in the root `AGENTS.md`, preserving guida
 block and failing closed on malformed or duplicate markers. Registration is discovered when a client
 opens the workspace or starts a task; Praxis output and the managed guidance now state that creation
 or upgrade inside an existing task requires a client reload or reopen and a new task before Gnosis
-tools can appear.
+tools can appear. Codex passes a configured relative MCP working directory directly to its process
+launcher instead of anchoring it to the task workspace, so Praxis emits an absolute application
+`cwd` for both root and nested applications.
 
 Praxis compiles the application through the ordinary development build path and passes the resulting
 manifest directly to Gnosis; the server never scans source, boots the application, or trusts a

@@ -10,7 +10,7 @@ const serverCommand = 'node'
 const serverArguments = ['./node_modules/@doxajs/praxis/dist/bin.js', 'mcp'] as const
 
 export const GNOSIS_CLIENT_RELOAD_GUIDANCE =
-  'Reload or reopen your MCP client, approve project trust if prompted, and start a new agent task. Existing tasks do not acquire newly registered tools.'
+  'Reload or reopen your MCP client, approve project trust if prompted, and start a new agent task. Existing tasks do not acquire newly registered tools. If a new task still lacks them, inspect the client startup error; registration files alone do not prove that the server initialized.'
 
 export async function installGnosisRegistration(
   applicationRoot: string,
@@ -152,11 +152,12 @@ async function registerAgent(
 async function registerCodex(repositoryRoot: string, applicationCwd: string): Promise<string> {
   const file = path.join(repositoryRoot, '.codex/config.toml')
   const header = '[mcp_servers.gnosis]'
+  const configCwd = path.resolve(repositoryRoot, applicationCwd)
   const block = [
     header,
     `command = ${JSON.stringify(serverCommand)}`,
     `args = ${JSON.stringify(serverArguments)}`,
-    `cwd = ${JSON.stringify(applicationCwd)}`,
+    `cwd = ${JSON.stringify(configCwd)}`,
     'startup_timeout_sec = 120',
   ].join('\n')
   const existing = await readOptional(file)
