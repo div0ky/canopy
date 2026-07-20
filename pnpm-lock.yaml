@@ -300,11 +300,11 @@ importers:
         specifier: workspace:*
         version: link:../runtime
       '@hono/node-server':
-        specifier: 2.0.8
-        version: 2.0.8(hono@4.12.29)
+        specifier: 2.0.10
+        version: 2.0.10(hono@4.12.31)
       hono:
-        specifier: 4.12.29
-        version: 4.12.29
+        specifier: 4.12.31
+        version: 4.12.31
 
   packages/introspection:
     dependencies:
@@ -402,8 +402,8 @@ importers:
         specifier: 8.22.0
         version: 8.22.0
       pg-boss:
-        specifier: 12.26.0
-        version: 12.26.0
+        specifier: 12.26.1
+        version: 12.26.1
     devDependencies:
       '@types/pg':
         specifier: 8.20.0
@@ -1187,8 +1187,8 @@ packages:
     peerDependencies:
       hono: ^4
 
-  '@hono/node-server@2.0.8':
-    resolution: {integrity: sha512-GuCWzLxwg218fy1JaHculFsdcuY12hxit83V+algozTPnwhNjLrRL/Alg9OYjLZLoUZ1rw/S4CdTMsnkSKCmFA==}
+  '@hono/node-server@2.0.10':
+    resolution: {integrity: sha512-ZcnNVhKTmyDJeg0UlnZjvM73JBsTAuhrH/J4fjwGOw59PwOW51r4J+p6CsKZWXdKSme4MFqU62CZMOsdDrU4CA==}
     engines: {node: '>=20'}
     peerDependencies:
       hono: ^4
@@ -2704,6 +2704,10 @@ packages:
     resolution: {integrity: sha512-QBm4o1PwZiuY7KFbVvW7FLC8bozy7YWzv+Fz6KRS7sQghzcbDZCGxr/Bc5b6TQreAoSwuWVP491dIcK0THCX6A==}
     engines: {node: '>=18'}
 
+  cron-parser@5.6.2:
+    resolution: {integrity: sha512-yJ/G1LVir6CnlkLI40CsampPLKl1SprGGlUagWtGJxewytRVYezv5xVyzzbT+Pvzx+VIRvZVF7/a0eEMTxdnTA==}
+    engines: {node: '>=18'}
+
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
     engines: {node: '>= 8'}
@@ -3616,6 +3620,10 @@ packages:
 
   hono@4.12.29:
     resolution: {integrity: sha512-1hNiRjawYrLq/4m3DQQjPGFg0VZkk4RjQJDff/excI6Dm9BiL75qxGrd7/c6YOxPdq6AscP3LiXhQ6fKFC1Waw==}
+    engines: {node: '>=16.9.0'}
+
+  hono@4.12.31:
+    resolution: {integrity: sha512-zJIHFrl6bq3RDd2YusFNCDlM8qUprxKswyi/OPzPyzKDdyBXDqWx8bZlZ7R+saTdSTatUmb3O7K4SspGPaEOQg==}
     engines: {node: '>=16.9.0'}
 
   html-escaper@2.0.2:
@@ -4688,8 +4696,8 @@ packages:
   pathe@2.0.3:
     resolution: {integrity: sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==}
 
-  pg-boss@12.26.0:
-    resolution: {integrity: sha512-qMLyokiG2/Ey8U3sptl0We4nRGr1iveHL/lQ7g6n7cI/ubp9HVJZJnfPf6B9jzAbpd55uSdltKL/DMkyBC0ynw==}
+  pg-boss@12.26.1:
+    resolution: {integrity: sha512-Naj3pwc0CFKZJ77v24m6oAYRf3w22pGdfIT3bjC0YZU4yszRGPJ+XyAssYA+EbyxmniJzCFLZWcL9OEqnJWmuQ==}
     engines: {node: '>=22.12.0'}
     hasBin: true
 
@@ -6932,9 +6940,9 @@ snapshots:
     dependencies:
       hono: 4.12.29
 
-  '@hono/node-server@2.0.8(hono@4.12.29)':
+  '@hono/node-server@2.0.10(hono@4.12.31)':
     dependencies:
-      hono: 4.12.29
+      hono: 4.12.31
 
   '@humanfs/core@0.19.2':
     dependencies:
@@ -8542,6 +8550,10 @@ snapshots:
     dependencies:
       luxon: 3.7.2
 
+  cron-parser@5.6.2:
+    dependencies:
+      luxon: 3.7.2
+
   cross-spawn@7.0.6:
     dependencies:
       path-key: 3.1.1
@@ -9664,6 +9676,8 @@ snapshots:
   highlight.js@10.7.3: {}
 
   hono@4.12.29: {}
+
+  hono@4.12.31: {}
 
   html-escaper@2.0.2: {}
 
@@ -10823,9 +10837,9 @@ snapshots:
 
   pathe@2.0.3: {}
 
-  pg-boss@12.26.0:
+  pg-boss@12.26.1:
     dependencies:
-      cron-parser: 5.6.1
+      cron-parser: 5.6.2
       pg: 8.22.0
       serialize-error: 13.0.1
     transitivePeerDependencies:
