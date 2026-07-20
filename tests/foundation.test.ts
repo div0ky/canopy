@@ -764,19 +764,23 @@ describe('foundational compile-to-boot slice', () => {
         },
         managed: true,
         readOnly: false,
+        versionSource: { kind: 'xmin' },
       },
     })
     expect(byName.ReadOnlyManagedContact?.storage).toMatchObject({
       managed: true,
       readOnly: true,
+      versionSource: { kind: 'none' },
     })
     expect(byName.ExternalContact?.storage).toMatchObject({
       managed: false,
       readOnly: false,
+      versionSource: { kind: 'xmin' },
     })
     expect(byName.ReadOnlyExternalContact?.storage).toMatchObject({
       managed: false,
       readOnly: true,
+      versionSource: { kind: 'none' },
     })
   })
 
@@ -1396,12 +1400,33 @@ describe('foundational compile-to-boot slice', () => {
         timestamps: false,
         managed: true,
         readOnly: false,
+        versionSource: { kind: 'xmin' },
         optionalAttributes: ['not-declared'],
       },
       source: { file: 'test.ts', line: 1, column: 1 },
     })
 
     expect(() => assertManifest(manifest)).toThrow('invalid optional attributes')
+  })
+
+  it('rejects incomplete model storage contracts before runtime boot', async () => {
+    const artifactsDirectory = await temporaryDirectory()
+    const result = await compile(artifactsDirectory)
+    const manifest = JSON.parse(await readFile(result.manifestPath, 'utf8')) as {
+      models: unknown[]
+    }
+    manifest.models.push({
+      id: 'model:test/item',
+      attributes: ['id'],
+      attributeTypes: {
+        id: { kind: 'string', nullable: false, optional: false },
+      },
+      relationships: [],
+      storage: { kind: 'table' },
+      source: { file: 'test.ts', line: 1, column: 1 },
+    })
+
+    expect(() => assertManifest(manifest)).toThrow('invalid table projection contract')
   })
 
   it('rejects invalid permission-source manifest catalogs before runtime boot', async () => {

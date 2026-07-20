@@ -603,6 +603,10 @@ export type ModelStorage =
       >
       readonly optionalAttributes?: readonly string[]
       readonly versionColumn?: string
+      readonly versionSource?:
+        | { readonly kind: 'column'; readonly column: string }
+        | { readonly kind: 'xmin' }
+        | { readonly kind: 'none' }
       readonly timestamps: false | TableModelTimestamps
       readonly managed?: boolean
       readonly readOnly?: boolean

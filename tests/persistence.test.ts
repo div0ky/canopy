@@ -170,11 +170,24 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         nickname text,
         nullable_code text,
         password_hash text NOT NULL DEFAULT 'never-selected',
+        api_token text NOT NULL DEFAULT 'never-selected-token',
         vendor_state text NOT NULL DEFAULT 'externally-managed',
+        trigger_revision integer NOT NULL DEFAULT 0,
         lock_version integer NOT NULL DEFAULT 1,
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now()
       )
+    `)
+    await pool.query(`
+      CREATE FUNCTION maintain_legacy_customer_revision() RETURNS trigger AS $$
+      BEGIN
+        NEW.trigger_revision = OLD.trigger_revision + 1;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+      CREATE TRIGGER maintain_legacy_customer_revision
+      BEFORE UPDATE ON legacy_customers
+      FOR EACH ROW EXECUTE FUNCTION maintain_legacy_customer_revision()
     `)
     await pool.query(`
       CREATE TABLE legacy_auth_users (
@@ -2631,11 +2644,14 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       enabled: boolean
       nickname: string | null
       password_hash: string
+      api_token: string
       vendor_state: string
+      trigger_revision: number
       lock_version: number
       updated_at: Date
     }>(`
-      SELECT full_name, enabled, nickname, password_hash, vendor_state, lock_version, updated_at
+      SELECT full_name, enabled, nickname, password_hash, api_token, vendor_state,
+             trigger_revision, lock_version, updated_at
       FROM legacy_customers
       WHERE customer_id = 'legacy-existing'
     `)
@@ -2645,7 +2661,9 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         enabled: true,
         nickname: null,
         password_hash: 'never-selected',
+        api_token: 'never-selected-token',
         vendor_state: 'externally-managed',
+        trigger_revision: 2,
         lock_version: 9,
       }),
     )
@@ -2659,13 +2677,18 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       saved: true,
       version: 9,
     })
-    const afterActivity = await pool.query<{ lock_version: number; updated_at: Date }>(`
-      SELECT lock_version, updated_at
+    const afterActivity = await pool.query<{
+      lock_version: number
+      trigger_revision: number
+      updated_at: Date
+    }>(`
+      SELECT lock_version, trigger_revision, updated_at
       FROM legacy_customers
       WHERE customer_id = 'legacy-existing'
     `)
     expect(afterActivity.rows[0]).toEqual({
       lock_version: 9,
+      trigger_revision: 2,
       updated_at: existing.rows[0]!.updated_at,
     })
     expect(

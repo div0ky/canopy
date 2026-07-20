@@ -48,8 +48,9 @@ Defaults should make mapped declarations smaller:
 - Attribute names map directly unless `columns` overrides them.
 - Timestamps default off; `static timestamps = true` maps `createdAt` and `updatedAt` to
   `created_at` and `updated_at`, while an object may override either column.
-- Optimistic concurrency uses the declared version column, or PostgreSQL's `xmin` when no version
-  column is available.
+- Writable mapped models use the declared version column, or PostgreSQL's `xmin` when no version
+  column is available. Read-only mappings without a version column compile an explicit `none`
+  concurrency source because they never participate in optimistic writes.
 - `static table` alone is sufficient when only the table name differs.
 - TypeScript-optional logical attributes map an absent value to SQL `NULL` and hydrate SQL `NULL`
   back to an absent attribute. Required attributes whose type explicitly includes `null` retain
@@ -157,7 +158,8 @@ closed and revokes all Doxa sessions and tokens.
 - PostgreSQL readiness inspection is read-only. It validates relation existence, declared columns,
   type/nullability compatibility, the single-column primary key, timestamp/version sources,
   generated-column safety, view mode, and whether a writable model can insert without supplying
-  undeclared required columns.
+  undeclared required columns. Because PostgreSQL does not preserve reliable `NOT NULL` metadata on
+  views, strict hydration rejects actual null values for required declared view attributes.
 - Additional columns, indexes, checks, and foreign keys outside the declared model projection are
   not imported into the manifest or Gnosis and do not fail readiness unless an undeclared required
   column makes inserts impossible.

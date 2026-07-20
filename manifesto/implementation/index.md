@@ -64,8 +64,9 @@ requirement to its implementation and acceptance evidence.
 20. [Generated MVP reference flow](generated-mvp-reference-flow.md) — clean Praxis generation plus
     real-manifest fake and PostgreSQL acceptance flows spanning every required framework role.
 21. [Existing-table model and authentication mapping](existing-table-mapping-vertical-slice.md) —
-    Laravel-like model metadata, explicit first-party auth mappings, mixed external/framework
-    ownership, PostgreSQL conformance, fakes, and operator/Gnosis inspection.
+    Laravel-like model metadata, explicit first-party auth mappings, independent model migration
+    management and read-only access, mixed auth-table ownership, PostgreSQL conformance, fakes, and
+    operator/Gnosis inspection.
 22. [Next.js Field Guide frontend slice](next-field-guide-vertical-slice.md) — external-consumer
     Next.js, Tailwind, and shadcn/ui proof across public HTTP, sessions, bearer tokens, protected
     models, and queued work.

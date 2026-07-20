@@ -118,8 +118,9 @@ declared plugin package names. It never reports environment values.
 ## Model inspection
 
 Model inspection exposes the stable model ID, owning Feature, logical attributes, declared storage
-ownership, source provenance, and declared relationships. Relationship records identify kind,
-related model, optional pivot model, and logical key names. They never expose database contents.
+mapping, migration-management status, read-only status, source provenance, and declared
+relationships. Relationship records identify kind, related model, optional pivot model, and logical
+key names. They never expose database contents or undeclared physical columns.
 
 ## Documentation
 

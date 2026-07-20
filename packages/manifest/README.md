@@ -11,8 +11,8 @@ Manifest formats fail closed when compiler and runtime compatibility do not matc
 no dependency on application code, runtime construction, or TypeScript compilation.
 
 Format 6 adds complete declared model attribute type/nullability and physical projection contracts,
-plus independent mapped-table `managed` and `readOnly` settings. Old artifacts fail closed with a
-`doxa build` rebuild diagnostic.
+resolved `column`/`xmin`/`none` concurrency sources, plus independent mapped-table `managed` and
+`readOnly` settings. Old artifacts fail closed with a `doxa build` rebuild diagnostic.
 
 See the
 [manifest architecture](https://github.com/div0ky/doxajs/blob/main/manifesto/architecture.md) for

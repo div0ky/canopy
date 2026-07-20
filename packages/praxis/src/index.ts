@@ -243,13 +243,19 @@ export async function runPraxis(
                   table: string
                   primaryKey: string
                   versionColumn?: string
+                  versionSource:
+                    { kind: 'column'; column: string } | { kind: 'xmin' } | { kind: 'none' }
                   managed: boolean
                   readOnly: boolean
                 }
             const storageDescription =
               storage.kind === 'entity-state'
                 ? 'doxa_entity_states managed=true readOnly=false'
-                : `${storage.table} managed=${storage.managed} readOnly=${storage.readOnly} key=${storage.primaryKey} version=${storage.versionColumn ?? 'xmin'}`
+                : `${storage.table} managed=${storage.managed} readOnly=${storage.readOnly} key=${storage.primaryKey} version=${
+                    storage.versionSource.kind === 'column'
+                      ? storage.versionSource.column
+                      : storage.versionSource.kind
+                  }`
             io.out(`${String(model.id)} ${storageDescription}`)
           }
       } else {

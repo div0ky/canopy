@@ -18,4 +18,5 @@ Mapped-table reads use the compiler-declared physical projection rather than `SE
 contain only the declared dirty patch plus adapter-owned timestamp/version changes. Readiness
 inspects mapped relations read-only and validates declared columns, types, nullability, keys,
 generated behavior, views, and insert viability without importing unrelated physical schema into
-Doxa artifacts.
+Doxa artifacts. Because PostgreSQL views do not preserve reliable `NOT NULL` catalog metadata,
+required view attributes are checked against each projected row during strict hydration.

@@ -785,9 +785,21 @@ function qualifiedIdentifier(value: string): SQL {
 }
 
 function versionExpression(storage: Extract<ModelStorage, { readonly kind: 'table' }>): SQL {
-  return storage.versionColumn
-    ? sql`${sql.identifier(storage.versionColumn)}`
-    : sql.raw('(xmin::text)::bigint')
+  const source = mappedModelVersionSource(storage)
+  if (source.kind === 'column') return sql`${sql.identifier(source.column)}`
+  return source.kind === 'none' ? sql`0` : sql.raw('(xmin::text)::bigint')
+}
+
+/** @internal Pure version-source contract used by adapter conformance tests. */
+export function mappedModelVersionSource(
+  storage: Extract<ModelStorage, { readonly kind: 'table' }>,
+):
+  | { readonly kind: 'column'; readonly column: string }
+  | { readonly kind: 'none' }
+  | { readonly kind: 'xmin' } {
+  if (storage.versionSource) return storage.versionSource
+  if (storage.versionColumn) return { kind: 'column', column: storage.versionColumn }
+  return storage.readOnly ? { kind: 'none' } : { kind: 'xmin' }
 }
 
 function versionPredicate(
@@ -799,46 +811,62 @@ function versionPredicate(
     : sql`(xmin::text)::bigint = ${expectedVersion}`
 }
 
-function hydrateMappedState(
+/** @internal Strict projected-row hydration used by adapter conformance tests. */
+export function hydrateMappedState(
   row: Readonly<Record<string, unknown>>,
   storage: Extract<ModelStorage, { readonly kind: 'table' }>,
 ): Record<string, JsonValue> {
-  const explicitlyMapped = new Set(Object.values(storage.columns))
   const optionalAttributes = new Set(storage.optionalAttributes ?? [])
-  const infrastructure = new Set<string>([
-    '__doxa_version',
-    ...(storage.versionColumn && !explicitlyMapped.has(storage.versionColumn)
-      ? [storage.versionColumn]
-      : []),
-    ...(storage.timestamps
-      ? [storage.timestamps.createdAt, storage.timestamps.updatedAt].filter(
-          (column) => !explicitlyMapped.has(column),
-        )
-      : []),
-  ])
+  const projection = mappedModelProjection(storage)
   const state: Record<string, JsonValue> = {}
-  const expected = new Set([...explicitlyMapped, ...infrastructure])
+  const expected = new Set([...projection.map((entry) => entry.alias), '__doxa_version'])
   const unexpected = Object.keys(row).find((column) => !expected.has(column))
   if (unexpected) {
     throw new PersistenceError(`Mapped model query returned undeclared column ${unexpected}.`)
   }
-  for (const [attribute, column] of Object.entries(storage.columns)) {
-    if (!Object.hasOwn(row, column)) {
+  for (const { attribute, column, alias } of projection) {
+    if (!Object.hasOwn(row, alias)) {
       throw new PersistenceError(`Mapped model query did not return declared column ${column}.`)
     }
-    const value = row[column]
+    const value = row[alias]
     if (value === null && optionalAttributes.has(attribute)) continue
+    if (value === null && storage.attributeTypes?.[attribute]?.nullable === false) {
+      throw new PersistenceError(
+        `Mapped model query returned NULL for required attribute ${attribute}.`,
+      )
+    }
     state[attribute] = databaseJsonValue(value)
   }
-  state.id = String(row[storage.primaryKey])
+  const id = projection.find((entry) => entry.attribute === 'id')
+  if (!id) {
+    throw new PersistenceError('Mapped model projection does not declare the id attribute.')
+  }
+  state.id = String(row[id.alias])
   return state
 }
 
 function mappedProjection(storage: Extract<ModelStorage, { readonly kind: 'table' }>): SQL {
   return sql.join(
-    [...new Set(Object.values(storage.columns))].map((column) => sql.identifier(column)),
+    mappedModelProjection(storage).map(
+      ({ column, alias }) => sql`${sql.identifier(column)} AS ${sql.identifier(alias)}`,
+    ),
     sql`, `,
   )
+}
+
+/** @internal Pure projection contract used by adapter conformance tests. */
+export function mappedModelProjection(
+  storage: Extract<ModelStorage, { readonly kind: 'table' }>,
+): readonly {
+  readonly attribute: string
+  readonly column: string
+  readonly alias: string
+}[] {
+  return Object.entries(storage.columns).map(([attribute, column], index) => ({
+    attribute,
+    column,
+    alias: `__doxa_attribute_${index}`,
+  }))
 }
 
 function dehydrateMappedState(
@@ -1032,7 +1060,7 @@ export function validateMappedModelReadiness(
         `Mapped model ${entityType} attribute ${attribute} is incompatible with PostgreSQL type ${metadata.type}.`,
       )
     }
-    if (contract) {
+    if (contract && !view) {
       const permitsNull = contract.optional || contract.nullable
       if (permitsNull === metadata.notNull) {
         throw new PersistenceError(

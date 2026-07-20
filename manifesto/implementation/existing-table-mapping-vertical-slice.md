@@ -32,10 +32,11 @@ export class Customer extends Model<CustomerAttributes> {
 
 `static table` opts a model into table mapping. The primary key defaults to `id`, attributes map to
 same-named columns unless overridden, timestamps default off, and optimistic concurrency uses
-PostgreSQL `xmin` when no explicit version column exists. `managed` defaults true and controls only
-Doxa/Praxis migration management; `readOnly` defaults false and independently controls persistence.
-Mapping metadata is compiled into the canonical manifest; folders and runtime reflection remain
-irrelevant.
+PostgreSQL `xmin` when no explicit version column exists on a writable model. Read-only models
+without a version column compile `none` and use a stable non-concurrency read version. `managed`
+defaults true and controls only Doxa/Praxis migration management; `readOnly` defaults false and
+independently controls persistence. Mapping metadata is compiled into the canonical manifest;
+folders and runtime reflection remain irrelevant.
 
 The PostgreSQL adapter quotes every compiler-validated identifier and retains the normal model
 contract: execution identity, hydration, dirty tracking, observers, journal/outbox staging,
@@ -99,7 +100,8 @@ make safe changes without inferring persistence from filenames or application co
 The PostgreSQL conformance suite proves:
 
 1. Existing mapped rows hydrate, mutate, save, refresh, and delete.
-2. Explicit version columns and implicit `xmin` both detect competing writes.
+2. Explicit version columns and implicit `xmin` both detect competing writes, while read-only
+   mappings without a version column expose `none` rather than implying write concurrency.
 3. Journal and outbox records commit atomically while generic entity-state rows remain absent.
 4. Registration, email verification, cookie login, bearer resolution, password change, and auth
    audit work with an arbitrary external text identity ID.

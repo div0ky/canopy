@@ -1696,6 +1696,8 @@ export async function compileApplication(
         `${requiredClassName(declaration)} maps more than one attribute to physical column ${duplicateColumn}.`,
       )
     }
+    const managed = readOptionalStaticBoolean(declaration, 'managed', true)
+    const readOnly = readOptionalStaticBoolean(declaration, 'readOnly', false)
     return {
       kind: 'table',
       table: tableValue,
@@ -1704,9 +1706,15 @@ export async function compileApplication(
       attributeTypes,
       ...(optionalAttributes.length > 0 ? { optionalAttributes } : {}),
       ...(typeof versionValue === 'string' ? { versionColumn: versionValue } : {}),
+      versionSource:
+        typeof versionValue === 'string'
+          ? { kind: 'column', column: versionValue }
+          : readOnly
+            ? { kind: 'none' }
+            : { kind: 'xmin' },
       timestamps,
-      managed: readOptionalStaticBoolean(declaration, 'managed', true),
-      readOnly: readOptionalStaticBoolean(declaration, 'readOnly', false),
+      managed,
+      readOnly,
     }
   }
 

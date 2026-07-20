@@ -2,6 +2,9 @@ import type { ModelStorage } from '@doxajs/core'
 import { describe, expect, it } from 'vitest'
 
 import {
+  hydrateMappedState,
+  mappedModelProjection,
+  mappedModelVersionSource,
   type ModelColumnMetadata,
   validateMappedModelReadiness,
 } from '../packages/postgres-drizzle/src/postgres-transaction-manager.js'
@@ -23,12 +26,71 @@ const mappedStorage: TableStorage = {
   timestamps: false,
   managed: false,
   readOnly: false,
+  versionSource: { kind: 'xmin' },
 }
 
 const idColumn = column('contact_id', 'uuid')
 const displayNameColumn = column('display_name', 'text')
 
 describe('mapped-model PostgreSQL readiness contract', () => {
+  it('uses a non-concurrency version for read-only relations without a version column', () => {
+    expect(mappedModelVersionSource(mappedStorage)).toEqual({ kind: 'xmin' })
+    expect(
+      mappedModelVersionSource({
+        ...mappedStorage,
+        readOnly: true,
+        versionSource: { kind: 'none' },
+      }),
+    ).toEqual({
+      kind: 'none',
+    })
+    expect(
+      mappedModelVersionSource({
+        ...mappedStorage,
+        readOnly: true,
+        versionColumn: 'revision',
+        versionSource: { kind: 'column', column: 'revision' },
+      }),
+    ).toEqual({ kind: 'column', column: 'revision' })
+  })
+
+  it('aliases declared columns away from adapter metadata names', () => {
+    expect(
+      mappedModelProjection({
+        ...mappedStorage,
+        primaryKey: '__doxa_version',
+        columns: {
+          id: '__doxa_version',
+          displayName: '__doxa_id',
+        },
+      }),
+    ).toEqual([
+      {
+        attribute: 'id',
+        column: '__doxa_version',
+        alias: '__doxa_attribute_0',
+      },
+      {
+        attribute: 'displayName',
+        column: '__doxa_id',
+        alias: '__doxa_attribute_1',
+      },
+    ])
+  })
+
+  it('fails hydration when a required projected attribute is null', () => {
+    expect(() =>
+      hydrateMappedState(
+        {
+          __doxa_attribute_0: 'contact-1',
+          __doxa_attribute_1: null,
+          __doxa_version: 0,
+        },
+        mappedStorage,
+      ),
+    ).toThrow('returned NULL for required attribute displayName')
+  })
+
   it('accepts unrelated additional columns and PostgreSQL enum scalars', () => {
     const enumDisplayName = column('display_name', 'contact_name', { typeKind: 'e' })
     expect(() =>
@@ -121,15 +183,19 @@ describe('mapped-model PostgreSQL readiness contract', () => {
       ),
     ).toThrow('must declare readOnly = true')
 
-    const readOnlyStorage = { ...mappedStorage, readOnly: true }
+    const readOnlyStorage: TableStorage = {
+      ...mappedStorage,
+      readOnly: true,
+      versionSource: { kind: 'none' },
+    }
     expect(() =>
       validateMappedModelReadiness(
         'model:contacts/contact',
         readOnlyStorage,
         'm',
         [
-          idColumn,
-          column('display_name', 'text', { generated: true }),
+          column('contact_id', 'uuid', { notNull: false }),
+          column('display_name', 'text', { generated: true, notNull: false }),
           column('required_vendor_value', 'text'),
         ],
         [],

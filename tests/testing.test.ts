@@ -192,6 +192,8 @@ describe('@doxajs/testing', () => {
         'model:counters/legacy-customer/mapped-memory',
       )!
       ;(mapped.state as Record<string, unknown>).passwordHash = 'must-survive'
+      ;(mapped.state as Record<string, unknown>).apiToken = 'must-survive'
+      ;(mapped.state as Record<string, unknown>).triggerRevision = 17
       await harness.action(SaveLegacyCustomer, {
         id: 'mapped-memory',
         displayName: 'Mapped again',
@@ -212,6 +214,8 @@ describe('@doxajs/testing', () => {
             active: true,
             nullableCode: null,
             passwordHash: 'must-survive',
+            apiToken: 'must-survive',
+            triggerRevision: 17,
           },
           version: 3,
         }),

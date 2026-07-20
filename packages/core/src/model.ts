@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from 'node:util'
 
 import { currentModelSession } from './model-session-context.js'
 import {
+  PersistenceError,
   ReadOnlyExecutionError,
   type JsonValue,
   type ModelReader,
@@ -1003,7 +1004,9 @@ export class ModelSession {
     state: JsonValue,
   ): Attributes {
     if (typeof state !== 'object' || state === null || Array.isArray(state)) {
-      throw new Error(`Model ${definition.entityType} persistence state must be an object.`)
+      throw new PersistenceError(
+        `Model ${definition.entityType} persistence state must be an object.`,
+      )
     }
     const attributes = definition.attributes
     if (attributes) {
@@ -1013,7 +1016,9 @@ export class ModelSession {
         (key) => !Object.hasOwn(state, key) && !definition.optionalAttributes?.has(key),
       )
       if (unexpected) throw new UnknownModelAttributeError(unexpected)
-      if (missing) throw new Error(`Model attribute ${missing} is missing from persistence state.`)
+      if (missing) {
+        throw new PersistenceError(`Model attribute ${missing} is missing from persistence state.`)
+      }
     }
     return clone(state) as unknown as Attributes
   }

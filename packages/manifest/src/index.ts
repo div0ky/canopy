@@ -133,6 +133,10 @@ export interface ModelManifestEntry {
         readonly attributeTypes: ModelManifestEntry['attributeTypes']
         readonly optionalAttributes?: readonly string[]
         readonly versionColumn?: string
+        readonly versionSource:
+          | { readonly kind: 'column'; readonly column: string }
+          | { readonly kind: 'xmin' }
+          | { readonly kind: 'none' }
         readonly timestamps: false | { readonly createdAt: string; readonly updatedAt: string }
         readonly managed: boolean
         readonly readOnly: boolean
@@ -550,14 +554,30 @@ export function assertManifest(value: unknown): asserts value is DoxaManifest {
       )
     }
     if (
-      isRecord(model.storage) &&
+      !isRecord(model.storage) ||
+      (model.storage.kind !== 'entity-state' && model.storage.kind !== 'table')
+    ) {
+      throw new ManifestCompatibilityError(`Doxa manifest model ${model.id} has invalid storage.`)
+    }
+    if (
       model.storage.kind === 'table' &&
-      (typeof model.storage.managed !== 'boolean' ||
+      (!nonEmptyString(model.storage.table) ||
+        !nonEmptyString(model.storage.primaryKey) ||
+        typeof model.storage.managed !== 'boolean' ||
         typeof model.storage.readOnly !== 'boolean' ||
         !isRecord(model.storage.columns) ||
         !isRecord(model.storage.attributeTypes) ||
         Object.keys(model.storage.columns).length !== model.attributes.length ||
         Object.keys(model.storage.attributeTypes).length !== model.attributes.length ||
+        new Set(Object.values(model.storage.columns)).size !== model.attributes.length ||
+        model.storage.columns.id !== model.storage.primaryKey ||
+        (model.storage.versionColumn !== undefined &&
+          !nonEmptyString(model.storage.versionColumn)) ||
+        !validModelVersionSource(model.storage) ||
+        (model.storage.timestamps !== false &&
+          (!isRecord(model.storage.timestamps) ||
+            !nonEmptyString(model.storage.timestamps.createdAt) ||
+            !nonEmptyString(model.storage.timestamps.updatedAt))) ||
         (model.attributes as unknown[]).some((attribute: unknown) => {
           if (typeof attribute !== 'string' || !nonEmptyString(model.storage.columns[attribute]))
             return true
@@ -576,11 +596,7 @@ export function assertManifest(value: unknown): asserts value is DoxaManifest {
         `Doxa manifest model ${model.id} has an invalid table projection contract.`,
       )
     }
-    if (
-      isRecord(model.storage) &&
-      model.storage.kind === 'table' &&
-      model.storage.optionalAttributes !== undefined
-    ) {
+    if (model.storage.kind === 'table' && model.storage.optionalAttributes !== undefined) {
       const optionalAttributes = model.storage.optionalAttributes
       if (
         !Array.isArray(optionalAttributes) ||
@@ -588,12 +604,24 @@ export function assertManifest(value: unknown): asserts value is DoxaManifest {
         new Set(optionalAttributes).size !== optionalAttributes.length ||
         optionalAttributes.some(
           (attribute) => attribute === 'id' || !model.attributes.includes(attribute),
+        ) ||
+        model.attributes.some(
+          (attribute: string) =>
+            Boolean(model.attributeTypes[attribute]?.optional) !==
+            optionalAttributes.includes(attribute),
         )
       ) {
         throw new ManifestCompatibilityError(
           `Doxa manifest model ${model.id} has invalid optional attributes.`,
         )
       }
+    } else if (
+      model.storage.kind === 'table' &&
+      model.attributes.some((attribute: string) => model.attributeTypes[attribute]?.optional)
+    ) {
+      throw new ManifestCompatibilityError(
+        `Doxa manifest model ${model.id} has invalid optional attributes.`,
+      )
     }
     for (const relationship of model.relationships) {
       if (
@@ -694,6 +722,18 @@ function assertModelRelationship(modelId: string, value: Record<string, unknown>
       `Doxa manifest model ${modelId} has an invalid ${String(value.kind)} relationship.`,
     )
   }
+}
+
+function validModelVersionSource(storage: Record<string, unknown>): boolean {
+  const source = storage.versionSource
+  if (!isRecord(source)) return false
+  if (source.kind === 'column') {
+    return nonEmptyString(source.column) && storage.versionColumn === source.column
+  }
+  if (source.kind === 'xmin') {
+    return storage.versionColumn === undefined && storage.readOnly === false
+  }
+  return source.kind === 'none' && storage.versionColumn === undefined && storage.readOnly === true
 }
 
 function nonEmptyString(value: unknown): value is string {
