@@ -52,6 +52,12 @@ describe('mapped-model PostgreSQL readiness contract', () => {
         versionSource: { kind: 'column', column: 'revision' },
       }),
     ).toEqual({ kind: 'column', column: 'revision' })
+    expect(() =>
+      mappedModelVersionSource({
+        ...mappedStorage,
+        readOnly: true,
+      }),
+    ).toThrow('version source is inconsistent')
   })
 
   it('aliases declared columns away from adapter metadata names', () => {
@@ -207,6 +213,7 @@ describe('mapped-model PostgreSQL readiness contract', () => {
     const versioned: TableStorage = {
       ...mappedStorage,
       versionColumn: 'lock_version',
+      versionSource: { kind: 'column', column: 'lock_version' },
       timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
     }
     expect(() =>

@@ -797,9 +797,24 @@ export function mappedModelVersionSource(
   | { readonly kind: 'column'; readonly column: string }
   | { readonly kind: 'none' }
   | { readonly kind: 'xmin' } {
-  if (storage.versionSource) return storage.versionSource
-  if (storage.versionColumn) return { kind: 'column', column: storage.versionColumn }
-  return storage.readOnly ? { kind: 'none' } : { kind: 'xmin' }
+  const derived:
+    | { readonly kind: 'column'; readonly column: string }
+    | { readonly kind: 'none' }
+    | { readonly kind: 'xmin' } = storage.versionColumn
+    ? { kind: 'column', column: storage.versionColumn }
+    : storage.readOnly
+      ? { kind: 'none' }
+      : { kind: 'xmin' }
+  if (
+    storage.versionSource &&
+    (storage.versionSource.kind !== derived.kind ||
+      (storage.versionSource.kind === 'column' &&
+        derived.kind === 'column' &&
+        storage.versionSource.column !== derived.column))
+  ) {
+    throw new PersistenceError('Mapped model version source is inconsistent with its storage mode.')
+  }
+  return storage.versionSource ?? derived
 }
 
 function versionPredicate(
