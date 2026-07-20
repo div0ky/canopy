@@ -3,7 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { PraxisCommandError } from './errors.js'
-import { installGnosisRegistration } from './gnosis-registration.js'
+import { GNOSIS_CLIENT_RELOAD_GUIDANCE, installGnosisRegistration } from './gnosis-registration.js'
 
 export interface CapturedProcess {
   readonly code: number
@@ -464,7 +464,9 @@ async function applyBuiltInRecipe(
   }
   if (recipe === 'gnosis-agent-registration') {
     const files = await installGnosisRegistration(cwd)
-    io.out(`Registered Gnosis project MCP clients in ${files.join(', ')}.`)
+    io.out(
+      `Registered Gnosis project MCP clients in ${files.join(', ')}. ${GNOSIS_CLIENT_RELOAD_GUIDANCE}`,
+    )
     return
   }
   throw new PraxisCommandError(

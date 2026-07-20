@@ -79,6 +79,7 @@ export interface QueuePolicy {
 }
 
 export interface QueueExecutionEnvelope {
+  readonly version: 1
   readonly sourceExecutionId: string
   readonly correlationId: string
   readonly causationId?: string

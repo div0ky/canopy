@@ -10,7 +10,12 @@ registration as an upgrade recipe. Each client launches the application's instal
 `doxa mcp` entrypoint on demand; developers do not start a daemon or standing process. The installer
 updates only the Gnosis entry and preserves unrelated agent configuration. It also creates or
 updates one marked Doxa guidance block in the root `AGENTS.md`, preserving guidance outside that
-block and failing closed on malformed or duplicate markers.
+block and failing closed on malformed or duplicate markers. Registration is discovered when a client
+opens the workspace or starts a task; Praxis output and the managed guidance now state that creation
+or upgrade inside an existing task requires a client reload or reopen and a new task before Gnosis
+tools can appear. Codex passes a configured relative MCP working directory directly to its process
+launcher instead of anchoring it to the task workspace, so Praxis emits an absolute application
+`cwd` for both root and nested applications.
 
 Praxis compiles the application through the ordinary development build path and passes the resulting
 manifest directly to Gnosis; the server never scans source, boots the application, or trusts a
@@ -20,14 +25,15 @@ separately discovered artifact.
 role records, bounds lists, redacts credential-shaped values, and owns the generated Gnosis
 knowledge contract. Praxis JSON and MCP tools use the same functions.
 
-Manifest format 3 adds declared model relationships, related and pivot model IDs, and logical key
-metadata. The compiler resolves relationship helper declarations against models selected by Features
-and fails closed when a relationship points outside the application graph.
+This historical slice added declared model relationships, related and pivot model IDs, and logical
+key metadata to the then-current manifest format. The compiler resolves relationship helper
+declarations against models selected by Features and fails closed when a relationship points outside
+the application graph.
 
 `@doxajs/gnosis` uses the pinned official TypeScript MCP SDK. It exposes application information,
 graph, routes, models, actions, queries, events, listeners, observers, jobs, schedules, policies,
-commands, and deterministic version-matched documentation search. All tools are read-only,
-idempotent, bounded, and closed-world. Unknown models return stable structured errors.
+permission sources, commands, and deterministic version-matched documentation search. All tools are
+read-only, idempotent, bounded, and closed-world. Unknown models return stable structured errors.
 
 The sole application-data capability is `query_models`. It accepts a stable model ID, explicitly
 selected logical fields, bounded comparison filters and ordering, and at most 100 rows. Praxis boots

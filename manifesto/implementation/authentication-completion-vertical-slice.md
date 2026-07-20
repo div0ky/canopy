@@ -2,15 +2,20 @@
 
 - **Status:** Implemented proof
 - **Completed:** 2026-07-10
+- **Security qualification:** Blocked by the 2026-07-16 delivery-at-rest finding
 
 Doxa's first-party email/password method now includes registration, login, verification,
 verification resend, password recovery, password change, browser-session listing/revocation, and
 opaque bearer-token management.
 
-Verification and reset challenges use 256-bit opaque tokens. PostgreSQL stores only SHA-256 digests,
-purpose, identity, expiry, and consumption time. Issuing a replacement consumes earlier active
-challenges; successful use is transactional and single-use. HTTP never returns challenge material.
-Doxa queues it through the first-party `Mailer` action and transactional outbox.
+Verification and reset challenges use 256-bit opaque tokens. The authentication challenge table
+stores only SHA-256 digests, purpose, identity, expiry, and consumption time. Issuing a replacement
+consumes earlier active challenges; successful use is transactional and single-use. HTTP never
+returns challenge material. Doxa queues it through the first-party `Mailer` action and transactional
+outbox. The current communication implementation also persists the raw mail payload, including the
+challenge, in the delivery ledger and queue envelope. That violates the framework's
+credential-at-rest invariant and is a critical open finding in the
+[2026-07-16 framework security audit](security-audit-2026-07-16.md).
 
 Recovery requests return the same empty `202` response for known and unknown addresses. Login,
 registration, and recovery use durable hashed abuse buckets with fixed windows, temporary blocks,

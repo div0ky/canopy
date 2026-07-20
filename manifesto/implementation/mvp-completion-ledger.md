@@ -1,6 +1,6 @@
 # Doxa MVP Completion Ledger
 
-- **Status:** MVP acceptance ledger — complete
+- **Status:** MVP implementation acceptance complete; public security-stability claim blocked
 - **Started:** 2026-07-10
 - **Authority:** [MVP viability bar](../mvp.md)
 - **Completion rule:** A row is complete only when its public contract, production adapter or
@@ -10,6 +10,11 @@
 This ledger prevents a runnable demo from being mislabeled as a viable framework. Implementation
 proof means a risky seam works. MVP complete means an ordinary production-shaped application can use
 the entire promised model without assembling another framework beside Doxa.
+
+Implementation acceptance is not security-release readiness. The
+[current framework security audit](security-audit-2026-07-16.md) records unresolved critical and
+high findings that block a public security-stability claim and a 1.0 release even though the
+implemented MVP capability set is accepted.
 
 ## Ecosystem name
 
@@ -59,15 +64,15 @@ applications and tools do not depend on undocumented behavior.
 
 ## Security
 
-| Capability                    | State    | Acceptance evidence                                                                                                                 |
-| ----------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Email/password identities     | Complete | Registration, verification, reset/change, single-use challenges, breached-password hook, and audit are proven.                      |
-| Browser sessions              | Complete | Digest-only storage, CSRF, rotation, bounded grace, replay rejection, listing, revocation, and pruning are proven.                  |
-| Opaque bearer access tokens   | Complete | Issuance, constraints, ambiguity rejection, rotation, revocation, audit, fakes, and CLI management are proven.                      |
-| Authentication abuse controls | Complete | Durable hashed buckets, stable 429/Retry-After, recovery privacy, dummy verification, and audit are proven.                         |
-| Authorization                 | Complete | Every entry role, resource decisions, default denial, bearer narrowing, audit, fakes, and diagnostics are proven.                   |
-| Auth testing                  | Complete | `actingAs`, HTTP identity override, stateful identity/session/token fakes, and revocation assertions are proven.                    |
-| Security readiness            | Complete | Threat model, internal negative review, provenance/boundary audit, redaction, and a mandatory external pre-1.0 gate are documented. |
+| Capability                       | State                      | Acceptance evidence                                                                                                                                                                                         |
+| -------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Email/password identities        | Complete                   | Registration, verification, reset/change, single-use challenges, breached-password hook, and audit are proven.                                                                                              |
+| Browser sessions                 | Complete                   | Digest-only storage, CSRF, rotation, bounded grace, replay rejection, listing, revocation, and pruning are proven.                                                                                          |
+| Opaque bearer access tokens      | Complete                   | Issuance, constraints, ambiguity rejection, rotation, revocation, audit, fakes, and CLI management are proven.                                                                                              |
+| Authentication abuse controls    | Complete                   | Durable hashed buckets, stable 429/Retry-After, recovery privacy, dummy verification, and audit are proven.                                                                                                 |
+| Authorization                    | Complete                   | Every entry role, application permission sources, resource decisions, default denial, bearer narrowing, audit, fakes, and diagnostics are proven.                                                           |
+| Auth testing                     | Complete                   | `actingAs`, HTTP identity override, stateful identity/session/token fakes, and revocation assertions are proven.                                                                                            |
+| Security review and release gate | Complete (release blocked) | Threat model, internal negative review, provenance/boundary audit, redaction, and a mandatory external pre-1.0 gate are documented; the current audit's critical and high findings remain release blockers. |
 
 ## Communications and infrastructure
 
@@ -86,7 +91,7 @@ applications and tools do not depend on undocumented behavior.
 | Structured logs       | Complete | Automatic role-bound loggers, ordinary-service constructor injection, recursive redaction, contextual framework channels, colored TTY output, NDJSON output, and in-memory assertions are proven.                 |
 | W3C distributed spans | Complete | Inbound parentage, nested Doxa scopes, durable propagation, fan-out/retry links, and shared IDs across HTTP, logs, observations, and OpenTelemetry are proven.                                                    |
 | Metrics               | Complete | Lifecycle, execution/HTTP, persistence, auth, authorization, queue/schedule, and communications instruments are proven.                                                                                           |
-| Diagnostics           | Complete | Graph, routes, policies, observers, listeners, jobs, schedules, auth, delivery, journal, outbox, and cache are inspectable through Praxis; `db:studio` provides safe local database browsing.                     |
+| Diagnostics           | Complete | Graph, routes, permission sources, policies, observers, listeners, jobs, schedules, auth, delivery, journal, outbox, and cache are inspectable through Praxis; `db:studio` provides safe local database browsing. |
 | Execution diagnostics | Complete | Theoria proves causal timelines, hierarchical waterfalls, redaction, AI evidence, production sampling/filtering/buffering, resource identity, partitioned retention, protected audited access, and test fakes.    |
 | Operator recovery     | Complete | Queue, delivery, schedule, session, token, cache, and auth-pruning operations are proven through Praxis.                                                                                                          |
 | Production topology   | Complete | One immutable image boots independent web and combined background roles from prebuilt artifacts; explicit migration, horizontal scheduling safety, advanced scheduler isolation, and bounded shutdown are proven. |
@@ -100,7 +105,7 @@ applications and tools do not depend on undocumented behavior.
 | `make:*` generators         | Complete | Every canonical role is generated, registered, overwrite-safe, and authorization-explicit.                                                                                                   |
 | Database commands           | Complete | Forward migration, status, batching, checksums, advisory lock, and drift refusal are proven; destructive rollback is intentionally excluded.                                                 |
 | Runtime commands            | Complete | `serve`, default combined `work`, advanced isolated `work --without-scheduler`/`schedule`, combined dev, and fail-safe fresh-runtime hot reload are proven.                                  |
-| Inspection commands         | Complete | Graph, routes, reactive roles, policies, commands, queues, deliveries, infrastructure, auth, and schedules are proven.                                                                       |
+| Inspection commands         | Complete | Graph, routes, reactive roles, permission sources, policies, commands, queues, deliveries, infrastructure, auth, and schedules are proven.                                                   |
 | Testing package and fakes   | Complete | HTTP/auth/persistence/queue/comms/cache/telemetry plus direct event, signal, job, and schedule APIs are proven against real manifests.                                                       |
 | Gnosis integration          | Complete | Shared typed introspection, manifest relationship metadata, bounded read-only MCP tools/resources, exact-version local guidance, stdio launch, and generated knowledge are proven.           |
 | Compatibility and upgrades  | Complete | Release metadata aligns the framework package and toolchain matrix; safe planning, built-in recipes, installation handoff, build, migration-status, and optional test validation are proven. |
@@ -138,8 +143,8 @@ Doxa may be called an MVP only when:
 
 ## Post-MVP compatibility commitments
 
-| Capability                        | State                    | Direction                                                                                                                  |
-| --------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| Existing-table model mapping      | MVP common path complete | Laravel-like table/key/column/timestamp/version metadata; advanced multi-record mappers remain future work.                |
-| Existing-table auth mapping       | MVP common path complete | Explicit external identity/credential mapping with Doxa-owned session, token, challenge, abuse, and audit tables.          |
-| First-party roles and permissions | Deferred                 | Stable abilities and policies remain core; storage and assignment wait for existing-table mapping and production evidence. |
+| Capability                        | State                    | Direction                                                                                                                                        |
+| --------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Existing-table model mapping      | MVP common path complete | Laravel-like table/key/column/timestamp/version metadata; advanced multi-record mappers remain future work.                                      |
+| Existing-table auth mapping       | MVP common path complete | Explicit external identity/credential mapping with Doxa-owned session, token, challenge, abuse, and audit tables.                                |
+| First-party roles and permissions | Deferred                 | Stable abilities, application permission sources, and policies are core; Doxa-owned storage and assignment wait for broader production evidence. |

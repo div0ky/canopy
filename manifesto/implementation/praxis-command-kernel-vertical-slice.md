@@ -17,6 +17,10 @@ generation requires an explicit path, defaults to `GET`, and emits explicitly pu
 `--ability=...` protects it. Other generated entry points continue to require an explicit `--public`
 or `--ability=...` posture.
 
+`make:permission-source` generates and registers the application's static ability catalog.
+`make:service --provide` creates an ordinary service and intentionally exports it without promoting
+it to singleton provider scope.
+
 Manual schedule firing uses the transactional outbox instead of starting an incidental scheduler
 inside the command. It is therefore durable even when workers are offline. Schedule enablement is
 stored in PostgreSQL and reconciled by the scheduler role. Praxis is the accepted ecosystem name.

@@ -10,6 +10,9 @@ Ordinary applications should use `@doxajs/core` instead of importing this packag
 Manifest formats fail closed when compiler and runtime compatibility do not match. The package has
 no dependency on application code, runtime construction, or TypeScript compilation.
 
+Format 5 adds the optional application permission-source graph entry, including its exact ability
+catalog and execution-scoped dependencies.
+
 See the
 [manifest architecture](https://github.com/div0ky/doxajs/blob/main/manifesto/architecture.md) for
 the compatibility contract.

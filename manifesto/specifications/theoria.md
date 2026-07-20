@@ -65,6 +65,10 @@ policy, batch size and interval, storage pool, partitions, retention tiers, and 
 Trusted-proxy access requires explicit proxy-address and operator allowlists; a forwarded identity
 header from any other peer is denied.
 
+The dedicated host returns safe, stable JSON errors and never serializes internal exception
+messages. Invalid query pagination receives `400 invalid_query`; unexpected failures use the generic
+`500 theoria_error`. JSON responses disable sniffing, referrer disclosure, and caching.
+
 The primary rail is an activity feed, not merely a list of parent executions. `All` exposes each
 terminal or instantaneous observation as its own entry, so an event dispatched during HTTP work is
 visible as an event rather than hidden behind the HTTP execution. Category filters select literal

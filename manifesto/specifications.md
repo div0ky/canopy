@@ -6,6 +6,10 @@ implementation status: a capability marked complete there has an accepted public
 production behavior or adapter evidence, conformance coverage, reference-application evidence,
 diagnostics, and agreeing documentation.
 
+MVP implementation acceptance is not a security-stability decision. The
+[current framework security audit](implementation/security-audit-2026-07-16.md) has unresolved
+critical and high findings that block a public security-stability claim and a 1.0 release.
+
 Individual vertical-slice documents preserve the narrower status and remaining work that existed
 when each proof was written. Their historical `MVP status: Incomplete` notes do not override the
 later completion ledger.
@@ -97,6 +101,7 @@ complete in the MVP ledger.
 | Authentication                    | Implemented                   | [Authentication completion proof](implementation/authentication-completion-vertical-slice.md)                   |
 | Existing-table auth mapping       | Implemented (MVP common path) | [Existing-table model and auth mapping](decisions/0023-existing-table-model-auth-mapping.md)                    |
 | Authorization                     | Implemented                   | [Actor, execution-context, and authorization contract](specifications/actor-execution-context-authorization.md) |
+| Application permission sources    | Implemented                   | [Permission source and shared service proof](implementation/application-permission-source-vertical-slice.md)    |
 | First-party roles and permissions | Deferred                      | [First-party permission persistence is intentionally deferred](decisions/0022-defer-first-party-permissions.md) |
 | Execution context                 | Implemented                   | [Actor, execution-context, and authorization contract](specifications/actor-execution-context-authorization.md) |
 

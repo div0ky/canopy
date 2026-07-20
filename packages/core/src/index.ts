@@ -25,7 +25,9 @@ export {
   Authorization,
   AuthorizationError,
   deny,
+  PermissionSource,
   Policy,
+  type PermissionSourceRequest,
   type PolicyDecision,
   type PolicyRequest,
 } from './authorization.js'
@@ -121,7 +123,7 @@ export {
 
 import type { Event, Listener } from './event.js'
 import type { AuthIdentityRegistrationFactory } from './auth.js'
-import type { Policy } from './authorization.js'
+import type { PermissionSource, Policy } from './authorization.js'
 import type { Signal, SignalHandler } from './signal.js'
 import type { Route } from './http.js'
 import type { Job, Schedule } from './queue.js'
@@ -282,6 +284,8 @@ export abstract class DoxaApplication {
 export abstract class Feature {
   declare readonly id: string
   declare readonly configs?: readonly ConfigurationClass[]
+  /** Intentionally exported ordinary services. Their declared service scope is preserved. */
+  declare readonly provides?: readonly Class[]
   declare readonly providers?: readonly Class[]
   declare readonly actions?: readonly ActionClass[]
   declare readonly queries?: readonly QueryClass[]
@@ -293,6 +297,8 @@ export abstract class Feature {
   declare readonly jobs?: readonly Class<Job>[]
   declare readonly schedules?: readonly Class<Schedule>[]
   declare readonly policies?: readonly Class<Policy>[]
+  /** At most one permission source may be selected across the application. */
+  declare readonly permissionSources?: readonly Class<PermissionSource>[]
   declare readonly signals?: readonly Class<Signal<unknown>>[]
   declare readonly signalHandlers?: readonly Class<SignalHandler<any>>[]
   declare readonly commands?: readonly Class<Command>[]

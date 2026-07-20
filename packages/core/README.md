@@ -34,6 +34,11 @@ export class AppFeature extends Feature {
 Doxa contributes mandatory infrastructure, authentication routes, and `GET /health` from
 framework-owned generated declarations. Application Features do not re-declare them.
 
+Features intentionally export cross-Feature ordinary services through `provides` without changing
+their transient or execution scope. Applications with existing group or user permission data map it
+to stable Doxa abilities through one `PermissionSource`; resource `Policy` classes may further
+narrow those grants.
+
 ## Models
 
 Persistent models expose typed cloned reads and writes while keeping their raw attribute bag

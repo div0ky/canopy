@@ -116,6 +116,16 @@ Every attempt creates a fresh admitted execution with:
 - Trace, locale, and time-zone context.
 - pg-boss cancellation composed into Doxa cancellation.
 
+Before admission, the runtime validates context-envelope version `1` and rejects unsupported fields,
+malformed actors or delegation, raw session-shaped authentication fields, invalid tenant or locale
+metadata, excessive constraints or span links, invalid dates, and malformed W3C trace identifiers.
+Rejection occurs before tracing, authorization, or application handler code runs.
+
+This proof still preserves the original actor and authentication metadata as the worker's current
+execution authority. That behavior conflicts with the accepted actor specification's system-worker
+default and is tracked as a high-severity release blocker in the
+[2026-07-16 framework security audit](security-audit-2026-07-16.md).
+
 `CurrentJob` exposes the stable ID, one-based attempt, maximum attempts, and optional idempotency
 key through constructor injection.
 

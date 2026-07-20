@@ -32,7 +32,11 @@ import {
   required,
 } from './command-values.js'
 import { PraxisCommandError } from './errors.js'
-import { installGnosisRegistration, parseGnosisAgents } from './gnosis-registration.js'
+import {
+  GNOSIS_CLIENT_RELOAD_GUIDANCE,
+  installGnosisRegistration,
+  parseGnosisAgents,
+} from './gnosis-registration.js'
 
 export { PraxisCommandError } from './errors.js'
 
@@ -93,6 +97,7 @@ Build and inspect:
   observer:list         List model observers and phases
   job:list              List jobs and retry policies
   schedule:list         List schedules and targets
+  permission-source:list List the application permission source and abilities
   policy:list           List policies and abilities
   command:list          List application console commands
 
@@ -111,9 +116,10 @@ Generate:
   make:job <Feature/Name> --public|--ability=<ability>
   make:schedule <Feature/Name> --job=Job (--cron="..."|--every=seconds) [--misfire=skip|catch-up-once] --public|--ability=<ability>
   make:policy <Feature/Name> --abilities=one,two
+  make:permission-source <Feature/Name> --abilities=one,two
   make:config <Feature/Name>
   make:provider <Feature/Name>
-  make:service <Feature/Name>
+  make:service <Feature/Name> [--provide]
   make:command <Feature/Name> [--name=feature:command] --public|--ability=<ability>
   make:migration <Name>
   make:test <Feature/Name>
@@ -164,7 +170,7 @@ export async function runPraxis(
     }
     if (command === 'gnosis:install') {
       const files = await installGnosisRegistration(cwd, parseGnosisAgents(args))
-      io.out(`Registered Gnosis in ${files.join(', ')}. Your MCP client will start it on demand.`)
+      io.out(`Registered Gnosis in ${files.join(', ')}. ${GNOSIS_CLIENT_RELOAD_GUIDANCE}`)
       return 0
     }
     if (command === 'mcp') {
@@ -664,6 +670,7 @@ async function redriveDelivery(pool: Pool, id: string): Promise<void> {
     const { executionId, ...durableContext } = context
     const queueContext = {
       ...durableContext,
+      version: 1 as const,
       sourceExecutionId: executionId,
       causationId: id,
     }
@@ -890,6 +897,7 @@ async function operateSchedule(
     if (!job) throw new PraxisCommandError(`Schedule ${schedule!.id} targets a missing job.`)
     const envelopeId = randomUUID()
     const context: QueueEnvelope['context'] = {
+      version: 1,
       sourceExecutionId: envelopeId,
       correlationId: envelopeId,
       causationId: schedule!.id,
@@ -1944,6 +1952,7 @@ type GeneratorRole =
   | 'job'
   | 'schedule'
   | 'policy'
+  | 'permission-source'
   | 'config'
   | 'provider'
   | 'service'
@@ -2157,17 +2166,21 @@ function roleDefinition(
     }
   }
   if (role === 'policy') {
-    const abilities = required(option(args, 'abilities'), 'Policies require --abilities=one,two.')
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean)
-    if (abilities.length === 0)
-      throw new PraxisCommandError('Policies require at least one ability.')
+    const abilities = generatorAbilities(args, 'Policies')
     return {
       field: 'policies',
       folder: 'policies',
       source: (name) =>
         `import { allow, deny, Policy, type PolicyRequest, type PolicyDecision } from '@doxajs/core'\n\nexport class ${name} extends Policy {\n  static id = '${kebab(name)}'\n  static override readonly abilities = ${JSON.stringify(abilities)}\n  decide(request: PolicyRequest): PolicyDecision {\n    return request.actor.kind === 'anonymous' ? deny('authentication_required') : allow('authenticated')\n  }\n}\n`,
+    }
+  }
+  if (role === 'permission-source') {
+    const abilities = generatorAbilities(args, 'Permission sources')
+    return {
+      field: 'permissionSources',
+      folder: 'permission-sources',
+      source: (name) =>
+        `import { PermissionSource, type PermissionSourceRequest } from '@doxajs/core'\n\nexport class ${name} extends PermissionSource {\n  static override readonly id = '${kebab(name)}'\n  static override readonly abilities = ${JSON.stringify(abilities)}\n\n  async resolve(_request: PermissionSourceRequest): Promise<readonly string[]> {\n    return []\n  }\n}\n`,
     }
   }
   if (role === 'config')
@@ -2193,7 +2206,29 @@ function roleDefinition(
         `import { Command } from '@doxajs/core'\n\nexport class ${name} extends Command {\n  static override readonly id = '${kebab(name)}'\n  static override readonly name = '${commandName}'\n  static override readonly description = ${JSON.stringify(description)}\n  static override readonly access = '${access}'\n\n  async handle(_arguments: readonly string[]): Promise<void> {}\n}\n`,
     }
   }
-  return { folder: 'services', source: (name) => `export class ${name} {}\n` }
+  return {
+    ...(args.includes('--provide') ? { field: 'provides' } : {}),
+    folder: 'services',
+    source: (name) => `export class ${name} {}\n`,
+  }
+}
+
+function generatorAbilities(args: readonly string[], label: string): readonly string[] {
+  const abilities = required(option(args, 'abilities'), `${label} require --abilities=one,two.`)
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+  if (abilities.length === 0) {
+    throw new PraxisCommandError(`${label} require at least one ability.`)
+  }
+  if (new Set(abilities).size !== abilities.length) {
+    throw new PraxisCommandError(`${label} require unique abilities.`)
+  }
+  const invalid = abilities.find((ability) => !/^[a-z][a-z0-9._:-]{1,127}$/.test(ability))
+  if (invalid) {
+    throw new PraxisCommandError(`${label} received invalid ability ${invalid}.`)
+  }
+  return abilities
 }
 
 async function registerFeatureClass(
@@ -2293,6 +2328,7 @@ function generatorRole(command: string): GeneratorRole | undefined {
     'job',
     'schedule',
     'policy',
+    'permission-source',
     'config',
     'provider',
     'service',
@@ -2310,6 +2346,7 @@ function inspectionField(command: string): InspectionSurface | undefined {
       'observer:list': 'observers',
       'job:list': 'jobs',
       'schedule:list': 'schedules',
+      'permission-source:list': 'permissionSources',
       'policy:list': 'policies',
       'command:list': 'commands',
     } as Record<string, InspectionSurface>
@@ -2335,6 +2372,8 @@ function formatInspection(field: string, entry: Record<string, unknown>): string
     return `${String(entry.id)} retries=${String(entry.retries)} timeout=${String(entry.timeout)} access=${String(entry.access)}`
   if (field === 'schedules')
     return `${String(entry.id)} -> ${String(entry.jobId)} ${JSON.stringify(entry.cadence)}`
+  if (field === 'permissionSources')
+    return `${String(entry.id)} ${(entry.abilities as unknown[]).join(',')}`
   if (field === 'policies') return `${String(entry.id)} ${(entry.abilities as unknown[]).join(',')}`
   return `${String(entry.command)} ${String(entry.access)} ${String(entry.description)}`
 }

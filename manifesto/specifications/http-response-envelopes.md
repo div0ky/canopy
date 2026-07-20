@@ -59,6 +59,11 @@ canonical success envelope automatically.
 
 ## Automatic boundary behavior
 
+- The first-party Hono boundary reads request bodies through a byte-counted stream before route
+  admission. The default maximum is 1 MiB; applications may deliberately configure
+  `maxRequestBodyBytes`. Invalid `Content-Length` receives `400 invalid_content_length`, and a
+  declared or streamed over-limit body receives canonical `413 payload_too_large` without running
+  application code.
 - Any non-`Response`, non-`undefined` route result becomes `{ ok: true, data: result }`.
 - Framework and application `HttpError` failures become the canonical failure shape.
 - Unknown routes, authentication, authorization, validation, persistence conflicts, lifecycle

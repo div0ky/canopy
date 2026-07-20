@@ -57,6 +57,7 @@ import {
   needsRehash,
   verifyPassword,
   verifyEncodedPassword,
+  type EncodedPasswordVerification,
   type PasswordRecord,
 } from './passwords.js'
 import {
@@ -751,7 +752,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
             .where(eq(authPasswords.identityId, identityId))
             .limit(1)
         )[0]
-    if (!current || !(await verifyPasswordCandidate(currentPassword, current)))
+    if (!current || !(await verifyPasswordCandidate(currentPassword, current)).valid)
       throw new AuthenticationError('invalid_credentials', 'The current password is invalid.')
     const password = await createPasswordRecord(newPassword)
     const now = new Date()
@@ -815,12 +816,17 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
             .where(eq(authPasswords.identityId, identityId))
             .limit(1)
         )[0]
-    if (!record || !(await verifyPasswordCandidate(password, record))) {
+    const verification = record ? await verifyPasswordCandidate(password, record) : undefined
+    const weakLoginOnly = Boolean(
+      verification?.weak && this.#mappedTables?.passwords.mode === 'login-only',
+    )
+    if (!record || !verification?.valid || weakLoginOnly) {
       await this.#audit('session.reauthentication_failed', identityId, sessionId, {})
       throw new AuthenticationError('invalid_credentials', 'The current password is invalid.')
     }
     const now = new Date()
-    await this.#requireDatabase().transaction(async (transaction) => {
+    const upgraded = verification.needsUpgrade ? await createPasswordRecord(password) : undefined
+    const refreshSession = async (transaction: Database): Promise<void> => {
       const [session] = await transaction
         .update(authSessions)
         .set({ authenticatedAt: now, lastSeenAt: now })
@@ -845,7 +851,23 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
         metadata: {},
         occurredAt: now,
       })
-    })
+    }
+    if (this.#mappedTables && upgraded) {
+      await this.#mappedTransaction(async (transaction, client) => {
+        await updateMappedPassword(client, this.#mappedTables!.passwords, identityId, upgraded, now)
+        await refreshSession(transaction)
+      })
+    } else {
+      await this.#requireDatabase().transaction(async (transaction) => {
+        if (upgraded) {
+          await transaction
+            .update(authPasswords)
+            .set({ ...upgraded, updatedAt: now })
+            .where(eq(authPasswords.identityId, identityId))
+        }
+        await refreshSession(transaction as unknown as Database)
+      })
+    }
     await this.#clearRateLimit('reauthenticate', `${identityId}\0${metadata.ipAddress ?? ''}`)
     return now
   }
@@ -1825,10 +1847,14 @@ function isMappedPassword(
 async function verifyPasswordCandidate(
   password: string,
   candidate: PasswordRecord | MappedPasswordCredential,
-): Promise<boolean> {
+): Promise<EncodedPasswordVerification> {
   return isMappedPassword(candidate)
-    ? (await verifyEncodedPassword(password, candidate.encoded, candidate.readers)).valid
-    : await verifyPassword(password, candidate)
+    ? await verifyEncodedPassword(password, candidate.encoded, candidate.readers)
+    : {
+        valid: await verifyPassword(password, candidate),
+        weak: false,
+        needsUpgrade: needsRehash(candidate),
+      }
 }
 
 async function findMappedLogin(
@@ -2106,6 +2132,12 @@ function accessTokenMaterial(
     )
   }
   const constraints = [...new Set(input.constraints ?? [])].sort()
+  if (constraints.length > 100) {
+    throw new AuthenticationError(
+      'invalid_registration',
+      'Access tokens accept at most 100 constraints.',
+    )
+  }
   if (constraints.some((constraint) => !/^[a-z][a-z0-9._:-]{0,127}$/.test(constraint))) {
     throw new AuthenticationError(
       'invalid_registration',

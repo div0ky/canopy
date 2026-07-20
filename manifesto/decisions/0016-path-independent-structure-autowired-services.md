@@ -183,6 +183,11 @@ reorganizes the integrated application from one flat directory into infrastructu
 system domains with role folders. All behavior remains green without folder configuration, while
 manifest ownership changes only through the new Feature declarations and imports.
 
+The
+[application permission source and shared service vertical slice](../implementation/application-permission-source-vertical-slice.md)
+proves the concrete `provides` path while preserving execution and transient scopes across Feature
+boundaries.
+
 ## Revisit when
 
 - Path-independent ownership prevents the compiler from producing reliable source diagnostics.

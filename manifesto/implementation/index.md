@@ -56,8 +56,8 @@ requirement to its implementation and acceptance evidence.
     provider overrides, acting-as identity, in-memory durability, queue/comms fakes, and HTTP,
     action, query, command, rollback, and telemetry proofs.
 18. [Authentication completion vertical slice](authentication-completion-vertical-slice.md) —
-    digest-only verification/reset, queued mail, password change, durable abuse controls, recovery
-    privacy, and user session management.
+    digest-only challenge records, queued mail, password change, durable abuse controls, recovery
+    privacy, user session management, and the documented raw-delivery-payload blocker.
 19. [Operational control vertical slice](operational-control-vertical-slice.md) — durable schedule
     enablement and manual firing plus journal, outbox, cache, auth, queue, and delivery inspection
     and recovery through Praxis.
@@ -88,3 +88,9 @@ requirement to its implementation and acceptance evidence.
 28. [Gnosis read-only local engineering vertical slice](gnosis-read-only-vertical-slice.md) — shared
     typed introspection, manifest relationship metadata, bounded MCP tools and resources,
     exact-version local guidance, stdio launch, redaction, and production dependency isolation.
+29. [Framework security audit, 2026-07-16](security-audit-2026-07-16.md) — adversarial
+    framework-wide review, remediated boundary defects, dependency evidence, and unresolved release
+    blockers.
+30. [Application permission source and shared service vertical slice](application-permission-source-vertical-slice.md)
+    — concrete `Feature.provides` scope preservation plus one application-wide, execution-cached
+    permission source composed with credential constraints and resource policies.

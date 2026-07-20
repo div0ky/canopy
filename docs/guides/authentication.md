@@ -49,8 +49,11 @@ The `email` identifier kind requires `email` or `email-or-domain` normalization;
 identity reports email verification as `unsupported` and omits verification and recovery routes.
 
 Cookie-authenticated unsafe requests and WebSocket upgrades require a configured trusted `Origin`.
-Bearer and cookie credentials may not be combined. Stored session, token, verification, and reset
-credentials are digests; raw values are visible only when first issued.
+Bearer and cookie credentials may not be combined. Authentication tables store session, bearer,
+verification, and reset credentials as digests. Generated verification and recovery mail currently
+copies the raw challenge into durable delivery payloads; that security-release blocker is tracked in
+the
+[2026-07-16 framework security audit](../../manifesto/implementation/security-audit-2026-07-16.md).
 
 Sensitive operations should require a recent password session:
 
@@ -63,7 +66,13 @@ if (!isRecentPasswordAuthentication(request.context.authentication)) {
 The generated `POST /auth/reauthenticate` route verifies the current password, refreshes the named
 live session's `authenticatedAt`, and records a security audit event. It does not create a new
 identity, session, or authority model. The default freshness window is 15 minutes; applications may
-pass a deliberate alternate window to `isRecentPasswordAuthentication`.
+pass a deliberate alternate window to `isRecentPasswordAuthentication`. A legacy weak SHA-256
+verifier is never sufficient for this sensitive-operation refresh in `login-only` mapping mode. A
+valid legacy or current Argon2id verifier is upgraded transactionally before the session timestamp
+is refreshed.
+
+Opaque bearer credentials accept at most 100 unique authority constraints. Larger grants are
+rejected before persistence so credential evaluation remains bounded.
 
 Password changes and resets revoke sessions according to the first-party Auth contract. Applications
 should use generated routes and policies as the ordinary path and expose raw Auth methods only when

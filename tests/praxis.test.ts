@@ -61,21 +61,44 @@ describe('Praxis command suite', () => {
   it('generates App roles beside the Feature created by doxa new', async () => {
     const root = await temporaryDirectory()
     const destination = path.join(root, 'example')
+    const output: string[] = []
     const errors: string[] = []
     const io = {
-      out: () => undefined,
+      out: (message: string) => output.push(message),
       error: (message: string) => errors.push(message),
     }
 
     expect(await runPraxis(['new', 'Example', `--directory=${destination}`], root, io)).toBe(0)
     expect(await runPraxis(['make:model', 'App/Contact'], destination, io)).toBe(0)
+    expect(
+      await runPraxis(['make:service', 'App/ApplicationAccess', '--provide'], destination, io),
+    ).toBe(0)
+    expect(
+      await runPraxis(
+        ['make:permission-source', 'App/ApplicationPermissions', '--abilities=contact.read'],
+        destination,
+        io,
+      ),
+    ).toBe(0)
     expect(await fileExists(path.join(destination, 'src/app/models/contact.ts'))).toBe(true)
-    expect(await readFile(path.join(destination, 'src/app/app.feature.ts'), 'utf8')).toContain(
-      'models = [Contact]',
-    )
+    const feature = await readFile(path.join(destination, 'src/app/app.feature.ts'), 'utf8')
+    expect(feature).toContain('models = [Contact]')
+    expect(feature).toContain('provides = [ApplicationAccess]')
+    expect(feature).toContain('permissionSources = [ApplicationPermissions]')
 
     await symlink(path.join(workspace, 'node_modules'), path.join(destination, 'node_modules'))
     expect(await runPraxis(['build'], destination, io)).toBe(0)
+    expect(await runPraxis(['permission-source:list', '--json'], destination, io)).toBe(0)
+    expect(JSON.parse(output.at(-1)!)).toEqual({
+      items: [
+        expect.objectContaining({
+          id: 'permission-source:app/application-permissions',
+          abilities: ['contact.read'],
+        }),
+      ],
+      total: 1,
+      truncated: false,
+    })
     expect(errors).toEqual([])
   })
 
@@ -361,6 +384,11 @@ describe('Praxis command suite', () => {
       ],
       ['make:policy', 'Commerce/OrderPolicy', '--abilities=orders.view,orders.ship'],
       [
+        'make:permission-source',
+        'Commerce/ApplicationPermissions',
+        '--abilities=orders.view,orders.ship',
+      ],
+      [
         'make:route',
         'Commerce/ListOrdersRoute',
         '--method=GET',
@@ -369,7 +397,7 @@ describe('Praxis command suite', () => {
       ],
       ['make:config', 'Commerce/CommerceConfig'],
       ['make:provider', 'Commerce/WarehouseProvider'],
-      ['make:service', 'Commerce/CalculateOrderTotal'],
+      ['make:service', 'Commerce/CalculateOrderTotal', '--provide'],
       [
         'make:command',
         'Commerce/RebuildProjections',
@@ -392,9 +420,11 @@ describe('Praxis command suite', () => {
       'jobs',
       'schedules',
       'policies',
+      'permissionSources',
       'routes',
       'configs',
       'providers',
+      'provides',
       'commands',
     ]) {
       expect(feature).toContain(`${field} = [`)
@@ -427,6 +457,12 @@ describe('Praxis command suite', () => {
     expect(
       await readFile(path.join(root, 'src/features/commerce/policies/order-policy.ts'), 'utf8'),
     ).toContain('orders.ship')
+    expect(
+      await readFile(
+        path.join(root, 'src/features/commerce/permission-sources/application-permissions.ts'),
+        'utf8',
+      ),
+    ).toContain('extends PermissionSource')
   })
 
   it('registers new Features in an existing Application and creates migrations and tests', async () => {
@@ -488,11 +524,12 @@ describe('Praxis command suite', () => {
       `packages:\n  - .\n\nallowBuilds:\n  esbuild: true\n`,
     )
     expect(await readFile(path.join(destination, '.codex/config.toml'), 'utf8')).toBe(
-      `[mcp_servers.gnosis]\ncommand = "node"\nargs = ["./node_modules/@doxajs/praxis/dist/bin.js","mcp"]\ncwd = "."\nstartup_timeout_sec = 120\n`,
+      `[mcp_servers.gnosis]\ncommand = "node"\nargs = ["./node_modules/@doxajs/praxis/dist/bin.js","mcp"]\ncwd = ${JSON.stringify(destination)}\nstartup_timeout_sec = 120\n`,
     )
     const agents = await readFile(path.join(destination, 'AGENTS.md'), 'utf8')
     expect(agents).toContain('<doxa-gnosis-guidelines>')
     expect(agents).toContain('Use Gnosis MCP tools')
+    expect(agents).toContain('Project MCP configuration is discovered')
     expect(agents).toContain('Use `query_models` instead of raw SQL')
     expect(JSON.parse(await readFile(path.join(destination, '.mcp.json'), 'utf8'))).toEqual({
       mcpServers: {
@@ -668,7 +705,7 @@ describe('Praxis command suite', () => {
       '# Monorepo guidance\n\n<doxa-gnosis-guidelines>',
     )
     expect(await readFile(path.join(root, '.codex/config.toml'), 'utf8')).toContain(
-      'cwd = "apps/doxaapp"',
+      `cwd = ${JSON.stringify(destination)}`,
     )
     expect(JSON.parse(await readFile(path.join(root, '.mcp.json'), 'utf8'))).toEqual({
       mcpServers: {
@@ -723,7 +760,7 @@ describe('Praxis command suite', () => {
     expect(codex).toContain('model = "gpt-example"')
     expect(codex).toContain('[mcp_servers.existing]')
     expect(codex.match(/\[mcp_servers\.gnosis\]/g)).toHaveLength(1)
-    expect(codex).toContain('cwd = "."')
+    expect(codex).toContain(`cwd = ${JSON.stringify(root)}`)
     expect(JSON.parse(claude)).toEqual({
       mcpServers: {
         existing: { command: 'existing-server' },
@@ -746,7 +783,13 @@ describe('Praxis command suite', () => {
     expect(await readFile(path.join(root, '.codex/config.toml'), 'utf8')).toBe(codex)
     expect(await readFile(path.join(root, '.mcp.json'), 'utf8')).toBe(claude)
     expect(await readFile(path.join(root, 'AGENTS.md'), 'utf8')).toBe(agents)
-    expect(output.at(-1)).toContain('Your MCP client will start it on demand.')
+    expect(output.at(-1)).toContain(
+      'Reload or reopen your MCP client, approve project trust if prompted, and start a new agent task.',
+    )
+    expect(output.at(-1)).toContain('Existing tasks do not acquire newly registered tools.')
+    expect(output.at(-1)).toContain(
+      'registration files alone do not prove that the server initialized.',
+    )
   })
 
   it('fails Gnosis installation closed on malformed managed guidance', async () => {
@@ -1055,6 +1098,7 @@ describe('Praxis command suite', () => {
       `${JSON.stringify(upgradeFixturePackage(currentPraxis.version), null, 2)}\n`,
     )
     const invocations: string[][] = []
+    const output: string[] = []
     expect(
       await runPraxis(
         [
@@ -1066,7 +1110,7 @@ describe('Praxis command suite', () => {
         ],
         application,
         {
-          out: () => undefined,
+          out: (message) => output.push(message),
           error: (message) => {
             throw new Error(message)
           },
@@ -1088,7 +1132,15 @@ describe('Praxis command suite', () => {
     expect(await fileExists(path.join(root, '.vscode/mcp.json'))).toBe(true)
     expect(await fileExists(path.join(application, '.codex/config.toml'))).toBe(false)
     expect(await readFile(path.join(root, '.codex/config.toml'), 'utf8')).toContain(
-      'cwd = "apps/doxaapp"',
+      `cwd = ${JSON.stringify(application)}`,
+    )
+    expect(output).toContainEqual(
+      expect.stringContaining(
+        'Reload or reopen your MCP client, approve project trust if prompted, and start a new agent task.',
+      ),
+    )
+    expect(output).toContainEqual(
+      expect.stringContaining('Existing tasks do not acquire newly registered tools.'),
     )
   })
 

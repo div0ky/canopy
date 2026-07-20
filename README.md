@@ -72,7 +72,7 @@ To work on Doxa itself before package publication, follow the
 - PostgreSQL/Drizzle transactions, Eloquent-style models, journal, outbox, and cache.
 - Laravel-like events, listeners, signals, observers, jobs, and schedules.
 - First-party email/password, opaque browser-session, and opaque bearer authentication.
-- Default-deny entry and resource authorization.
+- Default-deny entry and resource authorization with application-wide permission-source mapping.
 - SendGrid mail and Twilio SMS adapters behind Doxa-owned contracts.
 - Standards-correct distributed spans, structured logs, metrics, diagnostics, and testing fakes.
 - A first-party OpenTelemetry adapter over Doxa-owned trace and metric contracts.
@@ -103,6 +103,7 @@ To work on Doxa itself before package publication, follow the
 - [Getting started](docs/getting-started/index.md)
 - [Application model](docs/concepts/application-model.md)
 - [Events, jobs, and schedules](docs/guides/events-jobs-schedules.md)
+- [Authorization and application permissions](docs/guides/authorization.md)
 - [Observability, OpenTelemetry, and Theoria](docs/guides/observability.md)
 - [Operations and deployment](docs/operations/deployment.md)
 - [Package reference](docs/reference/packages.md)

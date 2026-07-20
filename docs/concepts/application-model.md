@@ -5,7 +5,8 @@ plugins, and typed framework configuration. Doxa automatically adds its mandator
 HTTP, PostgreSQL persistence, transactions, cache, pg-boss queues/scheduling, authentication, and
 health. A user Feature declares only application classes that face the framework: models, actions,
 queries, routes, events, listeners, signals, observers, jobs, schedules, policies, commands, and
-configuration.
+configuration. It may also intentionally export ordinary services through `provides` and select the
+application's optional permission source.
 
 ```ts
 export class OrdersFeature extends Feature {
@@ -34,8 +35,21 @@ Schedules are different: they are declaration-only timing metadata, are never co
 dispatch a Job that receives the schedule firing's execution scope.
 
 Ordinary services remain plain classes with constructor injection. Concrete services are directly
-shareable when the declaring Feature exposes them; abstract-class ports or typed tokens are added
-when polymorphism or isolation is meaningful.
+shareable when the declaring Feature exposes them through `provides`; abstract-class ports or typed
+tokens are added when polymorphism or isolation is meaningful. Exporting a service preserves its
+natural scope: `ExecutionScoped` remains execution-scoped and an unmarked service remains transient.
+
+```ts
+export class CrmFeature extends Feature {
+  id = 'crm'
+  provides = [ApplicationAccess]
+}
+```
+
+A Feature may also select the application's one optional `PermissionSource`. It maps
+application-owned group or user permission facts to stable Doxa abilities and is resolved at most
+once per admitted execution. It does not add permissions to `ExecutionContext`; see
+[Authorization and application permissions](../guides/authorization.md).
 
 Every admitted request, job, schedule, command, listener, or message receives one execution scope
 with the same actor, authentication, tenant, correlation, causation, trace, cancellation, logging,

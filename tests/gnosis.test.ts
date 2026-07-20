@@ -60,7 +60,7 @@ describe('Gnosis read-only local engineering server', () => {
   })
 
   it('compiles model relationships into the canonical manifest', () => {
-    expect(manifest.formatVersion).toBe(4)
+    expect(manifest.formatVersion).toBe(5)
     expect(manifest.frameworkVersion).toBe(compilerVersion)
     expect(manifest.models.find((model) => model.id.endsWith('/counter'))?.relationships).toEqual([
       {
@@ -97,7 +97,7 @@ describe('Gnosis read-only local engineering server', () => {
     expect(applicationInfo(manifest)).toEqual(
       expect.objectContaining({
         applicationId: 'persistence-reference-app',
-        manifestFormatVersion: 4,
+        manifestFormatVersion: 5,
         frameworkVersion: compilerVersion,
       }),
     )
@@ -212,6 +212,7 @@ describe('Gnosis read-only local engineering server', () => {
           'application_info',
           'inspect_graph',
           'list_routes',
+          'list_permission_sources',
           'describe_model',
           'describe_authentication',
           'query_models',
@@ -224,6 +225,14 @@ describe('Gnosis read-only local engineering server', () => {
 
       const routes = await client.callTool({ name: 'list_routes', arguments: {} })
       expect(routes.structuredContent).toEqual(inspectSurface(manifest, 'routes'))
+
+      const permissionSources = await client.callTool({
+        name: 'list_permission_sources',
+        arguments: {},
+      })
+      expect(permissionSources.structuredContent).toEqual(
+        inspectSurface(manifest, 'permissionSources'),
+      )
 
       const authentication = await client.callTool({
         name: 'describe_authentication',
@@ -385,24 +394,20 @@ describe('Gnosis read-only local engineering server', () => {
   })
 
   it('is spawned by generated project registration without a manual start', async () => {
-    const registration = JSON.parse(
-      await readFile(path.join(generatedApplication, '.mcp.json'), 'utf8'),
-    ) as {
-      mcpServers: {
-        gnosis: { command: string; args: string[]; cwd: string }
-      }
-    }
-    expect(registration.mcpServers.gnosis).toEqual({
-      command: 'node',
-      args: ['./node_modules/@doxajs/praxis/dist/bin.js', 'mcp'],
-      cwd: '.',
-      env: {},
-    })
+    const registrationFile = path.join(generatedApplication, '.codex/config.toml')
+    const registration = await readFile(registrationFile, 'utf8')
+    expect(registration).toContain('command = "node"')
+    expect(registration).toContain('args = ["./node_modules/@doxajs/praxis/dist/bin.js","mcp"]')
+    expect(registration).toContain(`cwd = ${JSON.stringify(generatedApplication)}`)
+    const cwd = registration.match(/^cwd = "([^"]+)"$/m)?.[1]
+    if (cwd === undefined) throw new Error('generated Codex registration is missing cwd')
+    expect(cwd).toBe(generatedApplication)
+    expect(path.isAbsolute(cwd)).toBe(true)
     const client = new Client({ name: 'gnosis-stdio-test', version: '1.0.0' })
     const transport = new StdioClientTransport({
-      command: registration.mcpServers.gnosis.command,
-      args: registration.mcpServers.gnosis.args,
-      cwd: path.resolve(generatedApplication, registration.mcpServers.gnosis.cwd),
+      command: 'node',
+      args: ['./node_modules/@doxajs/praxis/dist/bin.js', 'mcp'],
+      cwd,
       env: { ...getDefaultEnvironment(), CI: '1' },
       stderr: 'pipe',
     })
@@ -420,7 +425,7 @@ describe('Gnosis read-only local engineering server', () => {
       expect(result.structuredContent).toEqual(
         expect.objectContaining({
           applicationId: 'garden',
-          manifestFormatVersion: 4,
+          manifestFormatVersion: 5,
           gnosisVersion,
         }),
       )

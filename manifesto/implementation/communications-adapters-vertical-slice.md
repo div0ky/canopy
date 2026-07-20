@@ -33,8 +33,10 @@ the exact callback URL and sorted form fields. Both normalize into a transaction
 action. Provider event IDs are unique and duplicate callbacks are harmless.
 
 Praxis provides `delivery:list` and `delivery:retry`. Redrive is limited to failed or undelivered
-messages, rebuilds a queue envelope with the original actor, authentication, correlation, and trace
-context, and atomically resets delivery state with its outbox handoff. Configuration is read from an
+messages, rebuilds a version-1 queue envelope with the original actor, authentication, correlation,
+and trace context, and atomically resets delivery state with its outbox handoff. Preserving that
+authority conflicts with the accepted worker model and is tracked by the
+[2026-07-16 framework security audit](security-audit-2026-07-16.md). Configuration is read from an
 explicit option, the environment, or the repository `.env` file.
 
 The required communications behavior is proven. Queue and channel telemetry is emitted through the

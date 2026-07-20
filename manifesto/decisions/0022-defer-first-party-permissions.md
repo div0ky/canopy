@@ -10,9 +10,10 @@ Doxa will not yet ship a first-party roles, memberships, grants, or permission-a
 model. The framework's actor, stable ability, default-deny policy, resource authorization, bearer
 constraint, audit, manifest, diagnostic, and testing contracts remain core and implemented.
 
-Applications may supply permission facts to policies from their own database or services. Roles are
-application facts, not actor kinds. A bearer-token constraint may only narrow authority and must
-never become a permission grant.
+Applications may supply permission facts from their own database or services through the
+application-wide `PermissionSource` accepted by
+[Decision 0034](0034-application-permission-sources.md). Roles are application facts, not actor
+kinds. A bearer-token constraint may only narrow authority and must never become a permission grant.
 
 ## Why defer it
 
@@ -21,38 +22,35 @@ force assumptions about tenants, organizations, role inheritance, explicit denia
 resource scope, and existing enterprise identity data. Those choices are difficult to reverse and
 are not required for Doxa policies to authorize real applications today.
 
-Existing-database mapping should stabilize first. A later first-party permissions package must be
-able to use either Doxa-owned tables or an existing application's role and membership schema through
-one permission-source contract.
+Existing-database mapping stabilized first, and Decision 0034 now defines the integration contract.
+A later first-party permissions package must use that same contract for either Doxa-owned tables or
+an existing application's role and membership schema.
 
 ## Current application experience
 
-Policies remain the single decision point:
+The permission source maps application-owned facts to the stable base abilities used everywhere:
 
 ```ts
-export class OrderPolicy extends Policy<Order> {
+export class ApplicationPermissions extends PermissionSource {
+  static id = 'application'
   static abilities = ['orders.view', 'orders.update']
 
   private readonly access = this.inject(ApplicationAccess)
 
-  async decide(request: PolicyRequest<Order>) {
-    if (!(await this.access.has(request.actor, request.ability, request.tenant))) {
-      return deny('order', 'permission_required')
-    }
-    return request.resource && request.resource.ownerId !== request.actor.id
-      ? deny('order', 'ownership_required')
-      : allow('order')
+  async resolve(request: PermissionSourceRequest) {
+    return await this.access.abilitiesFor(request.actor, request.tenant)
   }
 }
 ```
 
 `ApplicationAccess` is ordinary application code and may query legacy tables, call another service,
-or implement a bespoke capability model. Doxa continues to compile the ability owner, enforce
-default denial, and audit the final policy decision.
+or implement a bespoke capability model. Optional policies continue to narrow a source grant for
+resource ownership and domain state. Doxa compiles both ability owners, enforces default denial, and
+audits the final decision. Doxa still does not own role, membership, grant, assignment, or
+administration storage.
 
 ## Revisit when
 
-- Existing-table model and auth mapping are implemented and proven.
 - Tenant and delegation contracts are complete enough to constrain grant scope.
 - At least two production-shaped applications demonstrate common role and membership needs.
 - The package can remain optional without creating a second authorization system beside policies.
