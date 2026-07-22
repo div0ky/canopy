@@ -5,6 +5,7 @@ import {
   hydrateMappedState,
   mappedModelProjection,
   mappedModelVersionSource,
+  postgresRegclassIdentifier,
   type ModelColumnMetadata,
   validateMappedModelReadiness,
 } from '../packages/postgres-drizzle/src/postgres-transaction-manager.js'
@@ -33,6 +34,12 @@ const idColumn = column('contact_id', 'uuid')
 const displayNameColumn = column('display_name', 'text')
 
 describe('mapped-model PostgreSQL readiness contract', () => {
+  it('quotes exact mixed-case and schema-qualified regclass identifiers', () => {
+    expect(postgresRegclassIdentifier('Contact')).toBe('"Contact"')
+    expect(postgresRegclassIdentifier('public.Contact')).toBe('"public"."Contact"')
+    expect(postgresRegclassIdentifier('Legacy.User"Group')).toBe('"Legacy"."User""Group"')
+  })
+
   it('uses a non-concurrency version for read-only relations without a version column', () => {
     expect(mappedModelVersionSource(mappedStorage)).toEqual({ kind: 'xmin' })
     expect(
@@ -115,6 +122,41 @@ describe('mapped-model PostgreSQL readiness contract', () => {
     ).not.toThrow()
   })
 
+  it('accepts timestamp-backed logical strings and hydrates Date values as ISO strings', () => {
+    const timestampStorage: TableStorage = {
+      ...mappedStorage,
+      columns: { ...mappedStorage.columns, createdAt: 'created_at' },
+      attributeTypes: {
+        ...mappedStorage.attributeTypes,
+        createdAt: { kind: 'string', nullable: false, optional: false },
+      },
+    }
+    for (const type of ['date', 'timestamp', 'timestamptz']) {
+      expect(() =>
+        validateMappedModelReadiness(
+          'model:contacts/contact',
+          timestampStorage,
+          'r',
+          [idColumn, displayNameColumn, column('created_at', type)],
+          ['contact_id'],
+        ),
+      ).not.toThrow()
+    }
+
+    const createdAt = new Date('2026-07-21T12:34:56.789Z')
+    expect(
+      hydrateMappedState(
+        {
+          __doxa_attribute_0: 'contact-1',
+          __doxa_attribute_1: 'Ada',
+          __doxa_attribute_2: createdAt,
+          __doxa_version: 1,
+        },
+        timestampStorage,
+      ),
+    ).toEqual({ id: 'contact-1', displayName: 'Ada', createdAt: createdAt.toISOString() })
+  })
+
   it('rejects missing relations, mapped columns, incompatible types, and nullability', () => {
     expect(() =>
       validateMappedModelReadiness('model:contacts/contact', mappedStorage, undefined, [], []),
@@ -194,6 +236,8 @@ describe('mapped-model PostgreSQL readiness contract', () => {
       readOnly: true,
       versionSource: { kind: 'none' },
     }
+    expect(readOnlyStorage).not.toHaveProperty('versionColumn')
+    expect(mappedModelVersionSource(readOnlyStorage)).toEqual({ kind: 'none' })
     expect(() =>
       validateMappedModelReadiness(
         'model:contacts/contact',

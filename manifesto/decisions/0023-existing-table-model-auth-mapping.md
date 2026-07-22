@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
-- **Amended:** 2026-07-20
+- **Amended:** 2026-07-21
 - **Implementation:** Config-driven identity contract and direct table mapping are implemented and
   proven
 - **Decision owners:** Doxa maintainers
@@ -158,8 +158,11 @@ closed and revokes all Doxa sessions and tokens.
 - PostgreSQL readiness inspection is read-only. It validates relation existence, declared columns,
   type/nullability compatibility, the single-column primary key, timestamp/version sources,
   generated-column safety, view mode, and whether a writable model can insert without supplying
-  undeclared required columns. Because PostgreSQL does not preserve reliable `NOT NULL` metadata on
-  views, strict hydration rejects actual null values for required declared view attributes.
+  undeclared required columns. Catalog lookups preserve exact quoted mixed-case and schema-qualified
+  relation names. Logical string attributes are compatible with PostgreSQL `date`, `timestamp`, and
+  `timestamptz` columns because hydration normalizes driver `Date` values to ISO strings. Because
+  PostgreSQL does not preserve reliable `NOT NULL` metadata on views, strict hydration rejects
+  actual null values for required declared view attributes.
 - Additional columns, indexes, checks, and foreign keys outside the declared model projection are
   not imported into the manifest or Gnosis and do not fail readiness unless an undeclared required
   column makes inserts impossible.

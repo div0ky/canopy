@@ -20,4 +20,7 @@ contain only the declared dirty patch plus adapter-owned timestamp/version chang
 inspects mapped relations read-only and validates declared columns, types, nullability, keys,
 generated behavior, views, and insert viability without importing unrelated physical schema into
 Doxa artifacts. Because PostgreSQL views do not preserve reliable `NOT NULL` catalog metadata,
-required view attributes are checked against each projected row during strict hydration.
+required view attributes are checked against each projected row during strict hydration. Catalog
+inspection preserves quoted mixed-case and schema-qualified relation names. Logical string
+attributes may map to PostgreSQL `date`, `timestamp`, and `timestamptz` columns because hydration
+normalizes driver `Date` values to ISO strings.
