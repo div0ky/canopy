@@ -2535,6 +2535,68 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     })
   })
 
+  it('validates and hydrates quoted mapped relations through the live PostgreSQL catalog', async () => {
+    const timestamp = '2026-07-21T12:34:56.789Z'
+    await pool.query(`
+      CREATE TABLE public."Contact" (
+        id text PRIMARY KEY,
+        "createdAt" timestamptz NOT NULL
+      );
+      INSERT INTO public."Contact" (id, "createdAt") VALUES ('contact-1', '${timestamp}');
+      CREATE VIEW public."ContactView" AS SELECT id, "createdAt" FROM public."Contact";
+    `)
+    const contactStorage = {
+      kind: 'table' as const,
+      table: 'Contact',
+      primaryKey: 'id',
+      columns: { id: 'id', createdAt: 'createdAt' },
+      attributeTypes: {
+        id: { kind: 'string' as const, nullable: false, optional: false },
+        createdAt: { kind: 'string' as const, nullable: false, optional: false },
+      },
+      timestamps: false as const,
+      managed: false,
+      readOnly: false,
+      versionSource: { kind: 'xmin' as const },
+    }
+    const viewStorage = {
+      ...contactStorage,
+      table: 'public.ContactView',
+      readOnly: true,
+      versionSource: { kind: 'none' as const },
+    }
+    const manager = new PostgresTransactionManager({ connectionString })
+    const lifecycle = lifecycleContext()
+    manager.bindCompiledModels([
+      { entityType: 'model:contacts/contact', storage: contactStorage },
+      {
+        entityType: 'model:contacts/schema-qualified-contact',
+        storage: { ...contactStorage, table: 'public.Contact' },
+      },
+      { entityType: 'model:contacts/contact-view', storage: viewStorage },
+    ])
+    try {
+      await manager.start(lifecycle)
+      const hydrated = await manager.transaction(
+        executionContext('quoted-mapped-relation'),
+        (unit) => unit.findEntity('model:contacts/contact-view', 'contact-1', viewStorage),
+      )
+      expect(hydrated).toEqual({
+        type: 'model:contacts/contact-view',
+        id: 'contact-1',
+        version: 0,
+        state: { id: 'contact-1', createdAt: expect.any(String) },
+      })
+      const hydratedState = hydrated?.state as { readonly createdAt: string } | undefined
+      expect(new Date(String(hydratedState?.createdAt)).toISOString()).toBe(timestamp)
+    } finally {
+      await manager.dispose(lifecycle)
+      await pool.query(
+        `DROP VIEW IF EXISTS public."ContactView"; DROP TABLE IF EXISTS public."Contact"`,
+      )
+    }
+  })
+
   it('queries declared models through bounded logical read-only records', async () => {
     const writer = await bootPersistenceRuntime()
     await runAction(writer, SaveCounter, { id: 'gnosis-low', amount: 1 })

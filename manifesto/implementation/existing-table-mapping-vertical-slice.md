@@ -2,7 +2,7 @@
 
 - **Status:** Implemented MVP common path
 - **Implemented:** 2026-07-10
-- **Hardened:** 2026-07-20
+- **Hardened:** 2026-07-21
 - **Manifest format:** 6
 - **Decision:**
   [Map models and authentication to existing tables](../decisions/0023-existing-table-model-auth-mapping.md)
@@ -41,7 +41,9 @@ folders and runtime reflection remain irrelevant.
 The PostgreSQL adapter quotes every compiler-validated identifier and retains the normal model
 contract: execution identity, hydration, dirty tracking, observers, journal/outbox staging,
 transactional commit, and optimistic-concurrency failures. It never copies mapped state into
-`doxa_entity_states`.
+`doxa_entity_states`. Readiness resolves exact quoted mixed-case and schema-qualified relation
+names, and accepts logical string attributes backed by PostgreSQL date/timestamp types because
+hydration normalizes driver `Date` values to ISO strings.
 
 Every mapped read now uses the explicit physical projection compiled from the full declared logical
 attribute set. Adapter hydration rejects missing and unexpected fields. Runtime attribute access
@@ -113,6 +115,9 @@ The PostgreSQL conformance suite proves:
    physical columns.
 8. Read-only models retain find, query, aggregate, relationship, eager-load, pagination, cursor, and
    refresh behavior while rejecting create, save, and delete before observers and writes.
+9. Mixed-case and schema-qualified mapped relations pass every catalog lookup, timestamp-backed
+   logical strings validate and hydrate consistently, and read-only views use `none` without a
+   writable version column.
 
 Multiple identity realms, separate auth databases, permission mapping, OAuth, MFA, and application-
 defined hashers remain explicit future work.

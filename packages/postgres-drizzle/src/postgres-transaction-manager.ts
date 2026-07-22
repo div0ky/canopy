@@ -784,6 +784,14 @@ function qualifiedIdentifier(value: string): SQL {
   )
 }
 
+/** @internal Exact identifier text for PostgreSQL regclass catalog lookups. */
+export function postgresRegclassIdentifier(value: string): string {
+  return value
+    .split('.')
+    .map((part) => `"${part.replaceAll('"', '""')}"`)
+    .join('.')
+}
+
 function versionExpression(storage: Extract<ModelStorage, { readonly kind: 'table' }>): SQL {
   const source = mappedModelVersionSource(storage)
   if (source.kind === 'column') return sql`${sql.identifier(source.column)}`
@@ -958,11 +966,12 @@ async function validateMappedModelStorage(
   entityType: string,
   storage: Extract<ModelStorage, { readonly kind: 'table' }>,
 ): Promise<void> {
+  const relationIdentifier = postgresRegclassIdentifier(storage.table)
   const relation = await pool.query<{ relkind: string }>(
     `SELECT c.relkind
      FROM pg_class c
      WHERE c.oid = to_regclass($1)`,
-    [storage.table],
+    [relationIdentifier],
   )
   const relkind = relation.rows[0]?.relkind
   if (!relkind) {
@@ -996,7 +1005,7 @@ async function validateMappedModelStorage(
      WHERE a.attrelid = to_regclass($1)
        AND a.attnum > 0
        AND NOT a.attisdropped`,
-    [storage.table],
+    [relationIdentifier],
   )
   const columns = new Map<string, ModelColumnMetadata>(
     result.rows.map((row) => [
@@ -1024,7 +1033,7 @@ async function validateMappedModelStorage(
            WHERE i.indrelid = to_regclass($1)
              AND i.indisprimary
            ORDER BY array_position(i.indkey::smallint[], a.attnum)`,
-          [storage.table],
+          [relationIdentifier],
         )
       ).rows.map((row) => row.name)
   validateMappedModelReadiness(entityType, storage, relkind, [...columns.values()], primary)
@@ -1168,7 +1177,18 @@ function compatiblePostgresType(
   if (kind === 'string' && metadata.typeKind === 'e') return true
   if (kind === 'string')
     return (
-      new Set(['text', 'varchar', 'bpchar', 'citext', 'uuid', 'name', 'inet']).has(type) ||
+      new Set([
+        'text',
+        'varchar',
+        'bpchar',
+        'citext',
+        'uuid',
+        'name',
+        'inet',
+        'date',
+        'timestamp',
+        'timestamptz',
+      ]).has(type) ||
       (allowNumericString && new Set(['numeric', 'int2', 'int4', 'int8']).has(type))
     )
   if (kind === 'number')
