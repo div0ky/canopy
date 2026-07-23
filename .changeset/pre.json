@@ -73,6 +73,7 @@
     "observability-program",
     "open-source-foundation",
     "reject-stale-package-collisions",
+    "remove-auth-verification-sidecars",
     "remove-praxis-install-scripts",
     "typed-model-queries",
     "version-aligned-praxis-test"
