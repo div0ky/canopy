@@ -461,10 +461,18 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
           .where(eq(authIdentities.email, email))
           .limit(1)
     const row = mappedRow ?? defaultRow
-    const candidate = row?.password ?? this.#dummyPassword
-    if (!candidate) throw new Error('PostgresAuth is not started.')
+    const dummyPassword = this.#dummyPassword
+    if (!dummyPassword) throw new Error('PostgresAuth is not started.')
+    const candidate = row?.password ?? dummyPassword
     const mappedVerification = isMappedPassword(candidate)
-      ? await verifyEncodedPassword(input.password, candidate.encoded, candidate.readers)
+      ? (
+          await Promise.all([
+            verifyEncodedPassword(input.password, candidate.encoded, candidate.readers),
+            // Preserve the unknown-account Argon2id work factor for every mapped format so a
+            // configured weak reader does not make known-account failures observably cheap.
+            verifyPassword(input.password, dummyPassword),
+          ])
+        )[0]
       : undefined
     const valid =
       mappedVerification?.valid ??
@@ -1536,7 +1544,12 @@ async function validateMappedAuthTables(
   if (!passwordMetadata.get(tables.passwords.identityId)?.notNull) {
     throw new Error('Mapped auth credential identity key must be NOT NULL.')
   }
-  assertMappedColumnType(passwordMetadata, tables.passwords.password, 'credential', TEXT_TYPES)
+  assertMappedColumnType(
+    passwordMetadata,
+    tables.passwords.password,
+    'credential',
+    CREDENTIAL_READER_TYPES,
+  )
   const passwordColumn = passwordMetadata.get(tables.passwords.password)!
   if (!passwordColumn.notNull) {
     throw new Error('Mapped auth credential column must be NOT NULL.')
@@ -1546,6 +1559,11 @@ async function validateMappedAuthTables(
     throw new Error('Managed mapped auth credentials require an in-place upgrade policy.')
   }
   if (upgrade.mode === 'in-place') {
+    if (!WRITABLE_CREDENTIAL_TYPES.has(passwordColumn.type)) {
+      throw new Error(
+        'In-place auth credential column must use a case-sensitive variable-length text type.',
+      )
+    }
     if (
       passwordColumn.maxLength !== undefined &&
       passwordColumn.maxLength < MINIMUM_DOXA_PASSWORD_RECORD_LENGTH
@@ -1585,6 +1603,8 @@ async function validateMappedAuthTables(
 }
 
 const TEXT_TYPES = new Set(['text', 'varchar', 'bpchar', 'citext'])
+const CREDENTIAL_READER_TYPES = new Set(['text', 'varchar', 'bpchar'])
+const WRITABLE_CREDENTIAL_TYPES = new Set(['text', 'varchar'])
 const TIME_TYPES = new Set(['timestamp', 'timestamptz'])
 
 interface MappedColumnMetadata {
@@ -1705,11 +1725,25 @@ async function assertCredentialRowsUnique(
   queryable: Queryable,
   mapping: AuthPasswordTableMapping,
 ): Promise<void> {
-  const result = await queryable.query(
-    `SELECT 1 FROM ${quoteQualified(mapping.table)}
-     GROUP BY ${quoteIdentifier(mapping.identityId)} HAVING count(*) > 1 LIMIT 1`,
+  const indexes = await queryable.query<{ valid: boolean } & QueryResultRow>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM pg_index i
+       JOIN pg_attribute a
+         ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0]
+       WHERE i.indrelid = to_regclass($1)
+         AND i.indisunique
+         AND i.indisvalid
+         AND i.indpred IS NULL
+         AND i.indexprs IS NULL
+         AND i.indnkeyatts = 1
+         AND a.attname = $2
+     ) AS valid`,
+    [quoteQualified(mapping.table), mapping.identityId],
   )
-  if (result.rowCount) throw new Error('Mapped auth credentials contain duplicate identity rows.')
+  if (indexes.rows[0]?.valid !== true) {
+    throw new Error('Mapped auth credential identity key requires a direct unique index.')
+  }
 }
 
 async function insertMappedRegistration(

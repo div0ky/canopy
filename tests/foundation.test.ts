@@ -163,6 +163,32 @@ describe('foundational compile-to-boot slice', () => {
     ).toThrow('duration filtering requires started, completed, and failed phases')
   })
 
+  it('generates only authentication routes that login-only identities can support', () => {
+    const prepared = prepareFrameworkSource(
+      'app.config.ts',
+      `export class Application {
+        id = 'external-auth'
+        features = []
+        framework = { auth: { identity: {
+          mode: 'login-only',
+          verification: { mode: 'mapped' }
+        } } }
+      }`,
+    )
+
+    const featureRoutes = prepared.source
+      .split('\n')
+      .find((line) => line.trimStart().startsWith('routes = ['))
+    expect(featureRoutes).toContain(
+      'routes = [HealthRoute, LoginRoute, LogoutRoute, ReauthenticateRoute, MeRoute, TokenRoute',
+    )
+    expect(featureRoutes).not.toContain('RegisterRoute')
+    expect(featureRoutes).not.toContain('ChangePasswordRoute')
+    expect(featureRoutes).not.toContain('VerifyEmailRoute')
+    expect(featureRoutes).not.toContain('RequestPasswordResetRoute')
+    expect(featureRoutes).not.toContain('ResetPasswordRoute')
+  })
+
   it('creates parented spans for executions and nested framework scopes', async () => {
     const runtime = await bootRuntime()
     const inboundTraceId = '1'.repeat(32)

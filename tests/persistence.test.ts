@@ -3789,6 +3789,60 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     ).toBe(1)
   })
 
+  it('does not drop a password row committed while sidecar retirement waits', async () => {
+    await pool.query(`
+      CREATE TABLE doxa_auth_mapped_passwords (
+        identity_id text PRIMARY KEY,
+        password_record text NOT NULL,
+        updated_at timestamptz NOT NULL
+      )
+    `)
+    const blocker = await pool.connect()
+    const migrator = await pool.connect()
+    try {
+      await blocker.query('BEGIN')
+      await blocker.query(`LOCK TABLE doxa_auth_mapped_passwords IN ROW EXCLUSIVE MODE`)
+      await blocker.query(
+        `INSERT INTO doxa_auth_mapped_passwords VALUES ('racing-1', 'current-record', now())`,
+      )
+      const pid = (await migrator.query<{ pid: number }>(`SELECT pg_backend_pid() AS pid`)).rows[0]!
+        .pid
+      const migration = migrator.query(await readFile(DOXA_AUTH_MAPPING_MIGRATION_URL, 'utf8'))
+      let observedWaiting = false
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const waiting = await pool.query<{ waiting: boolean }>(
+          `SELECT EXISTS (
+             SELECT 1 FROM pg_locks
+             WHERE pid = $1 AND relation = 'doxa_auth_mapped_passwords'::regclass AND NOT granted
+           ) AS waiting`,
+          [pid],
+        )
+        if (waiting.rows[0]?.waiting) {
+          observedWaiting = true
+          break
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+      expect(observedWaiting).toBe(true)
+      await blocker.query('COMMIT')
+      await expect(migration).rejects.toThrow(
+        'doxa_auth_mapped_passwords still contains credentials',
+      )
+      expect(
+        (
+          await pool.query(
+            `SELECT 1 FROM doxa_auth_mapped_passwords WHERE identity_id = 'racing-1'`,
+          )
+        ).rowCount,
+      ).toBe(1)
+    } finally {
+      await blocker.query('ROLLBACK').catch(() => undefined)
+      blocker.release()
+      migrator.release()
+      await pool.query(`DROP TABLE IF EXISTS doxa_auth_mapped_passwords`)
+    }
+  })
+
   it('creates a verification sidecar independently of password-sidecar retirement', async () => {
     await pool.query(`DROP TABLE IF EXISTS doxa_auth_mapped_verifications`)
     await pool.query(await readFile(DOXA_AUTH_VERIFICATION_SIDECAR_MIGRATION_URL, 'utf8'))
@@ -4206,6 +4260,9 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         auth.register({ identifier: 'new-user', password: 'registration password' }),
       ).rejects.toMatchObject({ code: 'invalid_credentials' })
       await expect(auth.issueEmailVerification('login-only-1')).rejects.toMatchObject({
+        code: 'invalid_credentials',
+      })
+      await expect(auth.verifyEmail('unowned-token')).rejects.toMatchObject({
         code: 'invalid_credentials',
       })
       await expect(auth.issuePasswordReset('encore')).rejects.toMatchObject({
@@ -4780,7 +4837,35 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         updated_at timestamptz
       );
       CREATE UNIQUE INDEX nullable_timestamp_auth_username_lower_idx
-        ON nullable_timestamp_auth_users (lower(username))
+        ON nullable_timestamp_auth_users (lower(username));
+
+      CREATE EXTENSION IF NOT EXISTS citext;
+      CREATE TABLE case_insensitive_password_auth_users (
+        user_id text PRIMARY KEY,
+        username text NOT NULL,
+        contact_email text NOT NULL,
+        password_hash citext NOT NULL,
+        active boolean NOT NULL,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+      );
+      CREATE UNIQUE INDEX case_insensitive_password_auth_username_lower_idx
+        ON case_insensitive_password_auth_users (lower(username));
+
+      CREATE TABLE nonunique_credential_auth_users (
+        user_id text PRIMARY KEY,
+        username text NOT NULL,
+        contact_email text NOT NULL,
+        active boolean NOT NULL,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+      );
+      CREATE UNIQUE INDEX nonunique_credential_auth_username_lower_idx
+        ON nonunique_credential_auth_users (lower(username));
+      CREATE TABLE nonunique_auth_credentials (
+        user_id text NOT NULL,
+        password_hash text NOT NULL
+      )
     `)
     const configured = (table: string) => {
       const auth = new PostgresAuth({
@@ -4810,6 +4895,43 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     await expect(
       configured('nullable_timestamp_auth_users').start(lifecycleContext()),
     ).rejects.toThrow('credential timestamp must be writable and NOT NULL')
+
+    const caseInsensitive = new PostgresAuth({
+      connectionString,
+      secureCookies: false,
+      trustedOrigins: ['http://doxa.test'],
+    })
+    caseInsensitive.bindCompiledAuthentication(
+      mappedAuthentication({
+        mode: 'login-only',
+        table: 'case_insensitive_password_auth_users',
+        verification: { mode: 'trusted' },
+      }),
+    )
+    await expect(caseInsensitive.start(lifecycleContext())).rejects.toThrow(
+      'credential column password_hash has an incompatible PostgreSQL type',
+    )
+
+    const nonunique = new PostgresAuth({
+      connectionString,
+      secureCookies: false,
+      trustedOrigins: ['http://doxa.test'],
+    })
+    const nonuniqueConfiguration = mappedAuthentication({
+      mode: 'login-only',
+      table: 'nonunique_credential_auth_users',
+      verification: { mode: 'trusted' },
+    })
+    nonunique.bindCompiledAuthentication({
+      ...nonuniqueConfiguration,
+      credentials: {
+        ...nonuniqueConfiguration.credentials,
+        table: 'nonunique_auth_credentials',
+      },
+    })
+    await expect(nonunique.start(lifecycleContext())).rejects.toThrow(
+      'credential identity key requires a direct unique index',
+    )
   })
 })
 

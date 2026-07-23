@@ -151,7 +151,9 @@ Credential readers are reviewed first-party presets. Doxa supports its versioned
 bcrypt variants used by Laravel, Argon2id PHC records, and an explicitly weak lowercase SHA-256
 legacy reader. Configuring `sha256-hex` explicitly accepts a matching credential anywhere the
 mapping permits current-password proof, including login-only login and reauthentication. Diagnostics
-must warn that unsalted SHA-256 is weak without silently making the configured flow unusable.
+must warn that unsalted SHA-256 is weak without silently making the configured flow unusable. Mapped
+login retains the dummy Argon2id work factor alongside format-specific verification so weak readers
+do not make known-account failures observably cheap.
 
 External credential mappings have exactly one authoritative password column. Every configured reader
 names that same column, Doxa reads its current value on every password proof, and an external
