@@ -2,9 +2,11 @@
 
 - **Status:** Implemented proof
 - **Completed:** 2026-07-17
+- **Extended:** 2026-07-23 with first-class authorization model sessions
 - **Governing decisions:**
   [Path-independent services](../decisions/0016-path-independent-structure-autowired-services.md),
-  [application permission sources](../decisions/0034-application-permission-sources.md)
+  [application permission sources](../decisions/0034-application-permission-sources.md), and
+  [authorization model sessions](../decisions/0035-read-only-model-sessions-during-authorization.md)
 
 This slice closes the concrete-service branch of the accepted `Feature.provides` contract and adds
 the first-party `PermissionSource` integration seam for application-owned group and user
@@ -54,6 +56,33 @@ Permission results remain outside `ExecutionContext` and every durable propagati
 Existing queue, retry, listener, schedule, command, HTTP, and WebSocket admission paths therefore
 create a new store with no cached source result and re-evaluate current permissions.
 
+## First-class model hydration
+
+The persistence reference application includes a consumer-shaped user, group, permission, user
+assignment, and group assignment graph. Its permission source resolves direct and group abilities
+with:
+
+```ts
+const user = await User.with(['permissions', 'group.permissions']).find(actorId)
+```
+
+The source imports no `TransactionManager`, `ModelStorage`, entity-type construction, raw
+`queryEntities` reader, or persisted-state representation. A resource policy uses the same ambient
+model API.
+
+Runtime and persistence evidence proves that query entry authorization shares one read transaction,
+snapshot, and identity map with the query handler. Action and job entry authorization runs inside
+the owning transaction through a separate read-only session before the writable handler session is
+constructed. Resource authorization invoked from writable handlers receives another read-only
+identity map over that Unit of Work. Direct authorization and protected routes, commands, standalone
+listeners, signal handlers, schedules, and WebSocket subscriptions receive bounded read sessions.
+
+Source and policy `create`, `save`, and `delete` attempts fail with `ReadOnlyExecutionError` before
+persistence. A policy's injected `UnitOfWork` is also guarded read-only and cannot register an
+`afterCommit` callback against the action or job transaction. Nested policy authorization reuses the
+current read-only session, and the application permission source still resolves at most once per
+admitted execution. Captured authorization models become stale when their session closes.
+
 ## Inspection
 
 Praxis generates sources through `make:permission-source`, exports ordinary adapters through
@@ -67,6 +96,14 @@ it never invokes the source or loads application permission records.
 - `tests/foundation.test.ts` proves shared ownership, preserved execution scope, private-service
   rejection, source/policy composition, source caching, credential precedence, source failures,
   catalog validation, and one-source compilation.
+- `tests/persistence.test.ts` proves consumer-shaped relationship hydration, query snapshot and
+  identity reuse, action/job read-only isolation over one transaction, nested resource
+  authorization, bounded direct authorization reads, mutation rejection, missing-record denial, and
+  session closure.
+- `tests/testing.test.ts` repeats the consumer-shaped proof through the first-party memory adapter
+  and covers protected non-operation roles, default-deny and credential transaction elision,
+  failure, cancellation, and concurrent session isolation. `tests/broadcasting.test.ts` proves
+  private-channel policy model access through the runtime WebSocket subscription gateway.
 - `tests/gnosis.test.ts` proves manifest-format compatibility and shared deterministic
   introspection.
 - `tests/praxis.test.ts` and the repository verification gate cover the expanded inspection surface,

@@ -25,6 +25,10 @@ import { Application } from '../examples/persistence-app/dist/application.js'
 import { BroadcastCounter } from '../examples/persistence-app/dist/counters/actions/broadcast-counter.js'
 import { CounterBroadcasted } from '../examples/persistence-app/dist/counters/events/counter-broadcasted.js'
 import { CounterBroadcastedNow } from '../examples/persistence-app/dist/counters/events/counter-broadcasted-now.js'
+import {
+  broadcastAuthorizationModelRead,
+  resetBroadcastAuthorizationModelRead,
+} from '../examples/persistence-app/dist/counters/policies/counter.policy.js'
 
 const workspace = path.resolve(import.meta.dirname, '..')
 const applicationRoot = path.join(workspace, 'examples/persistence-app')
@@ -132,6 +136,7 @@ export class Application extends DoxaApplication { id = 'broadcast-fixture'; fea
       },
     })
     try {
+      resetBroadcastAuthorizationModelRead()
       harness.actingAsUser('ada')
       await harness.event(CounterBroadcastedNow, { counterId: 'counter-1' })
       expect(broadcasts.published).toEqual([
@@ -175,6 +180,7 @@ export class Application extends DoxaApplication { id = 'broadcast-fixture'; fea
       await expect(
         broadcasts.subscribe(admission, new PrivateChannel('counters.counter-1')),
       ).resolves.toEqual({})
+      expect(broadcastAuthorizationModelRead).toBe(true)
       await expect(
         broadcasts.subscribe(admission, new PrivateChannel('secrets.counter-1')),
       ).rejects.toThrow('not authorized')

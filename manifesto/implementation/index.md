@@ -94,4 +94,5 @@ requirement to its implementation and acceptance evidence.
     blockers.
 30. [Application permission source and shared service vertical slice](application-permission-source-vertical-slice.md)
     — concrete `Feature.provides` scope preservation plus one application-wide, execution-cached
-    permission source composed with credential constraints and resource policies.
+    permission source composed with credential constraints and resource policies, now with ambient
+    read-only declared-model access over the owning authorization persistence boundary.

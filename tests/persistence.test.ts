@@ -61,6 +61,7 @@ import { AttemptCounterWrite } from '../examples/persistence-app/dist/counters/q
 import { AssignCounterTag } from '../examples/persistence-app/dist/counters/actions/assign-counter-tag.js'
 import {
   capturedCounter,
+  capturedCounterQuery,
   CaptureCounter,
   resetCapturedCounter,
 } from '../examples/persistence-app/dist/counters/actions/capture-counter.js'
@@ -88,7 +89,36 @@ import { RefreshCounter } from '../examples/persistence-app/dist/counters/action
 import { RecordLegacyCustomerActivity } from '../examples/persistence-app/dist/counters/actions/record-legacy-customer-activity.js'
 import { RenameCounter } from '../examples/persistence-app/dist/counters/actions/rename-counter.js'
 import { SaveCounter } from '../examples/persistence-app/dist/counters/actions/save-counter.js'
-import { InspectCounterQueries } from '../examples/persistence-app/dist/counters/queries/inspect-counter-queries.js'
+import {
+  capturedCounterFindQuery,
+  InspectCounterQueries,
+  resetCapturedCounterFindQuery,
+} from '../examples/persistence-app/dist/counters/queries/inspect-counter-queries.js'
+import {
+  authorizedActionUser,
+  authorizedJobUser,
+  authorizedQueryUser,
+  ChangeAuthorizedUserBranch,
+  DispatchChangeAuthorizedUserBranchJob,
+  ReadAuthorizedUser,
+  resetAuthorizationOperationProof,
+  SeedLegacyAccess,
+} from '../examples/persistence-app/dist/authorization/authorization-operations.js'
+import {
+  permissionSourceDeleteError,
+  permissionSourceResolutions,
+  permissionSourceUser,
+  permissionSourceWriteError,
+  resetPermissionSourceProof,
+} from '../examples/persistence-app/dist/authorization/application-permissions.js'
+import {
+  nestedPolicyUser,
+  policyAfterCommitRan,
+  policyUser,
+  policyUnitOfWorkWriteError,
+  policyWriteError,
+  resetPolicyProof,
+} from '../examples/persistence-app/dist/authorization/application-policy.js'
 import { SaveLegacyCustomer } from '../examples/persistence-app/dist/counters/actions/save-legacy-customer.js'
 import { ClearLegacyCustomerNickname } from '../examples/persistence-app/dist/counters/actions/clear-legacy-customer-nickname.js'
 import { DeleteLegacyCustomer } from '../examples/persistence-app/dist/counters/actions/delete-legacy-customer.js'
@@ -207,6 +237,10 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
 
   beforeEach(async () => {
     resetCapturedCounter()
+    resetCapturedCounterFindQuery()
+    resetAuthorizationOperationProof()
+    resetPermissionSourceProof()
+    resetPolicyProof()
     resetRecordedEvents()
     resetRecordedJobAttempts()
     resetObserverLog()
@@ -2321,6 +2355,189 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     )
   })
 
+  it('hydrates permission sources and policies through bounded read-only model sessions', async () => {
+    const runtime = await bootPersistenceRuntime()
+    const userId = 'permission-model-user'
+    await runAction(runtime, SeedLegacyAccess, { userId, branchTag: 'CHI' })
+
+    resetAuthorizationOperationProof()
+    resetPermissionSourceProof()
+    resetPolicyProof()
+    resetTelemetryRecords()
+    const queryResult = await runtime.admit(
+      {
+        actor: { kind: 'user', id: userId },
+        authentication: { state: 'authenticated', identityId: userId, method: 'password' },
+        transport: { kind: 'test' },
+      },
+      () =>
+        runtime.queries.execute(ReadAuthorizedUser, {
+          userId,
+          branchTag: 'STL',
+        }),
+    )
+
+    expect(queryResult).toEqual({
+      id: userId,
+      branchTag: 'CHI',
+      directPermissions: [`${userId}-contact-read`, `${userId}-user-update`],
+      groupPermissions: [`${userId}-branch-override`],
+    })
+    expect(permissionSourceResolutions).toBe(1)
+    expect(permissionSourceUser).toBe(policyUser)
+    expect(policyUser).toBe(authorizedQueryUser)
+    expect(nestedPolicyUser).toBe(policyUser)
+    expect(permissionSourceWriteError).toBe(ReadOnlyExecutionError.name)
+    expect(permissionSourceDeleteError).toBe(ReadOnlyExecutionError.name)
+    expect(policyWriteError).toBe(ReadOnlyExecutionError.name)
+    expect(policyUnitOfWorkWriteError).toBe(ReadOnlyExecutionError.name)
+    expect(policyAfterCommitRan).toBe(false)
+    expect(
+      telemetryRecords.filter(
+        (record) =>
+          record.kind === 'metric' &&
+          record.name === 'doxa.persistence.transaction.total' &&
+          record.attributes.operation === 'authorization',
+      ),
+    ).toEqual([])
+    expect(() => permissionSourceUser!.refresh()).toThrow(StaleModelError)
+
+    resetAuthorizationOperationProof()
+    resetPermissionSourceProof()
+    resetPolicyProof()
+    resetTelemetryRecords()
+    const changedBranch = await runtime.admit(
+      {
+        actor: { kind: 'user', id: userId },
+        authentication: { state: 'authenticated', identityId: userId, method: 'password' },
+        transport: { kind: 'test' },
+      },
+      () =>
+        runtime.actions.execute(ChangeAuthorizedUserBranch, {
+          userId,
+          branchTag: 'STL',
+        }),
+    )
+    expect(changedBranch).toBe('STL')
+    expect(permissionSourceResolutions).toBe(1)
+    expect(permissionSourceWriteError).toBe(ReadOnlyExecutionError.name)
+    expect(permissionSourceDeleteError).toBe(ReadOnlyExecutionError.name)
+    expect(permissionSourceUser).not.toBe(authorizedActionUser)
+    expect(policyUser).not.toBe(authorizedActionUser)
+    expect(nestedPolicyUser).toBe(policyUser)
+    expect(policyWriteError).toBe(ReadOnlyExecutionError.name)
+    expect(policyUnitOfWorkWriteError).toBe(ReadOnlyExecutionError.name)
+    expect(policyAfterCommitRan).toBe(false)
+    expect(
+      telemetryRecords.filter(
+        (record) =>
+          record.kind === 'metric' &&
+          record.name === 'doxa.persistence.transaction.total' &&
+          record.attributes.operation === 'authorization',
+      ),
+    ).toEqual([])
+    expect(
+      (
+        await pool.query<{ branch_tag: string }>(
+          `SELECT state ->> 'branchTag' AS branch_tag
+           FROM doxa_entity_states
+           WHERE entity_type = 'model:authorization/user'
+             AND entity_id = $1`,
+          [userId],
+        )
+      ).rows,
+    ).toEqual([{ branch_tag: 'STL' }])
+
+    resetAuthorizationOperationProof()
+    resetPermissionSourceProof()
+    resetPolicyProof()
+    resetTelemetryRecords()
+    const directDecision = await runtime.admit(
+      {
+        actor: { kind: 'user', id: userId },
+        authentication: { state: 'authenticated', identityId: userId, method: 'password' },
+        transport: { kind: 'test' },
+      },
+      () => runtime.authorization.decide('authorization.contact.read', { branchTag: 'STL' }),
+    )
+    expect(directDecision).toEqual({
+      effect: 'allow',
+      policy: 'policy:authorization/application',
+      code: 'allowed',
+    })
+    expect(permissionSourceResolutions).toBe(1)
+    expect(permissionSourceUser).toBe(policyUser)
+    expect(nestedPolicyUser).toBe(policyUser)
+    expect(permissionSourceWriteError).toBe(ReadOnlyExecutionError.name)
+    expect(permissionSourceDeleteError).toBe(ReadOnlyExecutionError.name)
+    expect(policyWriteError).toBe(ReadOnlyExecutionError.name)
+    expect(policyUnitOfWorkWriteError).toBe(ReadOnlyExecutionError.name)
+    expect(policyAfterCommitRan).toBe(false)
+    expect(
+      telemetryRecords.filter(
+        (record) =>
+          record.kind === 'metric' &&
+          record.name === 'doxa.persistence.transaction.total' &&
+          record.attributes.operation === 'authorization',
+      ),
+    ).toHaveLength(1)
+    expect(() => permissionSourceUser!.refresh()).toThrow(StaleModelError)
+
+    resetAuthorizationOperationProof()
+    resetPermissionSourceProof()
+    resetPolicyProof()
+    const jobId = await runtime.admit(
+      {
+        actor: { kind: 'user', id: userId },
+        authentication: { state: 'authenticated', identityId: userId, method: 'password' },
+        transport: { kind: 'test' },
+      },
+      () =>
+        runtime.actions.execute(DispatchChangeAuthorizedUserBranchJob, {
+          userId,
+          branchTag: 'MSP',
+        }),
+    )
+    await waitFor(
+      async () => (await inspectQueueJob(connectionString, jobId))?.state === 'completed',
+    )
+    expect(permissionSourceResolutions).toBe(1)
+    expect(permissionSourceWriteError).toBe(ReadOnlyExecutionError.name)
+    expect(permissionSourceDeleteError).toBe(ReadOnlyExecutionError.name)
+    expect(permissionSourceUser).not.toBe(authorizedJobUser)
+    expect(policyUser).not.toBe(authorizedJobUser)
+    expect(nestedPolicyUser).toBe(policyUser)
+    expect(policyWriteError).toBe(ReadOnlyExecutionError.name)
+    expect(policyUnitOfWorkWriteError).toBe(ReadOnlyExecutionError.name)
+    expect(policyAfterCommitRan).toBe(false)
+    expect(
+      (
+        await pool.query<{ branch_tag: string }>(
+          `SELECT state ->> 'branchTag' AS branch_tag
+           FROM doxa_entity_states
+           WHERE entity_type = 'model:authorization/user'
+             AND entity_id = $1`,
+          [userId],
+        )
+      ).rows,
+    ).toEqual([{ branch_tag: 'MSP' }])
+
+    resetPermissionSourceProof()
+    const missing = await runtime.admit(
+      {
+        actor: { kind: 'user', id: 'missing-permission-model-user' },
+        transport: { kind: 'test' },
+      },
+      () => runtime.authorization.decide('authorization.contact.read'),
+    )
+    expect(missing).toEqual({
+      effect: 'deny',
+      policy: 'permission-source:authorization/application-permissions',
+      code: 'permission_required',
+    })
+    expect(permissionSourceUser).toBeUndefined()
+  })
+
   it('serves declared routes through Hono with validation, errors, and anonymous context', async () => {
     const runtime = await bootPersistenceRuntime()
     const http = new HonoHttpEngine(runtime)
@@ -3073,6 +3290,11 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       hasTags: ['query-a', 'query-c'],
       belongsToNoteIds: ['note-a-1', 'note-a-2'],
       staticWithIdentityMapped: true,
+      foundId: 'query-a',
+      foundNotes: ['First', 'Second'],
+      constrainedFindMissing: true,
+      missingFind: true,
+      missingFindOrFailError: 'Counter missing-counter was not found.',
       booleanIds: ['query-a', 'query-c'],
       patternIds: ['query-a', 'query-b', 'query-c'],
       nullLabelIds: ['query-unlabeled'],
@@ -3122,6 +3344,10 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     await runAction(runtime, CaptureCounter, 'captured')
     expect(capturedCounter).toBeDefined()
     expect(() => capturedCounter!.save()).toThrow(StaleModelError)
+    await expect(capturedCounterQuery!.find('captured')).rejects.toBeInstanceOf(StaleModelError)
+    await expect(capturedCounterQuery!.findOrFail('captured')).rejects.toBeInstanceOf(
+      StaleModelError,
+    )
     expect(() => Counter.find('captured')).toThrow(StaleModelError)
     expect(() => HttpPinged.dispatch({ message: 'outside' })).toThrow(EventDispatchError)
   })

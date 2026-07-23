@@ -2,7 +2,9 @@
 
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
-- **Amended:** 2026-07-20
+- **Amended:** 2026-07-20 and 2026-07-23
+- **Authorization-session amendment:**
+  [Decision 0035](0035-read-only-model-sessions-during-authorization.md)
 - **Decision owners:** Doxa maintainers
 
 ## Decision
@@ -156,6 +158,8 @@ to initiate it:
 
 - Actions and jobs receive a writable transaction and writable `ModelSession`.
 - Queries receive a read-only transaction and read-only `ModelSession`.
+- Permission sources and policies receive a read-only model session under the transaction and
+  identity rules accepted by [Decision 0035](0035-read-only-model-sessions-during-authorization.md).
 - HTTP routes and console commands coordinate work through the typed Action and Query buses rather
   than silently becoming writable operations themselves.
 - Schedules target jobs and therefore receive the job transaction and model lifecycle.

@@ -93,17 +93,18 @@ complete in the MVP ledger.
 
 ## Interfaces and policy
 
-| Area                              | Status                        | Contract or evidence                                                                                            |
-| --------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| HTTP manifest                     | Implemented                   | [Hono HTTP proof](implementation/hono-http-vertical-slice.md)                                                   |
-| Hono adapter                      | Implemented                   | [Hono HTTP proof](implementation/hono-http-vertical-slice.md)                                                   |
-| HTTP response envelopes           | Implemented                   | [HTTP response envelopes](specifications/http-response-envelopes.md)                                            |
-| Authentication                    | Implemented                   | [Authentication completion proof](implementation/authentication-completion-vertical-slice.md)                   |
-| Existing-table auth mapping       | Implemented (MVP common path) | [Existing-table model and auth mapping](decisions/0023-existing-table-model-auth-mapping.md)                    |
-| Authorization                     | Implemented                   | [Actor, execution-context, and authorization contract](specifications/actor-execution-context-authorization.md) |
-| Application permission sources    | Implemented                   | [Permission source and shared service proof](implementation/application-permission-source-vertical-slice.md)    |
-| First-party roles and permissions | Deferred                      | [First-party permission persistence is intentionally deferred](decisions/0022-defer-first-party-permissions.md) |
-| Execution context                 | Implemented                   | [Actor, execution-context, and authorization contract](specifications/actor-execution-context-authorization.md) |
+| Area                              | Status                        | Contract or evidence                                                                                             |
+| --------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| HTTP manifest                     | Implemented                   | [Hono HTTP proof](implementation/hono-http-vertical-slice.md)                                                    |
+| Hono adapter                      | Implemented                   | [Hono HTTP proof](implementation/hono-http-vertical-slice.md)                                                    |
+| HTTP response envelopes           | Implemented                   | [HTTP response envelopes](specifications/http-response-envelopes.md)                                             |
+| Authentication                    | Implemented                   | [Authentication completion proof](implementation/authentication-completion-vertical-slice.md)                    |
+| Existing-table auth mapping       | Implemented (MVP common path) | [Existing-table model and auth mapping](decisions/0023-existing-table-model-auth-mapping.md)                     |
+| Authorization                     | Implemented                   | [Actor, execution-context, and authorization contract](specifications/actor-execution-context-authorization.md)  |
+| Authorization model sessions      | Implemented                   | [Read-only model sessions during authorization](decisions/0035-read-only-model-sessions-during-authorization.md) |
+| Application permission sources    | Implemented                   | [Permission source and shared service proof](implementation/application-permission-source-vertical-slice.md)     |
+| First-party roles and permissions | Deferred                      | [First-party permission persistence is intentionally deferred](decisions/0022-defer-first-party-permissions.md)  |
+| Execution context                 | Implemented                   | [Actor, execution-context, and authorization contract](specifications/actor-execution-context-authorization.md)  |
 
 ## Operations and developer experience
 

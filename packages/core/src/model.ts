@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util'
 
-import { currentModelSession } from './model-session-context.js'
+import { currentModelSession, registerModelSessionState } from './model-session-context.js'
 import {
   PersistenceError,
   ReadOnlyExecutionError,
@@ -576,7 +576,11 @@ export class ModelSession {
     private readonly writable = true,
     private readonly queryDiagnostics?: (diagnostic: ModelQueryDiagnostic) => void | Promise<void>,
     private readonly operations?: ModelOperationObserver,
-  ) {}
+  ) {
+    registerModelSessionState(this, () =>
+      Object.freeze({ active: this.#active, readOnly: !this.writable }),
+    )
+  }
 
   get active(): boolean {
     return this.#active
@@ -1281,7 +1285,7 @@ export class ModelSession {
 
   private assertWritable(): void {
     if (!this.writable)
-      throw new ReadOnlyExecutionError('Model mutation is not allowed in a query execution.')
+      throw new ReadOnlyExecutionError('Model mutation is not allowed in a read-only execution.')
   }
 
   private writer(): UnitOfWork {

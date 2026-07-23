@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Accepted:** 2026-07-17
+- **Amended:** 2026-07-23 by [Decision 0035](0035-read-only-model-sessions-during-authorization.md)
 - **Scope:** MVP
 - **Decision owners:** Doxa maintainers
 
@@ -86,6 +87,9 @@ but does not prescribe how those facts are stored or managed.
 - Permission-source results are execution-local facts, not durable authority snapshots.
 - Resource ownership, branch scope, tenant-specific rules, and other domain constraints remain
   policies when they require more than possession of an ability.
+- Runtime-invoked sources and policies receive ambient read-only access to declared models under
+  [Decision 0035](0035-read-only-model-sessions-during-authorization.md). Their request objects stay
+  persistence-neutral, and low-level persistence integrations remain compatible.
 
 ## Alternatives considered
 

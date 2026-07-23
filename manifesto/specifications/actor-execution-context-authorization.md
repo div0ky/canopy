@@ -258,7 +258,9 @@ exposing sensitive reasoning to the caller.
 
 Doxa should support two policy phases:
 
-1. Entry authorization runs before dispatch for abilities that do not require a loaded resource.
+1. Entry authorization runs before handler construction and invocation for abilities that do not
+   require a loaded resource. Query, action, and job entry checks run inside the operation's
+   persistence boundary.
 2. Resource policy authorization runs after the resource is loaded, within the action or query
    execution scope.
 
@@ -292,6 +294,49 @@ case becomes an empty grant or a policy allow.
 Doxa resolves the source lazily on the first source-managed authorization in an execution and caches
 the resulting set for the remainder of that execution. The source may inject ordinary services,
 including an `ExecutionScoped` service exported from another Feature through `provides`.
+
+### Authorization model access
+
+Every runtime invocation of `PermissionSource.resolve()` or `Policy.decide()` must provide ambient
+access to declared models through a read-only `ModelSession`. `PermissionSourceRequest` and
+`PolicyRequest` remain unchanged; application authorization code uses the ordinary model API:
+
+```ts
+const user = await User.with(['permissions', 'group.permissions']).find(request.actor.id)
+```
+
+Session ownership is normative:
+
+1. Authorization reuses an active read-only model session.
+2. Query dispatch opens its read transaction and model session before entry authorization. Entry
+   source loading, entry policy evaluation, resource policy evaluation, and the handler share one
+   persistence snapshot and identity map.
+3. Action and job dispatch opens the owning transaction before entry authorization. Authorization
+   uses a read-only session over that Unit of Work before Doxa constructs the writable handler
+   session.
+4. Authorization invoked from an active writable action or job session receives a separate read-only
+   session over the same Unit of Work. It must not share or dirty the handler's writable identity
+   map.
+5. A protected route, command, standalone or queued listener, signal handler, schedule, non-public
+   WebSocket subscription, or direct `Authorization` call without an owning session opens and closes
+   one bounded read transaction when application source or policy code must run.
+6. Nested authorization from a policy reuses its active read-only authorization session. Recursive
+   source-managed authorization from `PermissionSource.resolve()` remains an integrity failure.
+
+Credential constraints and default denial complete before source or policy evaluation and must not
+open an authorization read transaction. An execution-cached source-only decision does not open
+another session.
+
+Authorization-owned sessions close after allow, denial, failure, timeout, cancellation, and
+concurrent decisions. Models hydrated by a source or policy reject `create`, `save`, and `delete`
+with `ReadOnlyExecutionError` before observers or persistence. A `UnitOfWork` injected into a source
+or policy must expose the read-only execution guard rather than the owning action or job's writable
+Unit of Work. A missing model is an ordinary absence; adapter, loading, and integrity failures
+remain fail-closed infrastructure errors.
+
+Standalone authorization transactions use the existing transaction observation and telemetry
+contracts. Model-query observations are nested under the source or policy that issued them and do
+not record query values or raw permission facts.
 
 Authorization composition is normative:
 
@@ -367,6 +412,8 @@ not dynamically reinterpret history when a user, membership, or policy later cha
   policy runs.
 - Permission-source loading and integrity failures fail closed as infrastructure faults and never
   disclose raw permission facts.
+- Permission sources and policies cannot create, save, or delete models; attempts fail before
+  persistence.
 - A permission source that recursively requests source-managed authorization fails immediately
   rather than awaiting its own execution-cached result.
 - Invalid propagated actor, delegation, tenant, or causal metadata rejects the execution before
@@ -429,6 +476,12 @@ The contract is ready for acceptance when tests prove:
 9. Logs and traces correlate without putting sensitive identity data into baggage or metrics.
 10. Context is disposed after success, failure, timeout, cancellation, and shutdown.
 11. Test helpers exercise the same resolution and policy paths as production adapters.
+12. Permission sources and policies query declared models through the correct read-only session for
+    queries, actions, jobs, direct authorization, and protected non-operation entrypoints.
+13. Query authorization shares the handler snapshot and identity map; action and job authorization
+    uses a separate read-only identity map over the owning Unit of Work.
+14. Authorization sessions close and remain isolated after success, denial, failure, cancellation,
+    and concurrent decisions.
 
 ## Accepted design decisions
 

@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Accepted:** 2026-07-13
+- **Amended:** 2026-07-23 by [Decision 0035](0035-read-only-model-sessions-during-authorization.md)
 - **Decision owners:** Doxa maintainers
 
 ## Decision
@@ -34,7 +35,8 @@ The accepted query surface includes:
 - equality-object, field/value, and field/operator/value `where` constraints;
 - nested boolean groups, `orWhere`, membership, null, range, and mapped-column comparisons;
 - deterministic ordering, limits, and offsets;
-- `get`, `first`, `firstOrFail`, `exists`, `count`, scalar values, plucking, and aggregates;
+- `get`, builder-level `find` and `findOrFail`, `first`, `firstOrFail`, `exists`, `count`, scalar
+  values, plucking, and aggregates;
 - offset pagination, opaque cursor pagination, and bounded async cursor iteration;
 - reusable, type-safe model query scopes;
 - declared relationships, relationship query builders, relationship-existence constraints,

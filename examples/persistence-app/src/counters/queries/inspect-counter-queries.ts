@@ -1,7 +1,19 @@
-import { Query } from '@doxajs/core'
+import { Query, type ModelQuery } from '@doxajs/core'
 
-import { Counter, CounterNote } from '../models/counter.js'
+import {
+  Counter,
+  CounterNote,
+  type CounterAttributes,
+  type CounterRelations,
+} from '../models/counter.js'
 import { LegacyCustomer } from '../models/legacy-customer.js'
+
+export let capturedCounterFindQuery:
+  ModelQuery<Counter, CounterAttributes, CounterRelations> | undefined
+
+export function resetCapturedCounterFindQuery(): void {
+  capturedCounterFindQuery = undefined
+}
 
 export interface InspectCounterQueriesInput {
   readonly minimumValue: number
@@ -38,6 +50,11 @@ export interface InspectCounterQueriesResult {
   readonly hasTags: readonly string[]
   readonly belongsToNoteIds: readonly string[]
   readonly staticWithIdentityMapped: boolean
+  readonly foundId: string | undefined
+  readonly foundNotes: readonly string[]
+  readonly constrainedFindMissing: boolean
+  readonly missingFind: boolean
+  readonly missingFindOrFailError: string | undefined
   readonly booleanIds: readonly string[]
   readonly patternIds: readonly string[]
   readonly nullLabelIds: readonly string[]
@@ -75,6 +92,26 @@ export class InspectCounterQueries extends Query<
       .get()
     const first = counters[0]
     const firstAgain = first ? await Counter.where({ id: first.id }).first() : undefined
+    const findQuery = Counter.with({
+      notes: (query) => query.orderBy('rank').orderBy('id'),
+    })
+      .where('value', '>=', input.minimumValue)
+      .has('notes')
+      .orderBy('id')
+      .limit(7)
+      .offset(0)
+    capturedCounterFindQuery = findQuery
+    const found = first ? await findQuery.find(first.id) : undefined
+    const constrainedFindMissing = first
+      ? (await Counter.where('value', '<', input.minimumValue).find(first.id)) === undefined
+      : true
+    const missingFind = (await Counter.query().find('missing-counter')) === undefined
+    let missingFindOrFailError: string | undefined
+    try {
+      await Counter.query().findOrFail('missing-counter')
+    } catch (error) {
+      missingFindOrFailError = error instanceof Error ? error.message : String(error)
+    }
     const page = await base.paginate({ page: input.page, perPage: input.perPage })
     const cursorPage = await base.cursorPaginate({ first: input.cursorSize })
     const nextCursorPage = cursorPage.nextCursor
@@ -181,6 +218,11 @@ export class InspectCounterQueries extends Query<
         ? await CounterNote.query().whereBelongsTo(first, 'counter').orderBy('id').pluck('id')
         : [],
       staticWithIdentityMapped: first !== undefined && first === staticWithFirst,
+      foundId: found?.id,
+      foundNotes: found?.notes.map((note) => note.body) ?? [],
+      constrainedFindMissing,
+      missingFind,
+      missingFindOrFailError,
       booleanIds:
         first && counters.at(-1)
           ? await Counter.query()

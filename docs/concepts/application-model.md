@@ -83,11 +83,12 @@ const matches = await Contact.query()
   .get()
 ```
 
-Queries also provide `first`, `firstOrFail`, `exists`, `count`, `value`, `pluck`, `min`, `max`,
-`sum`, `average`, offset pagination, opaque cursor pagination, and bounded async cursor iteration.
-Actions and jobs query models through their writable transaction. Query handlers receive the same
-identity-mapped model experience through a read-only session; `create`, `save`, and `delete` throw
-`ReadOnlyExecutionError` there.
+Queries also provide builder-level `find`, `findOrFail`, `first`, `firstOrFail`, `exists`, `count`,
+`value`, `pluck`, `min`, `max`, `sum`, `average`, offset pagination, opaque cursor pagination, and
+bounded async cursor iteration. Builder identity lookup preserves the existing constraints and eager
+loads; the static identity fast path remains available. Actions and jobs query models through their
+writable transaction. Query handlers receive the same identity-mapped model experience through a
+read-only session; `create`, `save`, and `delete` throw `ReadOnlyExecutionError` there.
 
 ## Mapped tables
 

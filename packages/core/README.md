@@ -37,7 +37,8 @@ framework-owned generated declarations. Application Features do not re-declare t
 Features intentionally export cross-Feature ordinary services through `provides` without changing
 their transient or execution scope. Applications with existing group or user permission data map it
 to stable Doxa abilities through one `PermissionSource`; resource `Policy` classes may further
-narrow those grants.
+narrow those grants. Runtime-invoked permission sources and policies may query declared models
+through an ambient read-only session without adding persistence machinery to their request objects.
 
 ## Models
 
@@ -46,12 +47,18 @@ protected:
 
 ```ts
 const customer = await Customer.findOrFail(input.id)
+const activeCustomer = await Customer.where({ active: true }).find(input.id)
+const customerWithOrders = await Customer.with('orders').findOrFail(input.id)
 
 customer.setAttribute('email', input.email)
 customer.fill({ displayName: input.displayName, phone: input.phone })
 
 if (customer.isDirty()) await customer.save()
 ```
+
+Builder `find` and `findOrFail` preserve existing constraints and eager loads while appending the
+exact logical identity and forcing a one-row limit. The static `Model.find()` identity fast path is
+unchanged.
 
 `setAttribute` and `fill` clone incoming values, mark ordinary dirty state, and never save
 implicitly. `id` cannot be changed after construction. Use intention-revealing model methods for

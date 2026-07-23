@@ -4,6 +4,8 @@ import { Counter, CounterNote } from '../examples/persistence-app/dist/counters/
 
 function modelQueryTypeProofs(): void {
   Counter.where({ value: 1 }).orderBy('value')
+  Counter.query().find('counter')
+  Counter.where({ value: 1 }).findOrFail('counter')
   Counter.with('notes')
   Counter.with('notes.counter')
   Counter.with({ notes: (query) => query.where('rank', '>=', 1).orderBy('body') })
@@ -42,6 +44,8 @@ function modelQueryTypeProofs(): void {
   Counter.prototype.fill({ value: 'two' })
   // @ts-expect-error Required attributes cannot be removed.
   Counter.prototype.fill({ value: undefined })
+  // @ts-expect-error Logical model identities are strings.
+  Counter.query().find(1)
 }
 
 class ModelIdentityTypeProof extends Counter {

@@ -45,6 +45,12 @@ Terminals cover hydrated retrieval, scalar values, aggregates, deterministic off
 opaque cursor pagination, and bounded async cursor iteration. Plans are validated again at runtime
 before adapter execution so JavaScript callers and malformed internal plans fail closed.
 
+Builder-level `find(id)` and `findOrFail(id)` append an exact logical identity constraint while
+preserving the existing immutable plan, including eager loads, ordering, offset, and relationship
+constraints. Both force a one-row limit; the latter reports the requested ID through the stable
+model-not-found error. Their distinct diagnostic terminal names leave the existing static
+`Model.find()` fast path unchanged.
+
 Cursor ordering appends the model identity as a tiebreaker. Cursors contain only a versioned logical
 ordering position, not physical column names.
 
@@ -77,7 +83,9 @@ query handler proves:
 5. one identity and one `retrieved` phase across overlapping hydrated queries;
 6. query-mode rejection of `save`, `delete`, and `create`;
 7. action-mode query-then-save through the writable transaction; and
-8. matching behavior in PostgreSQL and the first-party memory adapter.
+8. builder `find` and `findOrFail` found, missing, constrained, eager-loaded, stale-session, and
+   diagnostic behavior; and
+9. matching behavior in PostgreSQL and the first-party memory adapter.
 
 Repository-wide verification covers formatting, lint, types, sites, boundaries, documentation,
 packages, changesets, security audits, and the shared PostgreSQL/memory query conformance suite.

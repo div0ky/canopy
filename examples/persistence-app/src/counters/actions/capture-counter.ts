@@ -1,11 +1,14 @@
-import { Action } from '@doxajs/core'
+import { Action, type ModelQuery } from '@doxajs/core'
 
-import { Counter } from '../models/counter.js'
+import { Counter, type CounterAttributes, type CounterRelations } from '../models/counter.js'
 
 export let capturedCounter: Counter | undefined
+export let capturedCounterQuery:
+  ModelQuery<Counter, CounterAttributes, CounterRelations> | undefined
 
 export function resetCapturedCounter(): void {
   capturedCounter = undefined
+  capturedCounterQuery = undefined
 }
 
 export class CaptureCounter extends Action<string, void> {
@@ -13,6 +16,8 @@ export class CaptureCounter extends Action<string, void> {
   static override readonly access = 'public'
 
   async handle(id: string): Promise<void> {
-    capturedCounter = await Counter.findOrFail(id)
+    const query = Counter.query()
+    capturedCounterQuery = query
+    capturedCounter = await query.findOrFail(id)
   }
 }

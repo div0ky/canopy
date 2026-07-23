@@ -22,10 +22,13 @@ export class ApplicationPermissions extends PermissionSource {
   static id = 'application'
   static abilities = ['contact.read', 'contact.update']
 
-  private readonly access = this.inject(ApplicationAccess)
-
   async resolve(request: PermissionSourceRequest) {
-    return await this.access.abilitiesFor(request.actor, request.tenant)
+    if (request.actor.kind !== 'user' || !request.actor.id) return []
+
+    const user = await User.with(['permissions', 'group.permissions']).find(request.actor.id)
+    if (!user) return []
+
+    return mapPermissionsToAbilities(user.permissions, user.group.permissions)
   }
 }
 
@@ -35,9 +38,13 @@ export class AuthorizationFeature extends Feature {
 }
 ```
 
-`ApplicationAccess` remains ordinary application code. It may load legacy group and user
-permissions, call an internal service, or implement another capability model. When another Feature
-owns it, export the concrete service intentionally:
+Permission sources and policies use the ordinary declared model API. Doxa activates a read-only
+model session before invoking them, so authorization code does not inject `TransactionManager`,
+reconstruct `ModelStorage`, build entity-type strings, call `queryEntities`, or parse raw persisted
+state. `PermissionSourceRequest` and `PolicyRequest` remain persistence-neutral.
+
+An application may still place mapping behavior in an ordinary `ApplicationAccess` service or
+repository. When another Feature owns that concrete service, export it intentionally:
 
 ```ts
 export class CrmFeature extends Feature {
@@ -50,7 +57,9 @@ export class CrmFeature extends Feature {
 execution-scoped; an unmarked ordinary service remains transient. A source is itself
 execution-scoped and Doxa caches its resolved ability set at most once per admitted execution.
 
-Load permission facts through ordinary services or repositories. A source must not dispatch
+Load permission facts through declared models, ordinary services, or repositories. The low-level
+`TransactionManager` and model-reader contracts remain supported for infrastructure integrations,
+but they are not required for normal application authorization. A source must not dispatch
 source-protected work or call `Authorization` while resolving; Doxa rejects recursive authorization
 instead of allowing the source to await its own in-flight result.
 
@@ -84,6 +93,23 @@ export class ContactPolicy extends Policy<{ ownerId: string }> {
 }
 ```
 
+Policies receive the same read-only model access, including when they run before an operation
+handler:
+
+```ts
+async decide(request: PolicyRequest<{ branchId: string }>) {
+  const user = request.actor.id ? await User.with('branches').find(request.actor.id) : undefined
+  return user?.branches.some((branch) => branch.id === request.resource?.branchId)
+    ? allow('contact')
+    : deny('contact', 'branch_required')
+}
+```
+
+Model `create`, `save`, and `delete` calls from a permission source or policy fail before
+persistence. An explicitly injected `UnitOfWork` remains read-only during authorization, including
+inside an action or job transaction. Infrastructure integrations may continue to inject
+`TransactionManager`, but application authorization normally uses declared models.
+
 The decision order is fixed:
 
 1. Bearer credential constraints may deny but never grant.
@@ -103,6 +129,17 @@ retry, schedule firing, or queued listener resolves the source again for its adm
 tenant.
 
 This is deliberately not HTTP middleware. The contract works identically for every Doxa entry role.
+
+Query entry authorization runs inside the query's read transaction and shares its snapshot and
+identity map with the query handler. Action and job entry authorization runs inside the owning
+transaction through a separate read-only identity map before Doxa constructs the writable handler
+session. Resource checks performed inside writable handlers receive another read-only view over the
+same Unit of Work.
+
+Routes, commands, standalone or queued listeners, signal handlers, schedules, private or presence
+WebSocket subscriptions, and direct `Authorization` calls open one bounded read transaction when
+source or policy evaluation needs model access. Credential constraints and default-deny decisions
+remain transaction-free.
 
 ## Testing and inspection
 

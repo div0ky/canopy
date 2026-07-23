@@ -2,6 +2,7 @@
 
 - **Status:** Implemented proof
 - **Implemented:** 2026-07-10
+- **Extended:** 2026-07-23 with read-only authorization model sessions
 - **MVP status:** Complete
 - **Depends on:**
   [Actor, Execution Context, and Authorization](../specifications/actor-execution-context-authorization.md)
@@ -77,6 +78,11 @@ injectable `Authorization` service remains available in every admitted execution
 checks after loading domain state. The policy request always receives the current immutable
 execution context.
 
+Query authorization now runs inside and reuses the query read session. Action and job authorization
+runs inside the owning transaction through an isolated read-only session before construction of the
+writable handler session. Protected roles without an owning operation open a bounded read
+transaction only when application source or policy evaluation is required.
+
 ## Security audit
 
 Every allow and deny is recorded through the first-party authentication security store with ability,
@@ -88,8 +94,9 @@ authorization call closed.
 
 The current suite proves manifest ownership, every entry role, automatic HTTP entry authorization,
 anonymous 401 behavior, structured allow and deny, resource ownership, missing-owner default denial,
-bearer constraint denial, permission-source composition, durable audit metadata, testing fakes,
-diagnostics, metrics, and concurrent execution isolation.
+bearer constraint denial, permission-source composition, ambient declared-model hydration across
+operation and non-operation roles, durable audit metadata, testing fakes, diagnostics, metrics, and
+concurrent execution isolation.
 
 Durable delegation grants and policy-decision capture in journal/outbox metadata remain potential
 post-MVP extensions; neither weakens the implemented default-deny entry and resource contract.
