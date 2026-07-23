@@ -477,8 +477,17 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     const mappedVerification = isMappedPassword(candidate)
       ? await verifyEncodedPassword(input.password, candidate.encoded, candidate.readers)
       : undefined
+    const weakSidecarMigration = Boolean(
+      mappedVerification?.valid &&
+      mappedVerification.weak &&
+      mappedVerification.needsUpgrade &&
+      this.#mappedTables &&
+      supportsWeakSidecarMigration(this.#mappedTables.passwords),
+    )
     const weakLoginOnly = Boolean(
-      mappedVerification?.weak && this.#mappedTables?.passwords.mode === 'login-only',
+      mappedVerification?.weak &&
+      this.#mappedTables?.passwords.mode === 'login-only' &&
+      !weakSidecarMigration,
     )
     const valid = weakLoginOnly
       ? false
@@ -503,7 +512,8 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
 
     const shouldUpgrade = isMappedPassword(row.password)
       ? Boolean(
-          mappedVerification?.needsUpgrade && this.#mappedTables?.passwords.mode === 'managed',
+          mappedVerification?.needsUpgrade &&
+          (this.#mappedTables?.passwords.mode === 'managed' || weakSidecarMigration),
         )
       : needsRehash(row.password)
     const token = randomBytes(32).toString('base64url')
@@ -2084,6 +2094,12 @@ function currentPasswordReaders(
   return readers.filter(
     (reader, index) =>
       readers.findIndex((candidate) => candidate.preset === reader.preset) === index,
+  )
+}
+
+function supportsWeakSidecarMigration(mapping: AuthPasswordTableMapping): boolean {
+  return (
+    mapping.mode === 'login-only' && mapping.ownership === 'doxa' && mapping.legacy !== undefined
   )
 }
 

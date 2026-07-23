@@ -4039,7 +4039,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     }
   })
 
-  it('rejects weak SHA-256 credentials in login-only mode without issuing a session', async () => {
+  it('migrates a weak login-only SHA-256 credential into its Doxa-owned sidecar before issuing a session', async () => {
     await pool.query(await readFile(DOXA_AUTH_SIDECAR_MIGRATION_URL, 'utf8'))
     await pool.query(`
       CREATE TABLE legacy_login_only_users (
@@ -4074,20 +4074,135 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         mode: 'login-only',
         verification: { mode: 'trusted' },
         readers: [
+          { preset: 'bcrypt', hash: 'password_hash' },
           { preset: 'sha256-hex', hash: 'password_hash' },
-          { preset: 'argon2id-phc', hash: 'password_hash' },
         ],
       }),
     )
     await auth.start(lifecycleContext())
     try {
       await expect(
-        auth.login({ identifier: 'encore', password: 'legacy password' }),
-      ).rejects.toMatchObject({ code: 'invalid_credentials' })
+        auth.login({ identifier: 'encore', password: 'incorrect password' }),
+      ).rejects.toMatchObject({
+        code: 'invalid_credentials',
+        message: 'The supplied identifier or password is invalid.',
+      })
       expect(
         (
           await pool.query(
             `SELECT count(*)::int AS count FROM doxa_auth_sessions WHERE identity_id = 'login-only-1'`,
+          )
+        ).rows[0]?.count,
+      ).toBe(0)
+
+      const grant = await auth.login({ identifier: 'encore', password: 'legacy password' })
+      expect(grant.identity.id).toBe('login-only-1')
+      expect(
+        (
+          await pool.query<{ password_record: string }>(
+            `SELECT password_record FROM doxa_auth_mapped_passwords
+             WHERE identity_id = 'login-only-1'`,
+          )
+        ).rows[0]?.password_record,
+      ).toMatch(/^doxa-argon2id:/)
+      expect(
+        (
+          await pool.query<{ password_hash: string }>(
+            `SELECT password_hash FROM legacy_login_only_users
+             WHERE user_id = 'login-only-1'`,
+          )
+        ).rows[0]?.password_hash,
+      ).toBe(passwordHash)
+      expect(
+        (
+          await pool.query(
+            `SELECT count(*)::int AS count FROM doxa_auth_sessions
+             WHERE identity_id = 'login-only-1'`,
+          )
+        ).rows[0]?.count,
+      ).toBe(1)
+      expect(
+        (
+          await pool.query(
+            `SELECT count(*)::int AS count FROM doxa_auth_audit_events
+             WHERE identity_id = 'login-only-1'
+               AND session_id = $1
+               AND event_type = 'session.created'`,
+            [grant.session.id],
+          )
+        ).rows[0]?.count,
+      ).toBe(1)
+
+      await pool.query(
+        `UPDATE legacy_login_only_users SET password_hash = $1 WHERE user_id = 'login-only-1'`,
+        [createHash('sha256').update('changed legacy password').digest('hex')],
+      )
+      expect(
+        (await auth.login({ identifier: 'encore', password: 'legacy password' })).identity.id,
+      ).toBe('login-only-1')
+    } finally {
+      await auth.dispose(lifecycleContext())
+    }
+  })
+
+  it('rejects a weak login-only SHA-256 credential when its destination is externally owned', async () => {
+    await pool.query(`
+      CREATE TABLE external_login_only_users (
+        user_id text PRIMARY KEY,
+        username text NOT NULL,
+        contact_email text NOT NULL,
+        password_hash text NOT NULL,
+        active boolean NOT NULL,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+      )
+    `)
+    await pool.query(
+      `CREATE UNIQUE INDEX external_login_only_username_lower_idx
+       ON external_login_only_users (lower(username))`,
+    )
+    const passwordHash = createHash('sha256').update('legacy password').digest('hex')
+    await pool.query(
+      `INSERT INTO external_login_only_users
+       (user_id, username, contact_email, password_hash, active, created_at, updated_at)
+       VALUES ('external-login-only-1', 'external', 'external@example.com', $1, true, now(), now())`,
+      [passwordHash],
+    )
+
+    const auth = new PostgresAuth({
+      connectionString,
+      secureCookies: false,
+      trustedOrigins: ['http://doxa.test'],
+    })
+    auth.bindCompiledAuthentication(
+      mappedAuthentication({
+        mode: 'login-only',
+        table: 'external_login_only_users',
+        verification: { mode: 'trusted' },
+        readers: [
+          { preset: 'sha256-hex', hash: 'password_hash' },
+          { preset: 'argon2id-phc', hash: 'password_hash' },
+        ],
+        write: {
+          destination: 'in-place',
+          format: 'doxa-argon2id',
+          table: 'external_login_only_users',
+          identityId: 'user_id',
+          password: 'password_hash',
+          updatedAt: 'updated_at',
+        },
+      }),
+    )
+    await auth.start(lifecycleContext())
+    try {
+      await expect(
+        auth.login({ identifier: 'external', password: 'legacy password' }),
+      ).rejects.toMatchObject({ code: 'invalid_credentials' })
+      expect(
+        (
+          await pool.query(
+            `SELECT count(*)::int AS count FROM doxa_auth_sessions
+             WHERE identity_id = 'external-login-only-1'`,
           )
         ).rows[0]?.count,
       ).toBe(0)
@@ -4109,20 +4224,112 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       })
       const phc = `$argon2id$v=19$m=19456,t=2,p=2$${salt.toString('base64').replace(/=+$/, '')}$${hash.toString('base64').replace(/=+$/, '')}`
       await pool.query(
-        `UPDATE legacy_login_only_users SET password_hash = $1 WHERE user_id = 'login-only-1'`,
+        `UPDATE external_login_only_users
+         SET password_hash = $1 WHERE user_id = 'external-login-only-1'`,
         [phc],
       )
-      const grant = await auth.login({ identifier: 'encore', password: 'legacy password' })
-      expect(grant.identity.id).toBe('login-only-1')
+      const grant = await auth.login({ identifier: 'external', password: 'legacy password' })
+      expect(grant.identity.id).toBe('external-login-only-1')
       await pool.query(
-        `UPDATE legacy_login_only_users SET password_hash = $1 WHERE user_id = 'login-only-1'`,
+        `UPDATE external_login_only_users
+         SET password_hash = $1 WHERE user_id = 'external-login-only-1'`,
         [passwordHash],
       )
       await expect(
-        auth.reauthenticate('login-only-1', grant.session.id, 'legacy password'),
+        auth.reauthenticate('external-login-only-1', grant.session.id, 'legacy password'),
       ).rejects.toMatchObject({ code: 'invalid_credentials' })
     } finally {
       await auth.dispose(lifecycleContext())
+    }
+  })
+
+  it('does not issue a session when mandatory weak sidecar persistence fails', async () => {
+    await pool.query(await readFile(DOXA_AUTH_SIDECAR_MIGRATION_URL, 'utf8'))
+    await pool.query(`
+      CREATE TABLE failing_sidecar_login_users (
+        user_id text PRIMARY KEY,
+        username text NOT NULL,
+        contact_email text NOT NULL,
+        password_hash text NOT NULL,
+        active boolean NOT NULL,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+      )
+    `)
+    await pool.query(
+      `CREATE UNIQUE INDEX failing_sidecar_login_username_lower_idx
+       ON failing_sidecar_login_users (lower(username))`,
+    )
+    const passwordHash = createHash('sha256').update('legacy password').digest('hex')
+    await pool.query(
+      `INSERT INTO failing_sidecar_login_users
+       (user_id, username, contact_email, password_hash, active, created_at, updated_at)
+       VALUES ('failing-sidecar-1', 'failing', 'failing@example.com', $1, true, now(), now())`,
+      [passwordHash],
+    )
+    await pool.query(`
+      CREATE FUNCTION reject_weak_sidecar_migration() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.identity_id = 'failing-sidecar-1' THEN
+          RAISE EXCEPTION 'forced sidecar failure';
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql
+    `)
+    await pool.query(`
+      CREATE TRIGGER reject_weak_sidecar_migration
+      BEFORE INSERT OR UPDATE ON doxa_auth_mapped_passwords
+      FOR EACH ROW EXECUTE FUNCTION reject_weak_sidecar_migration()
+    `)
+
+    const auth = new PostgresAuth({
+      connectionString,
+      secureCookies: false,
+      trustedOrigins: ['http://doxa.test'],
+    })
+    auth.bindCompiledAuthentication(
+      mappedAuthentication({
+        mode: 'login-only',
+        table: 'failing_sidecar_login_users',
+        verification: { mode: 'trusted' },
+        readers: [{ preset: 'sha256-hex', hash: 'password_hash' }],
+      }),
+    )
+    await auth.start(lifecycleContext())
+    try {
+      await expect(
+        auth.login({ identifier: 'failing', password: 'legacy password' }),
+      ).rejects.toThrow('forced sidecar failure')
+      expect(
+        (
+          await pool.query(
+            `SELECT count(*)::int AS count FROM doxa_auth_mapped_passwords
+             WHERE identity_id = 'failing-sidecar-1'`,
+          )
+        ).rows[0]?.count,
+      ).toBe(0)
+      expect(
+        (
+          await pool.query(
+            `SELECT count(*)::int AS count FROM doxa_auth_sessions
+             WHERE identity_id = 'failing-sidecar-1'`,
+          )
+        ).rows[0]?.count,
+      ).toBe(0)
+      expect(
+        (
+          await pool.query(
+            `SELECT count(*)::int AS count FROM doxa_auth_audit_events
+             WHERE identity_id = 'failing-sidecar-1'
+               AND event_type = 'session.created'`,
+          )
+        ).rows[0]?.count,
+      ).toBe(0)
+    } finally {
+      await auth.dispose(lifecycleContext())
+      await pool.query('DROP TRIGGER reject_weak_sidecar_migration ON doxa_auth_mapped_passwords')
+      await pool.query('DROP FUNCTION reject_weak_sidecar_migration()')
     }
   })
 

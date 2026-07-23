@@ -20,3 +20,8 @@ import only `Auth` from `@doxajs/core`. The concrete adapter is intentionally av
 `@doxajs/auth-postgres/framework` for generated framework code and migration from older alpha
 applications. Direct `PostgresAuth` imports from the package root must move to that framework
 subpath; direct table mappings should move into the compiled application configuration.
+
+Login-only mappings may migrate a valid weak legacy SHA-256 credential only into the Doxa-owned
+password sidecar. The Argon2id replacement, session, and audit record commit in one transaction, the
+external password column remains unchanged, and the sidecar becomes authoritative for future logins.
+Weak credentials mapped to externally owned or non-sidecar storage remain rejected.

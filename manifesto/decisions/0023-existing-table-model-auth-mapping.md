@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
-- **Amended:** 2026-07-21
+- **Amended:** 2026-07-23
 - **Implementation:** Config-driven identity contract and direct table mapping are implemented and
   proven
 - **Decision owners:** Doxa maintainers
@@ -136,9 +136,12 @@ revocation, or authority fields merely because a column has a familiar name.
 Credential readers are reviewed first-party presets. Doxa supports its versioned Argon2id record,
 bcrypt variants used by Laravel, Argon2id PHC records, and an explicitly weak lowercase SHA-256
 legacy reader. New writes always use Doxa Argon2id. Weak SHA-256 succeeds only when the same
-transaction can persist its replacement before issuing a session; login-only mappings therefore
-reject it. Upgrades explicitly target validated in-place storage or a Doxa-owned sidecar. Once a
-sidecar credential exists it is authoritative and verification never falls back to the legacy hash.
+transaction can persist its replacement before issuing a session. A login-only mapping may therefore
+accept a valid weak legacy credential only when it targets a Doxa-owned sidecar; the Argon2id
+replacement, session, and audit record commit atomically. Login-only mappings with externally owned
+or non-sidecar password storage continue to reject weak credentials. Upgrades explicitly target
+validated in-place storage or a Doxa-owned sidecar. Once a sidecar credential exists it is
+authoritative and verification never falls back to the legacy hash.
 
 Mapped verification attributes are Auth-owned. Ordinary model code may read but not write them.
 Identifier and contact-email changes are normalized through the compiled contract, and contact-email

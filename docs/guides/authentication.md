@@ -41,6 +41,13 @@ omits registration, verification, recovery, reset, and password-change routes. U
 the selected identity table is maintained outside Doxa migrations, its Model declares
 `static managed = false`; this is separate from the authentication `mode` shown above.
 
+In `login-only` mode, a valid legacy SHA-256 credential may establish a session only when the write
+destination is Doxa's password sidecar. Doxa first replaces the weak credential with its Argon2id
+record in the same transaction that creates the session and audit event. Failure to persist any part
+rolls back all three, and the external password column is never changed. Once present, the sidecar
+record is authoritative. Externally owned and other non-sidecar login-only destinations continue to
+reject weak credentials.
+
 The public credential API uses `identifier` rather than an `email` alias. Identifiers can be exact,
 lowercase, validated email, or email-with-default-domain normalized. Mapped readiness fails closed
 unless keys, columns, types, writability, timestamps, credential cardinality, and normalization-

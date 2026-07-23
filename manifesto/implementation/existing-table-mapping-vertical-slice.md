@@ -118,6 +118,9 @@ The PostgreSQL conformance suite proves:
 9. Mixed-case and schema-qualified mapped relations pass every catalog lookup, timestamp-backed
    logical strings validate and hydrate consistently, and read-only views use `none` without a
    writable version column.
+10. Login-only weak SHA-256 credentials migrate only into a Doxa-owned Argon2id sidecar, with the
+    sidecar, session, and audit writes committed atomically while the external password column
+    remains unchanged; non-sidecar mappings still fail closed.
 
 Multiple identity realms, separate auth databases, permission mapping, OAuth, MFA, and application-
 defined hashers remain explicit future work.
