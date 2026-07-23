@@ -71,8 +71,12 @@ including reauthentication. `doxa auth:storage` and Gnosis report a security war
 silently disabling the configured flow.
 
 The `email` identifier kind requires `email` or `email-or-domain` normalization; `username` and
-`custom` identifiers use `exact` or `lowercase`. When `contactEmail` is absent, the compiled
-identity reports email verification as `unsupported` and omits verification and recovery routes.
+`custom` identifiers use `exact` or `lowercase`. Doxa-owned identities include an
+`email_verified_at` column. An external identity source enables Doxa email verification only with
+`verification: { mode: 'mapped', attribute: '...' }` (or the corresponding raw-table column). When
+`contactEmail` or that verification mapping is absent, the compiled identity reports verification as
+`unsupported` and omits verification routes. `trusted` is an explicit assertion that an external
+authority has already verified the identity; it does not enable Doxa's verification ceremony.
 
 Cookie-authenticated unsafe requests and WebSocket upgrades require a configured trusted `Origin`.
 Bearer and cookie credentials may not be combined. Authentication tables store session, bearer,
@@ -103,27 +107,3 @@ rejected before persistence so credential evaluation remains bounded.
 Password changes and resets revoke sessions according to the first-party Auth contract. Applications
 should use generated routes and policies as the ordinary path and expose raw Auth methods only when
 a transport-specific ceremony has equivalent validation, rate limiting, audit, and origin controls.
-
-## Removing an alpha password sidecar
-
-`0002_mapped_auth_sidecars.sql` is retained unchanged because already-applied migrations are
-immutable. New mapped-auth plans use `0004_remove_mapped_password_sidecar.sql`, which leaves any
-verification sidecar untouched but refuses to drop `doxa_auth_mapped_passwords` while it contains
-rows. When the compiled verification policy selects a sidecar, `0005_mapped_auth_verifications.sql`
-creates it independently.
-
-Before upgrading an application that used the alpha password sidecar:
-
-1. Deploy support for Doxa Argon2id to every application that reads the authoritative external
-   password column.
-2. Stop authentication writes or otherwise serialize the transition.
-3. In an application-specific transaction, lock each external credential and matching sidecar row,
-   verify that the external value is still the value expected by the transition, copy the current
-   `password_record` into the external password column with a compare-and-swap condition, and delete
-   that sidecar row only after the external update succeeds.
-4. Verify that `doxa_auth_mapped_passwords` is empty, compile the new mapping, then apply the
-   forward-only migration.
-
-There is no safe generic SQL copy because each existing schema chooses its own identity key,
-credential table, password column, and concurrency rule. The removal migration deliberately fails
-instead of guessing or discarding credentials.

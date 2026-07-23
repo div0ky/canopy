@@ -136,8 +136,12 @@ equivalent direct mutation calls. Eligibility and verification mappings continue
 The public credential input is `identifier`, not `email`. One configured identifier kind and
 normalization preset governs login, registration, recovery, rate-limit buckets, and uniqueness.
 Contact email is separately mapped and may be absent; email verification and recovery routes are
-then omitted. Verification is a three-state contract (`verified`, `unverified`, `unsupported`) and
-may use a mapped attribute, Doxa-owned sidecar, or explicitly trusted external state.
+then omitted. Verification is a three-state contract (`verified`, `unverified`, `unsupported`).
+Doxa-owned identities persist verification in `doxa_auth_identities.email_verified_at`; external
+identity mappings must explicitly name a native verification attribute to enable Doxa's verification
+ceremony. When that mapping is absent, verification is `unsupported`. An explicitly trusted external
+state remains available for identity sources whose own verification is authoritative, but it does
+not enable Doxa's ceremony.
 
 Session, bearer-token, challenge, abuse, and audit tables continue using Doxa defaults unless they
 are explicitly mapped. An application may therefore reuse its existing user and password records
@@ -157,8 +161,8 @@ do not make known-account failures observably cheap.
 
 External credential mappings have exactly one authoritative password column. Every configured reader
 names that same column, Doxa reads its current value on every password proof, and an external
-password change takes effect on the next attempt. Doxa never copies an external credential into a
-password sidecar and never prefers historical Doxa state over the current external value.
+password change takes effect on the next attempt. Doxa never copies an external credential into
+auxiliary mapped-auth storage or prefers historical Doxa state over the current external value.
 
 Credential upgrade policy is explicit in the compiled artifact. Omission resolves to
 `{ mode: 'never' }`, which is the ordinary compatibility default and never mutates the external
@@ -183,13 +187,9 @@ closed and revokes all Doxa sessions and tokens.
 
 ## Migration management rules
 
-- Praxis migrations create always-owned session, token, challenge, abuse, and audit tables plus only
-  the identity, credential, or verification-sidecar tables selected by the compiled storage
-  contract. Doxa never creates a mapped password table or password sidecar.
-- The historical `0002_mapped_auth_sidecars.sql` migration remains immutable for checksum safety.
-  Forward-only successors select verification-sidecar creation independently and remove the obsolete
-  password-sidecar relation only after it is empty. Removal must fail closed rather than discard
-  credentials that an operator has not deliberately transitioned.
+- Praxis migrations create only Doxa-owned session, token, challenge, abuse, and audit tables for an
+  external identity mapping. Doxa never creates a mapped identity, credential, or verification
+  relation.
 - A mapped model is `managed = true` by default. `managed = false` excludes its relation from
   Doxa/Praxis migration management. Management does not imply write access; `readOnly` is the
   independent persistence setting.
@@ -231,11 +231,13 @@ closed and revokes all Doxa sessions and tokens.
 12. Read-only models support every model read path and reject create, save, and delete before
     observers and persistence.
 13. External password changes immediately control the next login and reauthentication attempt; no
-    password sidecar is read or written.
+    auxiliary credential record is read or written.
 14. Omitted and explicit `never` policies accept configured SHA-256 without mutation, while an
     in-place policy upgrades the observed value atomically and never overwrites a concurrent change.
 15. Login-only direct mutation methods fail closed, while managed and Doxa-owned authentication
     retain their supported registration, recovery, and password-mutation behavior.
+16. An external mapping without a native verification column compiles as `unsupported`, omits Doxa
+    verification routes, and creates no auxiliary verification relation.
 
 ## Relationship to permissions
 
