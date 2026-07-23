@@ -43,14 +43,13 @@ export interface CompiledAuthenticationConfiguration {
   readonly credentials: {
     readonly table: string
     readonly identityId: string
+    readonly password: string
     readonly readers: readonly CompiledCredentialReader[]
-    readonly write:
-      | { readonly destination: 'sidecar'; readonly format: 'doxa-argon2id' }
+    readonly upgrade:
+      | { readonly mode: 'never' }
       | {
-          readonly destination: 'in-place'
+          readonly mode: 'in-place'
           readonly format: 'doxa-argon2id'
-          readonly table: string
-          readonly identityId: string
           readonly password: string
           readonly updatedAt?: string
         }

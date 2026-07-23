@@ -1,4 +1,4 @@
-export const MANIFEST_FORMAT_VERSION = 6 as const
+export const MANIFEST_FORMAT_VERSION = 7 as const
 
 export type Scope = 'singleton' | 'execution' | 'transient'
 
@@ -184,17 +184,16 @@ export interface AuthenticationManifestEntry {
   readonly credentials: {
     readonly table: string
     readonly identityId: string
+    readonly password: string
     readonly readers: readonly {
       readonly preset: 'doxa-argon2id' | 'bcrypt' | 'argon2id-phc' | 'sha256-hex'
       readonly hash: string
     }[]
-    readonly write:
-      | { readonly destination: 'sidecar'; readonly format: 'doxa-argon2id' }
+    readonly upgrade:
+      | { readonly mode: 'never' }
       | {
-          readonly destination: 'in-place'
+          readonly mode: 'in-place'
           readonly format: 'doxa-argon2id'
-          readonly table: string
-          readonly identityId: string
           readonly password: string
           readonly updatedAt?: string
         }
@@ -661,9 +660,10 @@ function assertAuthenticationManifest(value: Record<string, unknown>): void {
     !isRecord(value.credentials) ||
     !nonEmptyString(value.credentials.table) ||
     !nonEmptyString(value.credentials.identityId) ||
+    !nonEmptyString(value.credentials.password) ||
     !Array.isArray(value.credentials.readers) ||
     value.credentials.readers.length === 0 ||
-    !isRecord(value.credentials.write) ||
+    !isRecord(value.credentials.upgrade) ||
     !isRecord(value.routes)
   ) {
     throw new ManifestCompatibilityError('Doxa manifest authentication contract is invalid.')
@@ -672,10 +672,32 @@ function assertAuthenticationManifest(value: Record<string, unknown>): void {
     if (
       !isRecord(reader) ||
       !['doxa-argon2id', 'bcrypt', 'argon2id-phc', 'sha256-hex'].includes(String(reader.preset)) ||
-      !nonEmptyString(reader.hash)
+      !nonEmptyString(reader.hash) ||
+      reader.hash !== value.credentials.password
     ) {
       throw new ManifestCompatibilityError('Doxa manifest credential reader is invalid.')
     }
+  }
+  if (
+    !['never', 'in-place'].includes(String(value.credentials.upgrade.mode)) ||
+    (value.credentials.upgrade.mode === 'in-place' &&
+      (value.credentials.upgrade.format !== 'doxa-argon2id' ||
+        value.credentials.upgrade.password !== value.credentials.password ||
+        (value.credentials.upgrade.updatedAt !== undefined &&
+          !nonEmptyString(value.credentials.upgrade.updatedAt)) ||
+        !value.credentials.readers.some(
+          (reader) => isRecord(reader) && reader.preset === 'doxa-argon2id',
+        )))
+  ) {
+    throw new ManifestCompatibilityError('Doxa manifest credential upgrade policy is invalid.')
+  }
+  if (
+    value.mode === 'login-only' &&
+    Object.values(value.routes).some((enabled) => enabled === true)
+  ) {
+    throw new ManifestCompatibilityError(
+      'Login-only authentication cannot expose credential mutation routes.',
+    )
   }
   if (value.verification.mode === 'mapped' && !nonEmptyString(value.verification.column)) {
     throw new ManifestCompatibilityError('Mapped verification requires a physical column.')

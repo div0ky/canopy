@@ -7,8 +7,12 @@ export const DOXA_AUTH_INFRASTRUCTURE_MIGRATION_URL = new URL(
   '../migrations/0000_auth_infrastructure.sql',
   import.meta.url,
 )
-export const DOXA_AUTH_SIDECAR_MIGRATION_URL = new URL(
-  '../migrations/0002_mapped_auth_sidecars.sql',
+export const DOXA_AUTH_MAPPING_MIGRATION_URL = new URL(
+  '../migrations/0004_remove_mapped_password_sidecar.sql',
+  import.meta.url,
+)
+export const DOXA_AUTH_VERIFICATION_SIDECAR_MIGRATION_URL = new URL(
+  '../migrations/0005_mapped_auth_verifications.sql',
   import.meta.url,
 )
 export const DOXA_AUTH_CHALLENGE_BINDING_MIGRATION_URL = new URL(

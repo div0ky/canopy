@@ -64,9 +64,11 @@ bypass.
 - **HTTP denial of service:** Added byte-counted request-body admission with a 1 MiB default,
   configurable maximum, and canonical `400`/`413` failures for malformed lengths and over-limit
   streams.
-- **Sensitive reauthentication:** Login-only SHA-256 password records can no longer refresh a
-  session's sensitive-operation timestamp. Valid Argon2id records are rehashed transactionally when
-  required before refresh.
+- **Sensitive reauthentication (superseded 2026-07-23):** The earlier blanket denial of login-only
+  SHA-256 current-password proof was removed by the authoritative external credential contract. An
+  explicitly configured SHA-256 reader now verifies login and reauthentication. Omitted or explicit
+  `never` leaves the external value unchanged; in-place Argon2id upgrade is compare-and-swap
+  protected and transactional with session and audit persistence.
 - **Bearer policy cost:** Access-token grants reject more than 100 authority constraints.
 - **Theoria disclosure:** Invalid queries receive a safe `400`; unexpected failures no longer expose
   exception text. JSON responses add no-sniff, no-referrer, and no-store protections.
@@ -76,7 +78,8 @@ bypass.
 - `pnpm audit --prod --audit-level=moderate` — no known production dependency vulnerabilities.
 - Focused Hono and queue negative tests cover declared and streamed body limits plus unsupported
   queue-context versions.
-- Focused PostgreSQL tests cover bounded bearer constraints and weak-hash reauthentication denial.
+- Focused PostgreSQL tests cover bounded bearer constraints and the superseding weak-hash
+  reauthentication and upgrade policy.
 - `pnpm verify` passed in full: formatting, lint, type checks, Field Guide and website production
   builds, 183 coverage tests, architecture boundaries, documentation links, Changesets status,
   package archives, and the production dependency security audit.

@@ -2,8 +2,8 @@
 
 - **Status:** Implemented MVP common path
 - **Implemented:** 2026-07-10
-- **Hardened:** 2026-07-21
-- **Manifest format:** 6
+- **Hardened:** 2026-07-23
+- **Manifest format:** 7
 - **Decision:**
   [Map models and authentication to existing tables](../decisions/0023-existing-table-model-auth-mapping.md)
 
@@ -72,8 +72,16 @@ framework = {
       credentials: {
         table: 'user_credentials',
         identityId: 'user_id',
-        readers: [{ preset: 'bcrypt', hash: 'password_hash' }],
-        write: { format: 'doxa-argon2id', destination: 'sidecar' },
+        readers: [
+          { preset: 'doxa-argon2id', hash: 'password_hash' },
+          { preset: 'bcrypt', hash: 'password_hash' },
+        ],
+        upgrade: {
+          mode: 'in-place',
+          format: 'doxa-argon2id',
+          password: 'password_hash',
+          updatedAt: 'updated_at',
+        },
       },
     },
   },
@@ -84,6 +92,14 @@ Identity IDs are opaque text rather than assumed UUIDs. Identity and password da
 external table or use separate external tables. Browser sessions, bearer tokens, challenges, abuse
 controls, and audit records remain in Doxa-owned tables, preserving secure framework semantics
 without forcing an established application to replace its users table.
+
+The configured external password column is the sole credential authority. Omitted or explicit
+`never` upgrade policy verifies in place without mutation. Explicit in-place upgrade uses
+compare-and-swap and shares one transaction with session and audit persistence; it never overwrites
+a concurrent external password change. Password sidecars are not part of the current contract. The
+historical sidecar migration remains immutable. Forward migrations select verification-sidecar
+creation independently, and password-sidecar removal fails while old password rows remain so
+operators must complete a schema-specific safe transition.
 
 The compiler resolves logical attributes to physical storage in the authentication artifact. Mapped
 columns are checked during lifecycle readiness. Missing or incompatible columns, composite keys,
@@ -118,6 +134,13 @@ The PostgreSQL conformance suite proves:
 9. Mixed-case and schema-qualified mapped relations pass every catalog lookup, timestamp-backed
    logical strings validate and hydrate consistently, and read-only views use `none` without a
    writable version column.
+10. Login-only SHA-256 verification works with omitted and explicit `never`, sees external password
+    changes immediately, and denies registration, verification, recovery, and password mutation.
+11. In-place bcrypt and SHA-256 upgrades replace only the exact observed authoritative value,
+    atomically persist the session and audit event, and issue no session after a compare-and-swap or
+    transaction failure.
+12. Verification sidecars remain supported while password sidecars have no runtime, compiler,
+    manifest, or migration-selection path.
 
 Multiple identity realms, separate auth databases, permission mapping, OAuth, MFA, and application-
 defined hashers remain explicit future work.
