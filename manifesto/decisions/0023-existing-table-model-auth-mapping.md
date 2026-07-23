@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Accepted:** 2026-07-10
-- **Amended:** 2026-07-21
+- **Amended:** 2026-07-23
 - **Implementation:** Config-driven identity contract and direct table mapping are implemented and
   proven
 - **Decision owners:** Doxa maintainers
@@ -107,8 +107,16 @@ framework = {
       credentials: {
         table: 'users',
         identityId: 'user_id',
-        readers: [{ preset: 'bcrypt', hash: 'password_hash' }],
-        write: { format: 'doxa-argon2id', destination: 'sidecar' },
+        readers: [
+          { preset: 'doxa-argon2id', hash: 'password_hash' },
+          { preset: 'bcrypt', hash: 'password_hash' },
+        ],
+        upgrade: {
+          mode: 'in-place',
+          format: 'doxa-argon2id',
+          password: 'password_hash',
+          updatedAt: 'updated_at',
+        },
       },
     },
   },
@@ -118,6 +126,12 @@ framework = {
 A raw `{ table, columns }` source remains a login-only escape hatch. Managed identity creation
 requires a selected Doxa model, uses its normal persistence lifecycle, and may name a registration
 factory for extra non-auth attributes. Identity IDs reuse the mapped single-column primary key.
+
+`login-only` has a narrow meaning: Doxa reads an existing identity and its externally authoritative
+credential, verifies a configured format, and may issue Doxa-owned sessions or access tokens. It
+does not register identities, issue or consume recovery challenges, change or reset passwords, or
+mutate verification state. The compiler omits those routes, and the PostgreSQL provider rejects
+equivalent direct mutation calls. Eligibility and verification mappings continue to fail closed.
 
 The public credential input is `identifier`, not `email`. One configured identifier kind and
 normalization preset governs login, registration, recovery, rate-limit buckets, and uniqueness.
@@ -135,10 +149,29 @@ revocation, or authority fields merely because a column has a familiar name.
 
 Credential readers are reviewed first-party presets. Doxa supports its versioned Argon2id record,
 bcrypt variants used by Laravel, Argon2id PHC records, and an explicitly weak lowercase SHA-256
-legacy reader. New writes always use Doxa Argon2id. Weak SHA-256 succeeds only when the same
-transaction can persist its replacement before issuing a session; login-only mappings therefore
-reject it. Upgrades explicitly target validated in-place storage or a Doxa-owned sidecar. Once a
-sidecar credential exists it is authoritative and verification never falls back to the legacy hash.
+legacy reader. Configuring `sha256-hex` explicitly accepts a matching credential anywhere the
+mapping permits current-password proof, including login-only login and reauthentication. Diagnostics
+must warn that unsalted SHA-256 is weak without silently making the configured flow unusable.
+
+External credential mappings have exactly one authoritative password column. Every configured reader
+names that same column, Doxa reads its current value on every password proof, and an external
+password change takes effect on the next attempt. Doxa never copies an external credential into a
+password sidecar and never prefers historical Doxa state over the current external value.
+
+Credential upgrade policy is explicit in the compiled artifact. Omission resolves to
+`{ mode: 'never' }`, which is the ordinary compatibility default and never mutates the external
+credential. The only automatic upgrade policy is an explicitly configured in-place Doxa Argon2id
+replacement of the same authoritative column. It requires a `doxa-argon2id` reader for that column
+and validates the relation, identity key, password column, type, nullability, writability, storage
+capacity, and optional timestamp column before readiness. Applications sharing that column must all
+understand Doxa Argon2id before enabling the policy.
+
+After a legacy credential verifies under an in-place policy, Doxa replaces the exact observed value
+with Argon2id using compare-and-swap semantics in the transaction that creates or refreshes the
+session and records the audit event. A concurrent external password change, failed upgrade, failed
+session write, or failed audit write rolls the transaction back and issues no new authentication
+evidence. Managed external authentication requires this writable in-place policy because managed
+registration, password change, and recovery necessarily mutate the authoritative credential.
 
 Mapped verification attributes are Auth-owned. Ordinary model code may read but not write them.
 Identifier and contact-email changes are normalized through the compiled contract, and contact-email
@@ -149,7 +182,12 @@ closed and revokes all Doxa sessions and tokens.
 ## Migration management rules
 
 - Praxis migrations create always-owned session, token, challenge, abuse, and audit tables plus only
-  the identity, credential, or sidecar tables selected by the compiled storage contract.
+  the identity, credential, or verification-sidecar tables selected by the compiled storage
+  contract. Doxa never creates a mapped password table or password sidecar.
+- The historical `0002_mapped_auth_sidecars.sql` migration remains immutable for checksum safety. A
+  forward-only successor creates the verification sidecar independently and removes the obsolete
+  password-sidecar relation only after it is empty. It must fail closed rather than discard
+  credentials that an operator has not deliberately transitioned.
 - A mapped model is `managed = true` by default. `managed = false` excludes its relation from
   Doxa/Praxis migration management. Management does not imply write access; `readOnly` is the
   independent persistence setting.
@@ -178,8 +216,8 @@ closed and revokes all Doxa sessions and tokens.
 4. Auth can register through a mapped model and authenticate against mapped identity and credential
    tables without exposing credential columns as model attributes.
 5. Auth can map identities while retaining default Doxa session, token, challenge, and audit tables.
-6. Unknown password formats fail closed; bcrypt, Argon2id PHC, and mandatory-upgrade SHA-256 readers
-   have known-answer and negative-path proof.
+6. Unknown password formats fail closed; bcrypt, Argon2id PHC, explicitly enabled SHA-256, and Doxa
+   Argon2id readers have known-answer and negative-path proof.
 7. Missing mapped columns, invalid identifiers, incompatible types/nullability, non-unique
    normalized identifiers, and non-writable managed mappings fail before readiness.
 8. Praxis reports `managed` and `readOnly` independently.
@@ -190,6 +228,12 @@ closed and revokes all Doxa sessions and tokens.
 11. Praxis and Gnosis expose safe mapping metadata but never credential values.
 12. Read-only models support every model read path and reject create, save, and delete before
     observers and persistence.
+13. External password changes immediately control the next login and reauthentication attempt; no
+    password sidecar is read or written.
+14. Omitted and explicit `never` policies accept configured SHA-256 without mutation, while an
+    in-place policy upgrades the observed value atomically and never overwrites a concurrent change.
+15. Login-only direct mutation methods fail closed, while managed and Doxa-owned authentication
+    retain their supported registration, recovery, and password-mutation behavior.
 
 ## Relationship to permissions
 

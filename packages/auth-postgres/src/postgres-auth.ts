@@ -110,18 +110,17 @@ export interface AuthIdentityTableMapping {
 export interface AuthPasswordTableMapping {
   readonly table: string
   readonly identityId: string
-  /** One text column containing Doxa's versioned Argon2id record. */
+  /** The authoritative external credential column. */
   readonly password: string
-  readonly updatedAt: string
-  readonly readers?: readonly CompiledCredentialReader[]
+  readonly readers: readonly CompiledCredentialReader[]
   readonly mode?: 'managed' | 'login-only'
-  readonly ownership?: 'doxa' | 'external'
-  readonly legacy?: {
-    readonly table: string
-    readonly identityId: string
-    readonly password: string
-    readonly readers: readonly CompiledCredentialReader[]
-  }
+  readonly upgrade?:
+    | { readonly mode: 'never' }
+    | {
+        readonly mode: 'in-place'
+        readonly format: 'doxa-argon2id'
+        readonly updatedAt?: string
+      }
 }
 
 type Queryable = Pick<Pool | PoolClient, 'query'>
@@ -184,7 +183,6 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
       this.#mappedTables = undefined
       return
     }
-    const write = configuration.credentials.write
     this.#mappedTables = {
       identities: {
         table: configuration.table,
@@ -205,44 +203,27 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
           : 'unsupported',
         eligibility: configuration.eligibility,
       },
-      passwords:
-        write.destination === 'sidecar'
-          ? {
-              table: 'doxa_auth_mapped_passwords',
-              identityId: 'identity_id',
-              password: 'password_record',
-              updatedAt: 'updated_at',
-              readers: configuration.credentials.readers,
-              mode: configuration.mode === 'managed' ? 'managed' : 'login-only',
-              ownership: 'doxa',
-              legacy: {
-                table: configuration.credentials.table,
-                identityId: configuration.credentials.identityId,
-                password: configuration.credentials.readers[0]!.hash,
-                readers: configuration.credentials.readers,
-              },
-            }
-          : {
-              table: write.table,
-              identityId: write.identityId,
-              password: write.password,
-              updatedAt: write.updatedAt ?? configuration.columns.updatedAt,
-              readers: configuration.credentials.readers,
-              mode: configuration.mode === 'managed' ? 'managed' : 'login-only',
-              ownership: 'external',
-              ...(configuration.credentials.table !== write.table ||
-              configuration.credentials.identityId !== write.identityId ||
-              configuration.credentials.readers.some((reader) => reader.hash !== write.password)
-                ? {
-                    legacy: {
-                      table: configuration.credentials.table,
-                      identityId: configuration.credentials.identityId,
-                      password: configuration.credentials.readers[0]!.hash,
-                      readers: configuration.credentials.readers,
-                    },
-                  }
-                : {}),
-            },
+      passwords: {
+        table: configuration.credentials.table,
+        identityId: configuration.credentials.identityId,
+        password: configuration.credentials.password,
+        ...(configuration.credentials.upgrade.mode === 'in-place' &&
+        configuration.credentials.upgrade.updatedAt
+          ? { updatedAt: configuration.credentials.upgrade.updatedAt }
+          : {}),
+        readers: configuration.credentials.readers,
+        mode: configuration.mode === 'managed' ? 'managed' : 'login-only',
+        upgrade:
+          configuration.credentials.upgrade.mode === 'in-place'
+            ? {
+                mode: 'in-place',
+                format: configuration.credentials.upgrade.format,
+                ...(configuration.credentials.upgrade.updatedAt
+                  ? { updatedAt: configuration.credentials.upgrade.updatedAt }
+                  : {}),
+              }
+            : { mode: 'never' },
+      },
     }
     validateAuthMappings(this.#mappedTables)
   }
@@ -268,6 +249,14 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
               verification: compiled.verification.mode,
               eligibility: compiled.eligibility.map((predicate) => predicate.column),
               hashers: compiled.credentials.readers.map((reader) => reader.preset),
+              credentialUpgrade: compiled.credentials.upgrade.mode,
+              securityWarnings: compiled.credentials.readers.some(
+                (reader) => reader.preset === 'sha256-hex',
+              )
+                ? [
+                    'sha256-hex is an unsalted weak credential reader; prefer an explicit in-place Argon2id upgrade where every credential consumer supports it.',
+                  ]
+                : [],
             },
           }
         : {}),
@@ -277,8 +266,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
       },
       passwords: {
         table: this.#mappedTables?.passwords.table ?? 'doxa_auth_passwords',
-        ownership:
-          this.#mappedTables?.passwords.ownership ?? (this.#mappedTables ? 'external' : 'doxa'),
+        ownership: this.#mappedTables ? 'external' : 'doxa',
       },
       sessions: { table: 'doxa_auth_sessions', ownership: 'doxa' },
       accessTokens: { table: 'doxa_auth_access_tokens', ownership: 'doxa' },
@@ -320,6 +308,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
   }
 
   async register(input: RegistrationInput): Promise<AuthIdentity> {
+    this.#assertMappedMutationAllowed()
     const database = this.#requireDatabase()
     const email = normalizeIdentifier(input.identifier, this.#normalization(), true)
     const contactEmail = this.#mappedTables?.identities.contactEmail
@@ -355,7 +344,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
             updatedAt: now,
             persistAuthentication: async (participant, identityId) => {
               const queryable = participant as Queryable
-              await updateMappedPassword(queryable, tables.passwords, identityId, password, now)
+              await upsertMappedPassword(queryable, tables.passwords, identityId, password, now)
               await queryable.query(
                 `INSERT INTO doxa_auth_audit_events
                  (id, event_type, identity_id, metadata, occurred_at)
@@ -477,13 +466,9 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     const mappedVerification = isMappedPassword(candidate)
       ? await verifyEncodedPassword(input.password, candidate.encoded, candidate.readers)
       : undefined
-    const weakLoginOnly = Boolean(
-      mappedVerification?.weak && this.#mappedTables?.passwords.mode === 'login-only',
-    )
-    const valid = weakLoginOnly
-      ? false
-      : (mappedVerification?.valid ??
-        (await verifyPassword(input.password, candidate as PasswordRecord)))
+    const valid =
+      mappedVerification?.valid ??
+      (await verifyPassword(input.password, candidate as PasswordRecord))
     if (!row || !valid) {
       await this.#audit('authentication.failed', undefined, undefined, {
         emailDigest: digest(email),
@@ -503,7 +488,8 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
 
     const shouldUpgrade = isMappedPassword(row.password)
       ? Boolean(
-          mappedVerification?.needsUpgrade && this.#mappedTables?.passwords.mode === 'managed',
+          mappedVerification?.needsUpgrade &&
+          this.#mappedTables?.passwords.upgrade?.mode === 'in-place',
         )
       : needsRehash(row.password)
     const token = randomBytes(32).toString('base64url')
@@ -534,12 +520,14 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
         occurredAt: now,
       })
     }
-    if (this.#mappedTables && upgraded) {
+    if (this.#mappedTables && upgraded && isMappedPassword(row.password)) {
+      const observedPassword = row.password.encoded
       await this.#mappedTransaction(async (transaction, client) => {
-        await updateMappedPassword(
+        await upgradeMappedPassword(
           client,
           this.#mappedTables!.passwords,
           row.identity.id,
+          observedPassword,
           upgraded,
           now,
         )
@@ -564,6 +552,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
   }
 
   async issueEmailVerification(identityId: string): Promise<AuthChallengeGrant> {
+    this.#assertMappedMutationAllowed()
     const identity = await this.findIdentity(identityId)
     if (!identity?.contactEmail || identity.verification === 'unsupported') {
       throw new AuthenticationError('invalid_credentials', 'Email verification is unavailable.')
@@ -572,6 +561,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
   }
 
   async verifyEmail(token: string): Promise<AuthIdentity> {
+    this.#assertMappedMutationAllowed()
     const now = new Date()
     const database = this.#requireDatabase()
     const verify = async (
@@ -631,6 +621,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     identifierInput: string,
     metadata: AuthRequestMetadata = {},
   ): Promise<AuthChallengeGrant | undefined> {
+    this.#assertMappedMutationAllowed()
     const email = normalizeIdentifier(identifierInput, this.#normalization())
     await this.#rateLimit(
       'password_reset',
@@ -672,6 +663,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
   }
 
   async resetPassword(token: string, newPassword: string): Promise<void> {
+    this.#assertMappedMutationAllowed()
     await this.#assertPassword(newPassword)
     const password = await createPasswordRecord(newPassword)
     const now = new Date()
@@ -739,6 +731,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
     currentPassword: string,
     newPassword: string,
   ): Promise<void> {
+    this.#assertMappedMutationAllowed()
     if (!(await this.#ensureEligible(identityId))) {
       throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
     }
@@ -773,13 +766,21 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
         occurredAt: now,
       })
     }
-    if (this.#mappedTables)
+    if (this.#mappedTables && isMappedPassword(current)) {
+      const observedPassword = current.encoded
       await this.#mappedTransaction((transaction, client) =>
         change(transaction, () =>
-          updateMappedPassword(client, this.#mappedTables!.passwords, identityId, password, now),
+          upgradeMappedPassword(
+            client,
+            this.#mappedTables!.passwords,
+            identityId,
+            observedPassword,
+            password,
+            now,
+          ),
         ),
       )
-    else
+    } else
       await this.#requireDatabase().transaction((transaction) =>
         change(transaction as unknown as Database, () =>
           transaction
@@ -817,15 +818,15 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
             .limit(1)
         )[0]
     const verification = record ? await verifyPasswordCandidate(password, record) : undefined
-    const weakLoginOnly = Boolean(
-      verification?.weak && this.#mappedTables?.passwords.mode === 'login-only',
-    )
-    if (!record || !verification?.valid || weakLoginOnly) {
+    if (!record || !verification?.valid) {
       await this.#audit('session.reauthentication_failed', identityId, sessionId, {})
       throw new AuthenticationError('invalid_credentials', 'The current password is invalid.')
     }
     const now = new Date()
-    const upgraded = verification.needsUpgrade ? await createPasswordRecord(password) : undefined
+    const shouldUpgrade = this.#mappedTables
+      ? verification.needsUpgrade && this.#mappedTables.passwords.upgrade?.mode === 'in-place'
+      : verification.needsUpgrade
+    const upgraded = shouldUpgrade ? await createPasswordRecord(password) : undefined
     const refreshSession = async (transaction: Database): Promise<void> => {
       const [session] = await transaction
         .update(authSessions)
@@ -852,9 +853,17 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
         occurredAt: now,
       })
     }
-    if (this.#mappedTables && upgraded) {
+    if (this.#mappedTables && upgraded && isMappedPassword(record)) {
+      const observedPassword = record.encoded
       await this.#mappedTransaction(async (transaction, client) => {
-        await updateMappedPassword(client, this.#mappedTables!.passwords, identityId, upgraded, now)
+        await upgradeMappedPassword(
+          client,
+          this.#mappedTables!.passwords,
+          identityId,
+          observedPassword,
+          upgraded,
+          now,
+        )
         await refreshSession(transaction)
       })
     } else {
@@ -1392,6 +1401,12 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
   #normalization(): CompiledAuthenticationConfiguration['identifier']['normalization'] {
     return this.#compiledAuthentication?.identifier.normalization ?? { preset: 'email' }
   }
+
+  #assertMappedMutationAllowed(): void {
+    if (this.#mappedTables?.passwords.mode === 'login-only') {
+      throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
+    }
+  }
 }
 
 interface StoredIdentity {
@@ -1404,11 +1419,7 @@ interface StoredIdentity {
 }
 
 function validateAuthMappings(tables: NonNullable<PostgresAuthOptions['tables']>): void {
-  for (const mapping of [
-    tables.identities,
-    tables.passwords,
-    ...(tables.passwords.legacy ? [tables.passwords.legacy] : []),
-  ]) {
+  for (const mapping of [tables.identities, tables.passwords]) {
     if (!validQualifiedIdentifier(mapping.table))
       throw new Error(`Invalid mapped auth table name ${mapping.table}.`)
   }
@@ -1421,16 +1432,17 @@ function validateAuthMappings(tables: NonNullable<PostgresAuthOptions['tables']>
     ['updatedAt', tables.identities.updatedAt],
     ['identityId', tables.passwords.identityId],
     ['password', tables.passwords.password],
-    ['passwordUpdatedAt', tables.passwords.updatedAt],
-    ['legacyIdentityId', tables.passwords.legacy?.identityId],
-    ...(tables.passwords.legacy?.readers.map(
-      (reader) => ['legacyPassword', reader.hash] as const,
-    ) ?? []),
   ] as const) {
     if (column !== undefined) {
       if (typeof column !== 'string' || !validIdentifier(column))
         throw new Error(`Invalid mapped auth column ${field}.`)
     }
+  }
+  if (tables.passwords.readers.length === 0) {
+    throw new Error('Mapped auth credentials require at least one reader.')
+  }
+  if (tables.passwords.readers.some((reader) => reader.hash !== tables.passwords.password)) {
+    throw new Error('Mapped auth credential readers must use the authoritative password column.')
   }
 }
 
@@ -1455,7 +1467,7 @@ async function validateMappedAuthTables(
   const passwordColumns = [
     tables.passwords.identityId,
     tables.passwords.password,
-    tables.passwords.updatedAt,
+    tables.passwords.upgrade?.mode === 'in-place' ? tables.passwords.upgrade.updatedAt : undefined,
   ]
     .filter((column): column is string => Boolean(column))
     .map(quoteIdentifier)
@@ -1465,18 +1477,6 @@ async function validateMappedAuthTables(
   await queryable.query(
     `SELECT ${passwordColumns.join(', ')} FROM ${quoteQualified(tables.passwords.table)} LIMIT 0`,
   )
-  if (tables.passwords.legacy) {
-    const legacyColumns = [
-      tables.passwords.legacy.identityId,
-      ...tables.passwords.legacy.readers.map((reader) => reader.hash),
-    ]
-      .filter((column): column is string => Boolean(column))
-      .map(quoteIdentifier)
-    await queryable.query(
-      `SELECT ${legacyColumns.join(', ')} FROM ${quoteQualified(tables.passwords.legacy.table)} LIMIT 0`,
-    )
-  }
-
   const identityMetadata = await mappedColumnMetadata(queryable, tables.identities.table)
   const primaryKey = await mappedPrimaryKey(queryable, tables.identities.table)
   if (primaryKey.length !== 1 || primaryKey[0] !== tables.identities.id) {
@@ -1533,25 +1533,44 @@ async function validateMappedAuthTables(
     }
   }
   const passwordMetadata = await mappedColumnMetadata(queryable, tables.passwords.table)
-  assertMappedColumnType(passwordMetadata, tables.passwords.password, 'credential', TEXT_TYPES)
-  assertMappedColumnType(
-    passwordMetadata,
-    tables.passwords.updatedAt,
-    'credential timestamp',
-    TIME_TYPES,
-  )
-  if (
-    tables.passwords.mode === 'managed' &&
-    [tables.passwords.password, tables.passwords.updatedAt].some(
-      (column) => passwordMetadata.get(column)?.generated,
-    )
-  ) {
-    throw new Error('Managed auth credential columns must be writable.')
+  if (!passwordMetadata.get(tables.passwords.identityId)?.notNull) {
+    throw new Error('Mapped auth credential identity key must be NOT NULL.')
   }
-  if (tables.passwords.legacy) {
-    const legacyMetadata = await mappedColumnMetadata(queryable, tables.passwords.legacy.table)
-    for (const reader of tables.passwords.legacy.readers) {
-      assertMappedColumnType(legacyMetadata, reader.hash, 'credential reader', TEXT_TYPES)
+  assertMappedColumnType(passwordMetadata, tables.passwords.password, 'credential', TEXT_TYPES)
+  const passwordColumn = passwordMetadata.get(tables.passwords.password)!
+  if (!passwordColumn.notNull) {
+    throw new Error('Mapped auth credential column must be NOT NULL.')
+  }
+  const upgrade = tables.passwords.upgrade ?? { mode: 'never' }
+  if (tables.passwords.mode === 'managed' && upgrade.mode !== 'in-place') {
+    throw new Error('Managed mapped auth credentials require an in-place upgrade policy.')
+  }
+  if (upgrade.mode === 'in-place') {
+    if (
+      passwordColumn.maxLength !== undefined &&
+      passwordColumn.maxLength < MINIMUM_DOXA_PASSWORD_RECORD_LENGTH
+    ) {
+      throw new Error(
+        `In-place auth credential column must hold at least ${MINIMUM_DOXA_PASSWORD_RECORD_LENGTH} characters.`,
+      )
+    }
+    if (passwordColumn.generated) {
+      throw new Error('In-place auth credential column must be writable.')
+    }
+    if (!tables.passwords.readers.some((reader) => reader.preset === 'doxa-argon2id')) {
+      throw new Error('In-place auth credential upgrades require a doxa-argon2id reader.')
+    }
+    if (upgrade.updatedAt) {
+      assertMappedColumnType(
+        passwordMetadata,
+        upgrade.updatedAt,
+        'credential timestamp',
+        TIME_TYPES,
+      )
+      const timestamp = passwordMetadata.get(upgrade.updatedAt)!
+      if (!timestamp.notNull || timestamp.generated) {
+        throw new Error('In-place auth credential timestamp must be writable and NOT NULL.')
+      }
     }
   }
   await assertIdentifierUnique(queryable, tables.identities, identityMetadata)
@@ -1573,7 +1592,10 @@ interface MappedColumnMetadata {
   readonly notNull: boolean
   readonly generated: boolean
   readonly databaseGenerated: boolean
+  readonly maxLength?: number
 }
+
+const MINIMUM_DOXA_PASSWORD_RECORD_LENGTH = 272
 
 async function mappedColumnMetadata(
   queryable: Queryable,
@@ -1587,10 +1609,13 @@ async function mappedColumnMetadata(
       generated: string
       identity: string
       has_default: boolean
+      max_length: number | null
     } & QueryResultRow
   >(
     `SELECT a.attname AS name, t.typname AS type, a.attnotnull AS not_null,
-            a.attgenerated AS generated, a.attidentity AS identity, a.atthasdef AS has_default
+            a.attgenerated AS generated, a.attidentity AS identity, a.atthasdef AS has_default,
+            CASE WHEN t.typname IN ('varchar', 'bpchar') AND a.atttypmod > 0
+              THEN a.atttypmod - 4 ELSE NULL END AS max_length
      FROM pg_attribute a
      JOIN pg_type t ON t.oid = a.atttypid
      WHERE a.attrelid = to_regclass($1) AND a.attnum > 0 AND NOT a.attisdropped`,
@@ -1604,6 +1629,7 @@ async function mappedColumnMetadata(
         notNull: row.not_null,
         generated: Boolean(row.generated),
         databaseGenerated: Boolean(row.identity) || row.has_default,
+        ...(row.max_length === null ? {} : { maxLength: Number(row.max_length) }),
       },
     ]),
   )
@@ -1679,19 +1705,11 @@ async function assertCredentialRowsUnique(
   queryable: Queryable,
   mapping: AuthPasswordTableMapping,
 ): Promise<void> {
-  const sources = [
-    { table: mapping.table, identityId: mapping.identityId },
-    ...(mapping.legacy
-      ? [{ table: mapping.legacy.table, identityId: mapping.legacy.identityId }]
-      : []),
-  ]
-  for (const source of sources) {
-    const result = await queryable.query(
-      `SELECT 1 FROM ${quoteQualified(source.table)}
-       GROUP BY ${quoteIdentifier(source.identityId)} HAVING count(*) > 1 LIMIT 1`,
-    )
-    if (result.rowCount) throw new Error('Mapped auth credentials contain duplicate identity rows.')
-  }
+  const result = await queryable.query(
+    `SELECT 1 FROM ${quoteQualified(mapping.table)}
+     GROUP BY ${quoteIdentifier(mapping.identityId)} HAVING count(*) > 1 LIMIT 1`,
+  )
+  if (result.rowCount) throw new Error('Mapped auth credentials contain duplicate identity rows.')
 }
 
 async function insertMappedRegistration(
@@ -1700,6 +1718,8 @@ async function insertMappedRegistration(
   identity: StoredIdentity,
   password: PasswordRecord,
 ): Promise<void> {
+  assertInPlaceUpgrade(tables.passwords)
+  const passwordUpdatedAt = tables.passwords.upgrade.updatedAt
   const identityValues = new Map<string, unknown>([
     [tables.identities.id, identity.id],
     [tables.identities.email, identity.email],
@@ -1713,7 +1733,7 @@ async function insertMappedRegistration(
   if (tables.identities.table === tables.passwords.table) {
     identityValues.set(tables.passwords.identityId, identity.id)
     identityValues.set(tables.passwords.password, encodePasswordRecord(password))
-    identityValues.set(tables.passwords.updatedAt, identity.updatedAt)
+    if (passwordUpdatedAt) identityValues.set(passwordUpdatedAt, identity.updatedAt)
     await insertMappedRow(queryable, tables.identities.table, identityValues)
     return
   }
@@ -1724,7 +1744,7 @@ async function insertMappedRegistration(
     new Map<string, unknown>([
       [tables.passwords.identityId, identity.id],
       [tables.passwords.password, encodePasswordRecord(password)],
-      [tables.passwords.updatedAt, identity.updatedAt],
+      ...(passwordUpdatedAt ? ([[passwordUpdatedAt, identity.updatedAt]] as const) : []),
     ]),
   )
 }
@@ -1865,14 +1885,7 @@ async function findMappedLogin(
 ): Promise<{ identity: StoredIdentity; password: MappedPasswordCredential } | undefined> {
   const identity = tables.identities
   const password = tables.passwords
-  const legacy = password.legacy
-  const legacySelections = legacy
-    ? [...new Set(legacy.readers.map((reader) => reader.hash))].map(
-        (column, index) =>
-          `lp.${quoteIdentifier(column)} AS ${quoteIdentifier(`legacy_password_record_${index}`)}`,
-      )
-    : []
-  const rows = await queryable.query<MappedIdentityRow & { password_record: string | null }>(
+  const rows = await queryable.query<MappedIdentityRow & { password_record: string }>(
     `
     SELECT
       i.${quoteIdentifier(identity.id)}::text AS id,
@@ -1883,12 +1896,10 @@ async function findMappedLogin(
       i.${quoteIdentifier(identity.createdAt)} AS created_at,
       i.${quoteIdentifier(identity.updatedAt)} AS updated_at,
       p.${quoteIdentifier(password.password)} AS password_record
-      ${legacySelections.length ? `, ${legacySelections.join(', ')}` : ''}
     FROM ${quoteQualified(identity.table)} i
     ${verificationJoin(identity, 'i')}
-    ${legacy ? 'LEFT' : 'INNER'} JOIN ${quoteQualified(password.table)} p
+    INNER JOIN ${quoteQualified(password.table)} p
       ON p.${quoteIdentifier(password.identityId)}::text = i.${quoteIdentifier(identity.id)}::text
-    ${legacy ? `LEFT JOIN ${quoteQualified(legacy.table)} lp ON lp.${quoteIdentifier(legacy.identityId)}::text = i.${quoteIdentifier(identity.id)}::text` : ''}
     WHERE ${mappedIdentifierPredicate(identity, 'i', identifierUsesDirectComparison)}
     LIMIT 1
   `,
@@ -1896,21 +1907,11 @@ async function findMappedLogin(
   )
   const row = rows.rows[0]
   if (!row) return undefined
-  const legacyColumns = legacy ? [...new Set(legacy.readers.map((reader) => reader.hash))] : []
-  const legacyIndex = legacyColumns.findIndex(
-    (_column, index) => typeof row[`legacy_password_record_${index}`] === 'string',
-  )
-  const encoded =
-    row.password_record ??
-    (legacyIndex >= 0 ? String(row[`legacy_password_record_${legacyIndex}`]) : undefined)
-  if (!encoded) return undefined
   return {
     identity: mappedIdentity(row),
     password: {
-      encoded,
-      readers: row.password_record
-        ? currentPasswordReaders(password)
-        : (legacy?.readers.filter((reader) => reader.hash === legacyColumns[legacyIndex]) ?? []),
+      encoded: row.password_record,
+      readers: currentPasswordReaders(password),
     },
   }
 }
@@ -1935,32 +1936,7 @@ async function findMappedPassword(
       encoded,
       readers: currentPasswordReaders(mapping),
     }
-  if (!mapping.legacy) return undefined
-  const legacyColumns = [...new Set(mapping.legacy.readers.map((reader) => reader.hash))]
-  const legacy = await queryable.query<QueryResultRow>(
-    `SELECT ${legacyColumns
-      .map(
-        (column, index) =>
-          `${quoteIdentifier(column)} AS ${quoteIdentifier(`password_record_${index}`)}`,
-      )
-      .join(', ')}
-     FROM ${quoteQualified(mapping.legacy.table)}
-     WHERE ${quoteIdentifier(mapping.legacy.identityId)}::text = $1
-     LIMIT 1`,
-    [identityId],
-  )
-  const legacyRow = legacy.rows[0]
-  const legacyIndex = legacyColumns.findIndex(
-    (_column, index) => typeof legacyRow?.[`password_record_${index}`] === 'string',
-  )
-  return legacyIndex >= 0
-    ? {
-        encoded: String(legacyRow![`password_record_${legacyIndex}`]),
-        readers: mapping.legacy.readers.filter(
-          (reader) => reader.hash === legacyColumns[legacyIndex],
-        ),
-      }
-    : undefined
+  return undefined
 }
 
 async function updateMappedPassword(
@@ -1970,37 +1946,84 @@ async function updateMappedPassword(
   password: PasswordRecord,
   now: Date,
 ): Promise<void> {
-  if (mapping.legacy) {
-    const encoded = encodePasswordRecord(password)
-    const updated = await queryable.query(
-      `UPDATE ${quoteQualified(mapping.table)}
-       SET ${quoteIdentifier(mapping.password)} = $1,
-           ${quoteIdentifier(mapping.updatedAt)} = $2
-       WHERE ${quoteIdentifier(mapping.identityId)}::text = $3`,
-      [encoded, now, identityId],
-    )
-    if (updated.rowCount === 0) {
-      await queryable.query(
-        `INSERT INTO ${quoteQualified(mapping.table)} (
-           ${quoteIdentifier(mapping.identityId)},
-           ${quoteIdentifier(mapping.password)},
-           ${quoteIdentifier(mapping.updatedAt)}
-         ) VALUES ($1, $2, $3)`,
-        [identityId, encoded, now],
-      )
-    }
-    return
-  }
+  assertInPlaceUpgrade(mapping)
+  const timestamp = mapping.upgrade.updatedAt
   const result = await queryable.query(
     `
     UPDATE ${quoteQualified(mapping.table)}
-    SET ${quoteIdentifier(mapping.password)} = $1, ${quoteIdentifier(mapping.updatedAt)} = $2
-    WHERE ${quoteIdentifier(mapping.identityId)}::text = $3
+    SET ${quoteIdentifier(mapping.password)} = $1${timestamp ? `, ${quoteIdentifier(timestamp)} = $2` : ''}
+    WHERE ${quoteIdentifier(mapping.identityId)}::text = $${timestamp ? 3 : 2}
   `,
-    [encodePasswordRecord(password), now, identityId],
+    timestamp
+      ? [encodePasswordRecord(password), now, identityId]
+      : [encodePasswordRecord(password), identityId],
   )
   if (result.rowCount !== 1)
     throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
+}
+
+async function upsertMappedPassword(
+  queryable: Queryable,
+  mapping: AuthPasswordTableMapping,
+  identityId: string,
+  password: PasswordRecord,
+  now: Date,
+): Promise<void> {
+  try {
+    await updateMappedPassword(queryable, mapping, identityId, password, now)
+  } catch (error) {
+    if (!(error instanceof AuthenticationError)) throw error
+    assertInPlaceUpgrade(mapping)
+    const timestamp = mapping.upgrade.updatedAt
+    await queryable.query(
+      `INSERT INTO ${quoteQualified(mapping.table)} (
+         ${quoteIdentifier(mapping.identityId)},
+         ${quoteIdentifier(mapping.password)}
+         ${timestamp ? `, ${quoteIdentifier(timestamp)}` : ''}
+       ) VALUES ($1, $2${timestamp ? ', $3' : ''})`,
+      timestamp
+        ? [identityId, encodePasswordRecord(password), now]
+        : [identityId, encodePasswordRecord(password)],
+    )
+  }
+}
+
+async function upgradeMappedPassword(
+  queryable: Queryable,
+  mapping: AuthPasswordTableMapping,
+  identityId: string,
+  observed: string,
+  password: PasswordRecord,
+  now: Date,
+): Promise<void> {
+  assertInPlaceUpgrade(mapping)
+  const timestamp = mapping.upgrade.updatedAt
+  const result = await queryable.query(
+    `UPDATE ${quoteQualified(mapping.table)}
+     SET ${quoteIdentifier(mapping.password)} = $1${timestamp ? `, ${quoteIdentifier(timestamp)} = $2` : ''}
+     WHERE ${quoteIdentifier(mapping.identityId)}::text = $${timestamp ? 3 : 2}
+       AND ${quoteIdentifier(mapping.password)} IS NOT DISTINCT FROM $${timestamp ? 4 : 3}`,
+    timestamp
+      ? [encodePasswordRecord(password), now, identityId, observed]
+      : [encodePasswordRecord(password), identityId, observed],
+  )
+  if (result.rowCount !== 1) {
+    throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
+  }
+}
+
+function assertInPlaceUpgrade(
+  mapping: AuthPasswordTableMapping,
+): asserts mapping is AuthPasswordTableMapping & {
+  readonly upgrade: {
+    readonly mode: 'in-place'
+    readonly format: 'doxa-argon2id'
+    readonly updatedAt?: string
+  }
+} {
+  if (mapping.upgrade?.mode !== 'in-place') {
+    throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
+  }
 }
 
 async function updateMappedIdentityVerification(
@@ -2077,13 +2100,9 @@ function identityFromStored(row: StoredIdentity, mapping?: AuthIdentityTableMapp
 function currentPasswordReaders(
   mapping: AuthPasswordTableMapping,
 ): readonly CompiledCredentialReader[] {
-  const readers = [
-    { preset: 'doxa-argon2id' as const, hash: mapping.password },
-    ...(mapping.legacy ? [] : (mapping.readers ?? [])),
-  ]
-  return readers.filter(
+  return mapping.readers.filter(
     (reader, index) =>
-      readers.findIndex((candidate) => candidate.preset === reader.preset) === index,
+      mapping.readers.findIndex((candidate) => candidate.preset === reader.preset) === index,
   )
 }
 

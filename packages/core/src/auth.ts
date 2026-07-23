@@ -128,6 +128,8 @@ export interface AuthStorageDescription {
     readonly verification: 'mapped' | 'sidecar' | 'trusted' | 'unsupported'
     readonly eligibility: readonly string[]
     readonly hashers: readonly string[]
+    readonly credentialUpgrade: 'never' | 'in-place'
+    readonly securityWarnings: readonly string[]
   }
   readonly identities?: { readonly table: string; readonly ownership: 'doxa' | 'external' }
   readonly passwords?: { readonly table: string; readonly ownership: 'doxa' | 'external' }

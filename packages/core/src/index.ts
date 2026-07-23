@@ -172,21 +172,20 @@ export interface AuthCredentialReaderConfiguration {
   readonly hash: string
 }
 
+export type AuthCredentialUpgradeConfiguration =
+  | 'never'
+  | {
+      readonly mode: 'in-place'
+      readonly format: 'doxa-argon2id'
+      readonly password: string
+      readonly updatedAt?: string
+    }
+
 export interface AuthCredentialConfiguration {
   readonly table: string
   readonly identityId: string
   readonly readers: readonly AuthCredentialReaderConfiguration[]
-  readonly write: {
-    readonly format: 'doxa-argon2id'
-    readonly destination:
-      | 'sidecar'
-      | {
-          readonly table?: string
-          readonly identityId?: string
-          readonly password: string
-          readonly updatedAt?: string
-        }
-  }
+  readonly upgrade?: AuthCredentialUpgradeConfiguration
 }
 
 export interface AuthModelIdentityConfiguration {

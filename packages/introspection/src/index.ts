@@ -226,11 +226,15 @@ export function describeAuthentication(manifest: DoxaManifest): Readonly<Record<
       ),
     ),
     hashers: Object.freeze(authentication.credentials.readers.map((reader) => reader.preset)),
-    credentialOwnership:
-      authentication.source === 'doxa-owned' ||
-      authentication.credentials.write.destination === 'sidecar'
-        ? 'doxa'
-        : 'external',
+    credentialOwnership: authentication.source === 'doxa-owned' ? 'doxa' : 'external',
+    credentialUpgrade: authentication.credentials.upgrade.mode,
+    securityWarnings: Object.freeze(
+      authentication.credentials.readers.some((reader) => reader.preset === 'sha256-hex')
+        ? [
+            'sha256-hex is an unsalted weak credential reader; prefer an explicit in-place Argon2id upgrade where every credential consumer supports it.',
+          ]
+        : [],
+    ),
     routes: authentication.routes,
   })
 }

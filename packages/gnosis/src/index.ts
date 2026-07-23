@@ -116,6 +116,8 @@ const authenticationInspectionSchema = z.object({
   eligibility: z.array(z.record(z.string(), z.unknown())),
   hashers: z.array(z.string()),
   credentialOwnership: z.enum(['doxa', 'external']),
+  credentialUpgrade: z.enum(['never', 'in-place']),
+  securityWarnings: z.array(z.string()),
   routes: z.record(z.string(), z.unknown()),
 })
 const documentationSearchSchema = z.object({

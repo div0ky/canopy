@@ -648,12 +648,11 @@ export async function compileApplication(
         credentials: {
           table: 'doxa_auth_passwords',
           identityId: 'identity_id',
+          password: 'hash',
           readers: [{ preset: 'doxa-argon2id', hash: 'hash' }],
-          write: {
-            destination: 'in-place',
+          upgrade: {
+            mode: 'in-place',
             format: 'doxa-argon2id',
-            table: 'doxa_auth_passwords',
-            identityId: 'identity_id',
             password: 'hash',
             updatedAt: 'updated_at',
           },
@@ -690,6 +689,9 @@ export async function compileApplication(
       )
     }
     const credentials = compileCredentials(requiredObjectFieldObject(identity, 'credentials'))
+    if (mode === 'managed' && credentials.upgrade.mode !== 'in-place') {
+      fail(identity, 'Managed auth credentials require an explicit in-place upgrade policy.')
+    }
     const eligibilityObject = objectField(identity, 'eligibility')
     const modelProperty = objectField(identity, 'model')
 
@@ -715,10 +717,7 @@ export async function compileApplication(
         ? configuredVerification
         : ({ mode: 'unsupported' } as const)
       const attributes = new Set(model.attributes)
-      const credentialColumns = new Set([
-        ...credentials.readers.map((reader) => reader.hash),
-        ...(credentials.write.destination === 'in-place' ? [credentials.write.password] : []),
-      ])
+      const credentialColumns = new Set([credentials.password])
       const credentialAttribute = model.attributes.find((attribute) =>
         credentialColumns.has(physicalModelColumn(model, attribute)),
       )
@@ -924,6 +923,13 @@ export async function compileApplication(
   function compileCredentials(
     object: ts.ObjectLiteralExpression,
   ): AuthenticationManifestEntry['credentials'] {
+    const removedWrite = objectField(object, 'write')
+    if (removedWrite) {
+      fail(
+        removedWrite,
+        'credentials.write was removed; use credentials.upgrade with "never" or an in-place policy.',
+      )
+    }
     const table = requiredObjectString(object, 'table')
     if (!validQualifiedIdentifier(table)) fail(object, 'Auth credential table is invalid.')
     const identityId = requiredDatabaseIdentifier(object, 'identityId')
@@ -951,39 +957,57 @@ export async function compileApplication(
         hash: requiredDatabaseIdentifier(reader, 'hash'),
       }
     })
-    const write = requiredObjectFieldObject(object, 'write')
-    if (requiredObjectString(write, 'format') !== 'doxa-argon2id') {
-      fail(write, 'Doxa Argon2id is the only supported credential write format.')
+    const password = readers[0]!.hash
+    if (readers.some((reader) => reader.hash !== password)) {
+      fail(object, 'All auth credential readers must use the same authoritative password column.')
     }
-    const destinationProperty = objectField(write, 'destination')
-    if (!destinationProperty) fail(write, 'Credential write destination is required.')
-    const destination = unwrapLiteralExpression(destinationProperty.initializer)
-    if (ts.isStringLiteral(destination) && destination.text === 'sidecar') {
+    const upgradeProperty = objectField(object, 'upgrade')
+    if (!upgradeProperty) {
       return {
         table,
         identityId,
+        password,
         readers,
-        write: { destination: 'sidecar', format: 'doxa-argon2id' },
+        upgrade: { mode: 'never' },
       }
     }
-    if (!ts.isObjectLiteralExpression(destination)) {
-      fail(destination, 'Credential destination must be sidecar or an in-place mapping object.')
+    const upgrade = unwrapLiteralExpression(upgradeProperty.initializer)
+    if (ts.isStringLiteral(upgrade) && upgrade.text === 'never') {
+      return {
+        table,
+        identityId,
+        password,
+        readers,
+        upgrade: { mode: 'never' },
+      }
     }
-    const writeTable = optionalObjectString(destination, 'table') ?? table
-    const writeIdentityId = optionalDatabaseIdentifier(destination, 'identityId') ?? identityId
+    if (!ts.isObjectLiteralExpression(upgrade)) {
+      fail(upgrade, 'Credential upgrade must be "never" or an in-place policy object.')
+    }
+    if (requiredObjectString(upgrade, 'mode') !== 'in-place') {
+      fail(upgrade, 'In-place is the only supported automatic credential upgrade mode.')
+    }
+    if (requiredObjectString(upgrade, 'format') !== 'doxa-argon2id') {
+      fail(upgrade, 'Doxa Argon2id is the only supported credential upgrade format.')
+    }
+    const upgradePassword = requiredDatabaseIdentifier(upgrade, 'password')
+    if (upgradePassword !== password) {
+      fail(upgrade, 'Credential upgrades must replace the authoritative password column in place.')
+    }
+    if (!readers.some((reader) => reader.preset === 'doxa-argon2id')) {
+      fail(upgrade, 'In-place credential upgrades require a doxa-argon2id reader.')
+    }
+    const updatedAt = optionalDatabaseIdentifier(upgrade, 'updatedAt')
     return {
       table,
       identityId,
+      password,
       readers,
-      write: {
-        destination: 'in-place',
+      upgrade: {
+        mode: 'in-place',
         format: 'doxa-argon2id',
-        table: writeTable,
-        identityId: writeIdentityId,
-        password: requiredDatabaseIdentifier(destination, 'password'),
-        ...(optionalDatabaseIdentifier(destination, 'updatedAt')
-          ? { updatedAt: optionalDatabaseIdentifier(destination, 'updatedAt')! }
-          : {}),
+        password,
+        ...(updatedAt ? { updatedAt } : {}),
       },
     }
   }

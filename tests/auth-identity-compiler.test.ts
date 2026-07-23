@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import { compileApplication } from '@doxajs/compiler'
+import { describeAuthentication } from '@doxajs/introspection'
 import { afterEach, describe, expect, it } from 'vitest'
 
 const workspace = path.resolve(import.meta.dirname, '..')
@@ -78,8 +79,14 @@ describe('compiled authentication identity mappings', () => {
           eligibility: [{ attribute: 'active', equals: true }],
           credentials: {
             table: 'legacy_users', identityId: 'user_id',
-            readers: [{ preset: 'bcrypt', hash: 'password_hash' }],
-            write: { format: 'doxa-argon2id', destination: 'sidecar' },
+            readers: [
+              { preset: 'doxa-argon2id', hash: 'password_hash' },
+              { preset: 'bcrypt', hash: 'password_hash' },
+            ],
+            upgrade: {
+              mode: 'in-place', format: 'doxa-argon2id',
+              password: 'password_hash', updatedAt: 'updated_at',
+            },
           },
           registrationFactory: UserRegistrationDefaults,
         } } } as const
@@ -111,8 +118,17 @@ describe('compiled authentication identity mappings', () => {
       credentials: {
         table: 'legacy_users',
         identityId: 'user_id',
-        readers: [{ preset: 'bcrypt', hash: 'password_hash' }],
-        write: { destination: 'sidecar', format: 'doxa-argon2id' },
+        password: 'password_hash',
+        readers: [
+          { preset: 'doxa-argon2id', hash: 'password_hash' },
+          { preset: 'bcrypt', hash: 'password_hash' },
+        ],
+        upgrade: {
+          mode: 'in-place',
+          format: 'doxa-argon2id',
+          password: 'password_hash',
+          updatedAt: 'updated_at',
+        },
       },
       registrationFactoryId: 'service:app/user-registration-defaults',
       routes: {
@@ -143,7 +159,6 @@ describe('compiled authentication identity mappings', () => {
           credentials: {
             table: 'employees', identityId: 'employee_id',
             readers: [{ preset: 'sha256-hex', hash: 'password' }],
-            write: { format: 'doxa-argon2id', destination: 'sidecar' },
           },
         } } } as const
       }
@@ -161,8 +176,68 @@ describe('compiled authentication identity mappings', () => {
           recovery: false,
           passwordChange: false,
         },
+        credentials: expect.objectContaining({
+          password: 'password',
+          upgrade: { mode: 'never' },
+        }),
       }),
     )
+    expect(describeAuthentication(result.manifest)).toEqual(
+      expect.objectContaining({
+        credentialOwnership: 'external',
+        credentialUpgrade: 'never',
+        securityWarnings: [expect.stringContaining('sha256-hex')],
+      }),
+    )
+  })
+
+  it('compiles explicit never and rejects removed password-sidecar configuration', async () => {
+    const never = await compileFixture(`
+      import { DoxaApplication, Feature } from '@doxajs/core'
+      class AppFeature extends Feature { id = 'app' }
+      export class Application extends DoxaApplication {
+        id = 'never-auth'; features = [AppFeature]
+        framework = { auth: { identity: {
+          mode: 'login-only', table: 'employees',
+          columns: {
+            id: 'employee_id', identifier: 'username',
+            createdAt: 'created_at', updatedAt: 'updated_at',
+          },
+          identifier: { kind: 'username', normalize: { preset: 'lowercase' } },
+          verification: { mode: 'trusted' },
+          credentials: {
+            table: 'employees', identityId: 'employee_id',
+            readers: [{ preset: 'sha256-hex', hash: 'password' }],
+            upgrade: 'never',
+          },
+        } } } as const
+      }
+    `)
+    expect(never.manifest.authentication.credentials.upgrade).toEqual({ mode: 'never' })
+
+    await expect(
+      compileFixture(`
+        import { DoxaApplication, Feature } from '@doxajs/core'
+        class AppFeature extends Feature { id = 'app' }
+        export class Application extends DoxaApplication {
+          id = 'removed-sidecar'; features = [AppFeature]
+          framework = { auth: { identity: {
+            mode: 'login-only', table: 'employees',
+            columns: {
+              id: 'employee_id', identifier: 'username',
+              createdAt: 'created_at', updatedAt: 'updated_at',
+            },
+            identifier: { kind: 'username', normalize: { preset: 'lowercase' } },
+            verification: { mode: 'trusted' },
+            credentials: {
+              table: 'employees', identityId: 'employee_id',
+              readers: [{ preset: 'sha256-hex', hash: 'password' }],
+              write: { format: 'doxa-argon2id', destination: 'sidecar' },
+            },
+          } } } as const
+        }
+      `),
+    ).rejects.toThrow('credentials.write was removed')
   })
 
   it('fails closed when a model mapping references an undeclared logical attribute', async () => {
@@ -180,8 +255,12 @@ describe('compiled authentication identity mappings', () => {
             timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
             verification: { mode: 'trusted' },
             credentials: {
-              table: 'users', identityId: 'id', readers: [{ preset: 'bcrypt', hash: 'password' }],
-              write: { format: 'doxa-argon2id', destination: 'sidecar' },
+              table: 'users', identityId: 'id',
+              readers: [
+                { preset: 'doxa-argon2id', hash: 'password' },
+                { preset: 'bcrypt', hash: 'password' },
+              ],
+              upgrade: { mode: 'in-place', format: 'doxa-argon2id', password: 'password' },
             },
           } } } as const
         }
@@ -209,7 +288,6 @@ describe('compiled authentication identity mappings', () => {
           verification: { mode: 'trusted' },
           credentials: {
             table: 'users', identityId: 'id', readers: [{ preset: 'bcrypt', hash: 'password' }],
-            write: { format: 'doxa-argon2id', destination: 'sidecar' },
           },
         } } } as const
       }
@@ -235,7 +313,6 @@ describe('compiled authentication identity mappings', () => {
             verification: { mode: 'trusted' },
             credentials: {
               table: 'users', identityId: 'id', readers: [{ preset: 'bcrypt', hash: 'password' }],
-              write: { format: 'doxa-argon2id', destination: 'sidecar' },
             },
           } } } as const
         }
@@ -269,8 +346,12 @@ describe('compiled authentication identity mappings', () => {
             timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
             verification: { mode: 'trusted' },
             credentials: {
-              table: 'users', identityId: 'id', readers: [{ preset: 'bcrypt', hash: 'password' }],
-              write: { format: 'doxa-argon2id', destination: 'sidecar' },
+              table: 'users', identityId: 'id',
+              readers: [
+                { preset: 'doxa-argon2id', hash: 'password' },
+                { preset: 'bcrypt', hash: 'password' },
+              ],
+              upgrade: { mode: 'in-place', format: 'doxa-argon2id', password: 'password' },
             },
             registrationFactory: UserUrl,
           } } } as const

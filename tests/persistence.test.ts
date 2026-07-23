@@ -1,6 +1,5 @@
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import {
-  argon2,
   createHash,
   createHmac,
   generateKeyPairSync,
@@ -13,7 +12,7 @@ import path from 'node:path'
 
 import { compileApplication } from '@doxajs/compiler'
 import { runPraxis } from '@doxajs/praxis'
-import { DOXA_AUTH_SIDECAR_MIGRATION_URL, installAuthSchema } from '@doxajs/auth-postgres'
+import { DOXA_AUTH_MAPPING_MIGRATION_URL, installAuthSchema } from '@doxajs/auth-postgres'
 import { PostgresAuth } from '@doxajs/auth-postgres/framework'
 import {
   AfterCommitError,
@@ -3697,14 +3696,45 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     }
   })
 
+  it('preserves verification sidecars and refuses to discard password-sidecar rows', async () => {
+    await pool.query(`
+      CREATE TABLE doxa_auth_mapped_passwords (
+        identity_id text PRIMARY KEY,
+        password_record text NOT NULL,
+        updated_at timestamptz NOT NULL
+      )
+    `)
+    await pool.query(
+      `INSERT INTO doxa_auth_mapped_passwords VALUES ('transition-1', 'current-record', now())`,
+    )
+    const migration = await readFile(DOXA_AUTH_MAPPING_MIGRATION_URL, 'utf8')
+    await expect(pool.query(migration)).rejects.toThrow(
+      'doxa_auth_mapped_passwords still contains credentials',
+    )
+    expect(
+      (await pool.query(`SELECT to_regclass('doxa_auth_mapped_passwords') AS relation`)).rows[0]
+        ?.relation,
+    ).toBe('doxa_auth_mapped_passwords')
+
+    await pool.query(`DELETE FROM doxa_auth_mapped_passwords`)
+    await pool.query(migration)
+    expect(
+      (await pool.query(`SELECT to_regclass('doxa_auth_mapped_passwords') AS relation`)).rows[0]
+        ?.relation,
+    ).toBeNull()
+    expect(
+      (await pool.query(`SELECT to_regclass('doxa_auth_mapped_verifications') AS relation`)).rows[0]
+        ?.relation,
+    ).toBe('doxa_auth_mapped_verifications')
+  })
+
   it('registers managed identities through the Model lifecycle and rolls every participant back atomically', async () => {
-    await pool.query(await readFile(DOXA_AUTH_SIDECAR_MIGRATION_URL, 'utf8'))
     await pool.query(`
       CREATE TABLE managed_registration_users (
         user_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         username text NOT NULL,
         contact_email text NOT NULL,
-        password_hash text,
+        password_hash text NOT NULL DEFAULT 'registration-pending',
         active boolean NOT NULL,
         branch_tag text NOT NULL,
         verified_at timestamptz,
@@ -3927,10 +3957,8 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       expect(
         (
           await pool.query(
-            `SELECT count(*)::int AS count FROM doxa_auth_mapped_passwords p
-             WHERE NOT EXISTS (
-               SELECT 1 FROM managed_registration_users u WHERE u.user_id::text = p.identity_id
-             )`,
+            `SELECT count(*)::int AS count FROM managed_registration_users
+             WHERE username = 'rollbackuser'`,
           )
         ).rows[0]?.count,
       ).toBe(0)
@@ -3940,8 +3968,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     }
   })
 
-  it('upgrades managed bcrypt credentials, gives sidecars precedence, and revokes ineligible identities', async () => {
-    await pool.query(await readFile(DOXA_AUTH_SIDECAR_MIGRATION_URL, 'utf8'))
+  it('upgrades managed bcrypt credentials in the authoritative column and revokes ineligible identities', async () => {
     await pool.query(`
       CREATE TABLE legacy_managed_auth_users (
         user_id text PRIMARY KEY,
@@ -3990,10 +4017,10 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
           contactEmail: 'ada@example.com',
         }),
       )
-      const sidecar = await pool.query<{ password_record: string }>(
-        `SELECT password_record FROM doxa_auth_mapped_passwords WHERE identity_id = 'managed-1'`,
+      const upgraded = await pool.query<{ password_hash: string }>(
+        `SELECT password_hash FROM legacy_managed_auth_users WHERE user_id = 'managed-1'`,
       )
-      expect(sidecar.rows[0]?.password_record).toMatch(/^doxa-argon2id:/)
+      expect(upgraded.rows[0]?.password_hash).toMatch(/^doxa-argon2id:/)
 
       const access = await auth.issueAccessToken('managed-1', { name: 'eligibility-proof' })
       await pool.query(
@@ -4028,8 +4055,8 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         `UPDATE legacy_managed_auth_users SET active = true WHERE user_id = 'managed-1'`,
       )
       await pool.query(
-        `UPDATE doxa_auth_mapped_passwords SET password_record = 'not-a-password-record'
-         WHERE identity_id = 'managed-1'`,
+        `UPDATE legacy_managed_auth_users SET password_hash = 'not-a-password-record'
+         WHERE user_id = 'managed-1'`,
       )
       await expect(
         auth.login({ identifier: 'ada', password: 'legacy secure password' }),
@@ -4039,8 +4066,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     }
   })
 
-  it('rejects weak SHA-256 credentials in login-only mode without issuing a session', async () => {
-    await pool.query(await readFile(DOXA_AUTH_SIDECAR_MIGRATION_URL, 'utf8'))
+  it('accepts configured SHA-256 credentials in login-only mode without mutating them', async () => {
     await pool.query(`
       CREATE TABLE legacy_login_only_users (
         user_id text PRIMARY KEY,
@@ -4073,54 +4099,67 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       mappedAuthentication({
         mode: 'login-only',
         verification: { mode: 'trusted' },
-        readers: [
-          { preset: 'sha256-hex', hash: 'password_hash' },
-          { preset: 'argon2id-phc', hash: 'password_hash' },
-        ],
+        readers: [{ preset: 'sha256-hex', hash: 'password_hash' }],
       }),
     )
     await auth.start(lifecycleContext())
     try {
       await expect(
-        auth.login({ identifier: 'encore', password: 'legacy password' }),
-      ).rejects.toMatchObject({ code: 'invalid_credentials' })
+        auth.login({ identifier: 'encore', password: 'wrong password' }),
+      ).rejects.toMatchObject({
+        code: 'invalid_credentials',
+        message: 'The supplied identifier or password is invalid.',
+      })
+      const grant = await auth.login({ identifier: 'encore', password: 'legacy password' })
+      expect(grant.identity.id).toBe('login-only-1')
       expect(
         (
           await pool.query(
             `SELECT count(*)::int AS count FROM doxa_auth_sessions WHERE identity_id = 'login-only-1'`,
           )
         ).rows[0]?.count,
-      ).toBe(0)
-
-      const salt = Buffer.from('0123456789abcdef', 'utf8')
-      const hash = await new Promise<Buffer>((resolve, reject) => {
-        argon2(
-          'argon2id',
-          {
-            message: Buffer.from('legacy password'),
-            nonce: salt,
-            parallelism: 2,
-            tagLength: 32,
-            memory: 19_456,
-            passes: 2,
-          },
-          (error, value) => (error ? reject(error) : resolve(value)),
-        )
+      ).toBe(1)
+      expect(
+        (
+          await pool.query<{ password_hash: string }>(
+            `SELECT password_hash FROM legacy_login_only_users WHERE user_id = 'login-only-1'`,
+          )
+        ).rows[0]?.password_hash,
+      ).toBe(passwordHash)
+      expect(
+        await auth.reauthenticate('login-only-1', grant.session.id, 'legacy password'),
+      ).toBeInstanceOf(Date)
+      await expect(
+        auth.changePassword('login-only-1', 'legacy password', 'replacement password'),
+      ).rejects.toMatchObject({ code: 'invalid_credentials' })
+      await expect(
+        auth.register({ identifier: 'new-user', password: 'registration password' }),
+      ).rejects.toMatchObject({ code: 'invalid_credentials' })
+      await expect(auth.issueEmailVerification('login-only-1')).rejects.toMatchObject({
+        code: 'invalid_credentials',
       })
-      const phc = `$argon2id$v=19$m=19456,t=2,p=2$${salt.toString('base64').replace(/=+$/, '')}$${hash.toString('base64').replace(/=+$/, '')}`
+      await expect(auth.issuePasswordReset('encore')).rejects.toMatchObject({
+        code: 'invalid_credentials',
+      })
+      await expect(
+        auth.resetPassword('unowned-token', 'replacement password'),
+      ).rejects.toMatchObject({ code: 'invalid_credentials' })
+      expect(
+        (await pool.query(`SELECT to_regclass('doxa_auth_mapped_passwords') AS relation`)).rows[0]
+          ?.relation,
+      ).toBeNull()
+
+      const replacementHash = createHash('sha256').update('external replacement').digest('hex')
       await pool.query(
         `UPDATE legacy_login_only_users SET password_hash = $1 WHERE user_id = 'login-only-1'`,
-        [phc],
-      )
-      const grant = await auth.login({ identifier: 'encore', password: 'legacy password' })
-      expect(grant.identity.id).toBe('login-only-1')
-      await pool.query(
-        `UPDATE legacy_login_only_users SET password_hash = $1 WHERE user_id = 'login-only-1'`,
-        [passwordHash],
+        [replacementHash],
       )
       await expect(
-        auth.reauthenticate('login-only-1', grant.session.id, 'legacy password'),
+        auth.login({ identifier: 'encore', password: 'legacy password' }),
       ).rejects.toMatchObject({ code: 'invalid_credentials' })
+      expect(
+        (await auth.login({ identifier: 'encore', password: 'external replacement' })).identity.id,
+      ).toBe('login-only-1')
     } finally {
       await auth.dispose(lifecycleContext())
     }
@@ -4159,11 +4198,9 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         mode: 'managed',
         table: 'legacy_in_place_auth_users',
         verification: { mode: 'trusted' },
-        write: {
-          destination: 'in-place',
+        upgrade: {
+          mode: 'in-place',
           format: 'doxa-argon2id',
-          table: 'legacy_in_place_auth_users',
-          identityId: 'user_id',
           password: 'password_hash',
           updatedAt: 'updated_at',
         },
@@ -4189,8 +4226,131 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     }
   })
 
+  it('upgrades login-only SHA-256 in place and protects concurrent external changes', async () => {
+    await pool.query(`
+      CREATE TABLE sha_in_place_auth_users (
+        user_id text PRIMARY KEY,
+        username text NOT NULL,
+        contact_email text NOT NULL,
+        password_hash text NOT NULL,
+        active boolean NOT NULL,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+      )
+    `)
+    await pool.query(
+      `CREATE UNIQUE INDEX sha_in_place_auth_username_lower_idx
+       ON sha_in_place_auth_users (lower(username))`,
+    )
+    const sha = createHash('sha256').update('sha upgrade password').digest('hex')
+    await pool.query(
+      `INSERT INTO sha_in_place_auth_users
+       (user_id, username, contact_email, password_hash, active, created_at, updated_at)
+       VALUES
+         ('sha-upgrade-1', 'ShaUpgrade', 'sha@example.com', $1, true, now(), now()),
+         ('sha-cas-1', 'ShaCas', 'cas@example.com', $1, true, now(), now()),
+         ('sha-fail-1', 'ShaFail', 'fail@example.com', $1, true, now(), now())`,
+      [sha],
+    )
+    await pool.query(`
+      CREATE FUNCTION control_sha_upgrade() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.user_id = 'sha-cas-1' THEN
+          PERFORM pg_sleep(0.2);
+        END IF;
+        IF NEW.user_id = 'sha-fail-1' THEN
+          RAISE EXCEPTION 'forced credential upgrade failure';
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+      CREATE TRIGGER control_sha_upgrade
+      BEFORE UPDATE ON sha_in_place_auth_users
+      FOR EACH ROW EXECUTE FUNCTION control_sha_upgrade()
+    `)
+
+    const auth = new PostgresAuth({
+      connectionString,
+      secureCookies: false,
+      trustedOrigins: ['http://doxa.test'],
+    })
+    auth.bindCompiledAuthentication(
+      mappedAuthentication({
+        mode: 'login-only',
+        table: 'sha_in_place_auth_users',
+        verification: { mode: 'trusted' },
+        readers: [
+          { preset: 'doxa-argon2id', hash: 'password_hash' },
+          { preset: 'sha256-hex', hash: 'password_hash' },
+        ],
+        upgrade: {
+          mode: 'in-place',
+          format: 'doxa-argon2id',
+          password: 'password_hash',
+          updatedAt: 'updated_at',
+        },
+      }),
+    )
+    await auth.start(lifecycleContext())
+    try {
+      const first = await auth.login({
+        identifier: 'shaupgrade',
+        password: 'sha upgrade password',
+      })
+      expect(first.identity.id).toBe('sha-upgrade-1')
+      expect(
+        (
+          await pool.query<{ password_hash: string }>(
+            `SELECT password_hash FROM sha_in_place_auth_users WHERE user_id = 'sha-upgrade-1'`,
+          )
+        ).rows[0]?.password_hash,
+      ).toMatch(/^doxa-argon2id:/)
+      expect(
+        (await auth.login({ identifier: 'shaupgrade', password: 'sha upgrade password' })).identity
+          .id,
+      ).toBe('sha-upgrade-1')
+      expect(
+        (
+          await pool.query(
+            `SELECT 1 FROM doxa_auth_audit_events
+             WHERE identity_id = 'sha-upgrade-1' AND event_type = 'session.created'`,
+          )
+        ).rowCount,
+      ).toBe(2)
+
+      const concurrent = await Promise.allSettled([
+        auth.login({ identifier: 'shacas', password: 'sha upgrade password' }),
+        auth.login({ identifier: 'shacas', password: 'sha upgrade password' }),
+      ])
+      expect(concurrent.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+      expect(concurrent.filter((result) => result.status === 'rejected')).toHaveLength(1)
+      expect(
+        (await pool.query(`SELECT 1 FROM doxa_auth_sessions WHERE identity_id = 'sha-cas-1'`))
+          .rowCount,
+      ).toBe(1)
+
+      await expect(
+        auth.login({ identifier: 'shafail', password: 'sha upgrade password' }),
+      ).rejects.toThrow('forced credential upgrade failure')
+      expect(
+        (await pool.query(`SELECT 1 FROM doxa_auth_sessions WHERE identity_id = 'sha-fail-1'`))
+          .rowCount,
+      ).toBe(0)
+      expect(
+        (
+          await pool.query<{ password_hash: string }>(
+            `SELECT password_hash FROM sha_in_place_auth_users WHERE user_id = 'sha-fail-1'`,
+          )
+        ).rows[0]?.password_hash,
+      ).toBe(sha)
+    } finally {
+      await auth.dispose(lifecycleContext())
+      await pool.query('DROP TRIGGER control_sha_upgrade ON sha_in_place_auth_users')
+      await pool.query('DROP FUNCTION control_sha_upgrade()')
+    }
+  })
+
   it('rolls back a mandatory credential upgrade when session issuance fails', async () => {
-    await pool.query(await readFile(DOXA_AUTH_SIDECAR_MIGRATION_URL, 'utf8'))
     await pool.query(`
       CREATE TABLE atomic_upgrade_auth_users (
         user_id text PRIMARY KEY,
@@ -4247,11 +4407,12 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       ).rejects.toThrow('Failed query: insert into "doxa_auth_sessions"')
       expect(
         (
-          await pool.query(
-            `SELECT 1 FROM doxa_auth_mapped_passwords WHERE identity_id = 'atomic-upgrade-1'`,
+          await pool.query<{ password_hash: string }>(
+            `SELECT password_hash FROM atomic_upgrade_auth_users
+             WHERE user_id = 'atomic-upgrade-1'`,
           )
-        ).rowCount,
-      ).toBe(0)
+        ).rows[0]?.password_hash,
+      ).toBe('$2b$10$rIv/DSLLlVci6r6U.W.N.e0DggFleAwndNLWyGmpJvbsVP//5EQaK')
     } finally {
       await auth.dispose(lifecycleContext())
       await pool.query('DROP TRIGGER reject_atomic_upgrade_session ON doxa_auth_sessions')
@@ -4260,7 +4421,6 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
   })
 
   it('rejects composite and partial identifier uniqueness that leaves login ambiguous', async () => {
-    await pool.query(await readFile(DOXA_AUTH_SIDECAR_MIGRATION_URL, 'utf8'))
     await pool.query(`
       CREATE TABLE ambiguous_auth_users (
         user_id text PRIMARY KEY,
@@ -4329,11 +4489,9 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
         mode: 'login-only',
         table: 'citext_auth_users',
         verification: { mode: 'trusted' },
-        write: {
-          destination: 'in-place',
+        upgrade: {
+          mode: 'in-place',
           format: 'doxa-argon2id',
-          table: 'citext_auth_users',
-          identityId: 'user_id',
           password: 'password_hash',
           updatedAt: 'updated_at',
         },
@@ -4369,7 +4527,13 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
           table: 'legacy_auth_users',
           identityId: 'external_id',
           password: 'password_record',
-          updatedAt: 'updated_on',
+          readers: [{ preset: 'doxa-argon2id', hash: 'password_record' }],
+          mode: 'managed',
+          upgrade: {
+            mode: 'in-place',
+            format: 'doxa-argon2id',
+            updatedAt: 'updated_on',
+          },
         },
       },
     })
@@ -4509,11 +4673,73 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
           table: 'legacy_auth_users',
           identityId: 'external_id',
           password: 'password_record',
-          updatedAt: 'updated_on',
+          readers: [{ preset: 'doxa-argon2id', hash: 'password_record' }],
+          mode: 'managed',
+          upgrade: {
+            mode: 'in-place',
+            format: 'doxa-argon2id',
+            updatedAt: 'updated_on',
+          },
         },
       },
     })
     await expect(auth.start(lifecycleContext())).rejects.toThrow('missing_email_column')
+  })
+
+  it('fails in-place readiness for insufficient password capacity and unsafe timestamps', async () => {
+    await pool.query(`
+      CREATE TABLE short_credential_auth_users (
+        user_id text PRIMARY KEY,
+        username text NOT NULL,
+        contact_email text NOT NULL,
+        password_hash varchar(255) NOT NULL,
+        active boolean NOT NULL,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+      );
+      CREATE UNIQUE INDEX short_credential_auth_username_lower_idx
+        ON short_credential_auth_users (lower(username));
+
+      CREATE TABLE nullable_timestamp_auth_users (
+        user_id text PRIMARY KEY,
+        username text NOT NULL,
+        contact_email text NOT NULL,
+        password_hash text NOT NULL,
+        active boolean NOT NULL,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz
+      );
+      CREATE UNIQUE INDEX nullable_timestamp_auth_username_lower_idx
+        ON nullable_timestamp_auth_users (lower(username))
+    `)
+    const configured = (table: string) => {
+      const auth = new PostgresAuth({
+        connectionString,
+        secureCookies: false,
+        trustedOrigins: ['http://doxa.test'],
+      })
+      auth.bindCompiledAuthentication(
+        mappedAuthentication({
+          mode: 'login-only',
+          table,
+          verification: { mode: 'trusted' },
+          upgrade: {
+            mode: 'in-place',
+            format: 'doxa-argon2id',
+            password: 'password_hash',
+            updatedAt: 'updated_at',
+          },
+        }),
+      )
+      return auth
+    }
+
+    await expect(
+      configured('short_credential_auth_users').start(lifecycleContext()),
+    ).rejects.toThrow('must hold at least 272 characters')
+    await expect(
+      configured('nullable_timestamp_auth_users').start(lifecycleContext()),
+    ).rejects.toThrow('credential timestamp must be writable and NOT NULL')
   })
 })
 
@@ -4588,11 +4814,29 @@ function mappedAuthentication(options: {
   readonly verification: CompiledAuthentication['verification']
   readonly eligibility?: CompiledAuthentication['eligibility']
   readonly readers?: CompiledAuthentication['credentials']['readers']
-  readonly write?: CompiledAuthentication['credentials']['write']
+  readonly upgrade?: CompiledAuthentication['credentials']['upgrade']
 }): CompiledAuthentication {
   const table =
     options.table ??
     (options.mode === 'managed' ? 'legacy_managed_auth_users' : 'legacy_login_only_users')
+  const upgrade =
+    options.upgrade ??
+    (options.mode === 'managed'
+      ? ({
+          mode: 'in-place',
+          format: 'doxa-argon2id',
+          password: 'password_hash',
+          updatedAt: 'updated_at',
+        } as const)
+      : ({ mode: 'never' } as const))
+  const readers =
+    options.readers ??
+    (upgrade.mode === 'in-place'
+      ? ([
+          { preset: 'doxa-argon2id', hash: 'password_hash' },
+          { preset: 'bcrypt', hash: 'password_hash' },
+        ] as const)
+      : ([{ preset: 'bcrypt', hash: 'password_hash' }] as const))
   return {
     mode: options.mode,
     source: options.mode === 'managed' ? 'model' : 'table',
@@ -4611,8 +4855,9 @@ function mappedAuthentication(options: {
     credentials: {
       table,
       identityId: 'user_id',
-      readers: options.readers ?? [{ preset: 'bcrypt', hash: 'password_hash' }],
-      write: options.write ?? { destination: 'sidecar', format: 'doxa-argon2id' },
+      password: 'password_hash',
+      readers,
+      upgrade,
     },
     routes: {
       registration: options.mode === 'managed',
