@@ -189,6 +189,28 @@ describe('foundational compile-to-boot slice', () => {
     expect(featureRoutes).not.toContain('ResetPasswordRoute')
   })
 
+  it('omits verification routes when a managed external identity leaves verification unmapped', () => {
+    const prepared = prepareFrameworkSource(
+      'app.config.ts',
+      `export class Application {
+        id = 'unverified-external-auth'
+        features = []
+        framework = { auth: { identity: {
+          mode: 'managed',
+          contactEmail: 'email'
+        } } }
+      }`,
+    )
+
+    const featureRoutes = prepared.source
+      .split('\n')
+      .find((line) => line.trimStart().startsWith('routes = ['))
+    expect(featureRoutes).toContain('RegisterRoute')
+    expect(featureRoutes).toContain('RequestPasswordResetRoute')
+    expect(featureRoutes).not.toContain('VerifyEmailRoute')
+    expect(featureRoutes).not.toContain('ResendVerificationRoute')
+  })
+
   it('creates parented spans for executions and nested framework scopes', async () => {
     const runtime = await bootRuntime()
     const inboundTraceId = '1'.repeat(32)

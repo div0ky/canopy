@@ -189,7 +189,8 @@ closed and revokes all Doxa sessions and tokens.
 
 - Praxis migrations create only Doxa-owned session, token, challenge, abuse, and audit tables for an
   external identity mapping. Doxa never creates a mapped identity, credential, or verification
-  relation.
+  relation. Removal of alpha mapped-auth sidecar migrations is an explicit pre-1.0 re-baseline that
+  requires recreating prerelease databases or operator-owned cleanup of leftover sidecar relations.
 - A mapped model is `managed = true` by default. `managed = false` excludes its relation from
   Doxa/Praxis migration management. Management does not imply write access; `readOnly` is the
   independent persistence setting.

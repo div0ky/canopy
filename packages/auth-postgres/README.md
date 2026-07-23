@@ -20,7 +20,8 @@ authority. `credentials.upgrade` defaults to `never`; the only writable policy i
 in-place Doxa Argon2id replacement using compare-and-swap in the session/audit transaction. Password
 and verification state never use auxiliary mapped-auth tables. External identity mappings enable
 Doxa email verification only by explicitly mapping a native verification timestamp column; otherwise
-that flow is disabled.
+that flow is disabled. Dropping the alpha sidecar migrations is a pre-1.0 re-baseline: recreate
+prerelease databases or manually retire leftover mapped-auth sidecar tables.
 
 Applications configure authentication through `framework.auth.identity` in root `app.config.ts` and
 import only `Auth` from `@doxajs/core`. The concrete adapter is intentionally available from

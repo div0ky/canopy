@@ -107,3 +107,11 @@ rejected before persistence so credential evaluation remains bounded.
 Password changes and resets revoke sessions according to the first-party Auth contract. Applications
 should use generated routes and policies as the ordinary path and expose raw Auth methods only when
 a transport-specific ceremony has equivalent validation, rate limiting, audit, and origin controls.
+
+## Alpha auth-sidecar re-baseline
+
+Removing alpha mapped-auth sidecar migrations is an explicit pre-1.0 schema re-baseline, not a
+compatible forward migration. Recreate prerelease databases, or manually retire any leftover
+`doxa_auth_mapped_passwords` / `doxa_auth_mapped_verifications` tables and copy verification state
+into the native external column before relying on mapped verification. See
+[Upgrading](../upgrading/index.md).

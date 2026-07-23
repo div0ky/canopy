@@ -133,9 +133,7 @@ export function prepareFrameworkSource(fileName: string, sourceText: string): Pr
       : ['http://127.0.0.1:3000'],
     identityMode: identity ? requiredNestedString(identity, 'mode') : 'doxa-owned',
     hasContactEmail: identity ? hasObjectProperty(identity, 'contactEmail') : true,
-    verificationMode: identity
-      ? requiredNestedString(nestedObject(identity, 'verification')!, 'mode')
-      : 'mapped',
+    verificationMode: identityVerificationMode(identity),
     ...(localConcurrency === undefined ? {} : { localConcurrency }),
     ...(outboxPollingMilliseconds === undefined ? {} : { outboxPollingMilliseconds }),
     theoriaProfile,
@@ -892,6 +890,17 @@ function nestedObject(
     throw new DoxaCompilationError(`Application.framework.${name} must be an object literal.`)
   }
   return property.initializer
+}
+
+function identityVerificationMode(identity: ts.ObjectLiteralExpression | undefined): string {
+  if (!identity) return 'mapped'
+  const verification = nestedObject(identity, 'verification')
+  if (!verification) return 'unsupported'
+  const mode = requiredNestedString(verification, 'mode')
+  if (mode !== 'mapped' && mode !== 'trusted' && mode !== 'unsupported') {
+    throw new DoxaCompilationError('Auth verification mode must be mapped or trusted.')
+  }
+  return mode
 }
 
 function optionalString(object: ts.ObjectLiteralExpression, name: string): string | undefined {

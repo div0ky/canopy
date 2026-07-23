@@ -4916,7 +4916,7 @@ function mappedAuthentication(options: {
     },
     routes: {
       registration: options.mode === 'managed',
-      verification: options.mode === 'managed' && options.verification.mode !== 'trusted',
+      verification: options.mode === 'managed' && options.verification.mode === 'mapped',
       recovery: options.mode === 'managed',
       passwordChange: options.mode === 'managed',
     },
