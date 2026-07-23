@@ -29,5 +29,6 @@ subpath; direct table mappings should move into the compiled application configu
 Applications upgrading from the alpha password-sidecar design must move every current sidecar record
 into the appropriate external password column using a schema-specific locked compare-and-swap
 transition. `0004_remove_mapped_password_sidecar.sql` fails while the obsolete table contains rows
-and drops it only when empty. See the
+and drops it only when empty; verification-sidecar creation is independently selected through
+`0005_mapped_auth_verifications.sql`. See the
 [authentication guide](../../docs/guides/authentication.md#removing-an-alpha-password-sidecar).

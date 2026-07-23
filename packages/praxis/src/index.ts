@@ -1020,7 +1020,14 @@ async function compiledAuthMigrations(cwd: string): Promise<ReadonlySet<string>>
     if (!authentication || authentication.source === 'doxa-owned') {
       return new Set(['0001_doxa_auth.sql', '0003_challenge_recipient_binding.sql'])
     }
-    return new Set(['0000_auth_infrastructure.sql', '0004_remove_mapped_password_sidecar.sql'])
+    const selected = new Set([
+      '0000_auth_infrastructure.sql',
+      '0004_remove_mapped_password_sidecar.sql',
+    ])
+    if (authentication.verification?.mode === 'sidecar') {
+      selected.add('0005_mapped_auth_verifications.sql')
+    }
+    return selected
   } catch {
     return new Set(['0001_doxa_auth.sql', '0003_challenge_recipient_binding.sql'])
   }

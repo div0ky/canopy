@@ -184,9 +184,9 @@ closed and revokes all Doxa sessions and tokens.
 - Praxis migrations create always-owned session, token, challenge, abuse, and audit tables plus only
   the identity, credential, or verification-sidecar tables selected by the compiled storage
   contract. Doxa never creates a mapped password table or password sidecar.
-- The historical `0002_mapped_auth_sidecars.sql` migration remains immutable for checksum safety. A
-  forward-only successor creates the verification sidecar independently and removes the obsolete
-  password-sidecar relation only after it is empty. It must fail closed rather than discard
+- The historical `0002_mapped_auth_sidecars.sql` migration remains immutable for checksum safety.
+  Forward-only successors select verification-sidecar creation independently and remove the obsolete
+  password-sidecar relation only after it is empty. Removal must fail closed rather than discard
   credentials that an operator has not deliberately transitioned.
 - A mapped model is `managed = true` by default. `managed = false` excludes its relation from
   Doxa/Praxis migration management. Management does not imply write access; `readOnly` is the

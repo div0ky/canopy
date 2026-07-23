@@ -107,8 +107,10 @@ a transport-specific ceremony has equivalent validation, rate limiting, audit, a
 ## Removing an alpha password sidecar
 
 `0002_mapped_auth_sidecars.sql` is retained unchanged because already-applied migrations are
-immutable. New mapped-auth plans use `0004_remove_mapped_password_sidecar.sql`, which preserves the
-verification sidecar but refuses to drop `doxa_auth_mapped_passwords` while it contains rows.
+immutable. New mapped-auth plans use `0004_remove_mapped_password_sidecar.sql`, which leaves any
+verification sidecar untouched but refuses to drop `doxa_auth_mapped_passwords` while it contains
+rows. When the compiled verification policy selects a sidecar, `0005_mapped_auth_verifications.sql`
+creates it independently.
 
 Before upgrading an application that used the alpha password sidecar:
 

@@ -97,8 +97,9 @@ The configured external password column is the sole credential authority. Omitte
 `never` upgrade policy verifies in place without mutation. Explicit in-place upgrade uses
 compare-and-swap and shares one transaction with session and audit persistence; it never overwrites
 a concurrent external password change. Password sidecars are not part of the current contract. The
-historical sidecar migration remains immutable, and the forward-only removal migration fails while
-old password rows remain so operators must complete a schema-specific safe transition.
+historical sidecar migration remains immutable. Forward migrations select verification-sidecar
+creation independently, and password-sidecar removal fails while old password rows remain so
+operators must complete a schema-specific safe transition.
 
 The compiler resolves logical attributes to physical storage in the authentication artifact. Mapped
 columns are checked during lifecycle readiness. Missing or incompatible columns, composite keys,
