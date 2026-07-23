@@ -38,7 +38,7 @@ export interface CompiledAuthenticationConfiguration {
   }
   readonly verification:
     | { readonly mode: 'mapped'; readonly column: string }
-    | { readonly mode: 'sidecar' | 'trusted' | 'unsupported' }
+    | { readonly mode: 'trusted' | 'unsupported' }
   readonly eligibility: readonly CompiledEligibilityPredicate[]
   readonly credentials: {
     readonly table: string
