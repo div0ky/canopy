@@ -2099,7 +2099,13 @@ function currentPasswordReaders(
 
 function supportsWeakSidecarMigration(mapping: AuthPasswordTableMapping): boolean {
   return (
-    mapping.mode === 'login-only' && mapping.ownership === 'doxa' && mapping.legacy !== undefined
+    mapping.mode === 'login-only' &&
+    mapping.ownership === 'doxa' &&
+    mapping.table === 'doxa_auth_mapped_passwords' &&
+    mapping.identityId === 'identity_id' &&
+    mapping.password === 'password_record' &&
+    mapping.updatedAt === 'updated_at' &&
+    mapping.legacy !== undefined
   )
 }
 

@@ -4243,6 +4243,89 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     }
   })
 
+  it('does not trust a claimed Doxa ownership label for a non-sidecar weak credential mapping', async () => {
+    await pool.query(`
+      CREATE TABLE claimed_doxa_login_users (
+        user_id text PRIMARY KEY,
+        username text NOT NULL,
+        contact_email text NOT NULL,
+        password_hash text NOT NULL,
+        active boolean NOT NULL,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+      )
+    `)
+    await pool.query(
+      `CREATE UNIQUE INDEX claimed_doxa_login_username_lower_idx
+       ON claimed_doxa_login_users (lower(username))`,
+    )
+    await pool.query(`
+      CREATE TABLE claimed_doxa_passwords (
+        identity_id text PRIMARY KEY,
+        password_record text NOT NULL,
+        updated_at timestamptz NOT NULL
+      )
+    `)
+    const passwordHash = createHash('sha256').update('legacy password').digest('hex')
+    await pool.query(
+      `INSERT INTO claimed_doxa_login_users
+       (user_id, username, contact_email, password_hash, active, created_at, updated_at)
+       VALUES ('claimed-doxa-1', 'claimed', 'claimed@example.com', $1, true, now(), now())`,
+      [passwordHash],
+    )
+
+    const auth = new PostgresAuth({
+      connectionString,
+      secureCookies: false,
+      trustedOrigins: ['http://doxa.test'],
+      tables: {
+        identities: {
+          table: 'claimed_doxa_login_users',
+          id: 'user_id',
+          email: 'username',
+          contactEmail: 'contact_email',
+          createdAt: 'created_at',
+          updatedAt: 'updated_at',
+          identifierKind: 'username',
+          normalization: { preset: 'lowercase' },
+          verificationMode: 'trusted',
+          eligibility: [{ column: 'active', equals: true }],
+        },
+        passwords: {
+          table: 'claimed_doxa_passwords',
+          identityId: 'identity_id',
+          password: 'password_record',
+          updatedAt: 'updated_at',
+          mode: 'login-only',
+          ownership: 'doxa',
+          legacy: {
+            table: 'claimed_doxa_login_users',
+            identityId: 'user_id',
+            password: 'password_hash',
+            readers: [{ preset: 'sha256-hex', hash: 'password_hash' }],
+          },
+        },
+      },
+    })
+    await auth.start(lifecycleContext())
+    try {
+      await expect(
+        auth.login({ identifier: 'claimed', password: 'legacy password' }),
+      ).rejects.toMatchObject({ code: 'invalid_credentials' })
+      expect((await pool.query(`SELECT 1 FROM claimed_doxa_passwords`)).rowCount).toBe(0)
+      expect(
+        (
+          await pool.query(
+            `SELECT count(*)::int AS count FROM doxa_auth_sessions
+             WHERE identity_id = 'claimed-doxa-1'`,
+          )
+        ).rows[0]?.count,
+      ).toBe(0)
+    } finally {
+      await auth.dispose(lifecycleContext())
+    }
+  })
+
   it('does not issue a session when mandatory weak sidecar persistence fails', async () => {
     await pool.query(await readFile(DOXA_AUTH_SIDECAR_MIGRATION_URL, 'utf8'))
     await pool.query(`
