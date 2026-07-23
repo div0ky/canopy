@@ -155,9 +155,7 @@ export interface AuthIdentifierModelMapping {
 }
 
 export type AuthVerificationModelMapping =
-  | { readonly mode: 'mapped'; readonly attribute: string }
-  | { readonly mode: 'sidecar' }
-  | { readonly mode: 'trusted' }
+  { readonly mode: 'mapped'; readonly attribute: string } | { readonly mode: 'trusted' }
 
 export type AuthEligibilityModelPredicate =
   | { readonly attribute: string; readonly equals: string | number | boolean | null }
@@ -194,7 +192,8 @@ export interface AuthModelIdentityConfiguration {
   readonly identifier: AuthIdentifierModelMapping
   readonly contactEmail?: string
   readonly timestamps: { readonly createdAt: string; readonly updatedAt: string }
-  readonly verification: AuthVerificationModelMapping
+  /** Omit to disable Doxa email-verification flows for this external identity source. */
+  readonly verification?: AuthVerificationModelMapping
   readonly eligibility?: readonly AuthEligibilityModelPredicate[]
   readonly credentials: AuthCredentialConfiguration
   readonly registrationFactory?: Class<AuthIdentityRegistrationFactory>
@@ -215,7 +214,8 @@ export interface AuthRawIdentityConfiguration {
     readonly kind: AuthIdentifierKind
     readonly normalize: AuthIdentifierNormalization
   }
-  readonly verification: { readonly mode: 'mapped' | 'trusted' }
+  /** Omit to disable Doxa email-verification flows for this external identity source. */
+  readonly verification?: { readonly mode: 'mapped' | 'trusted' }
   readonly eligibility?: readonly (
     | { readonly column: string; readonly equals: string | number | boolean | null }
     | { readonly column: string; readonly in: readonly (string | number | boolean | null)[] }

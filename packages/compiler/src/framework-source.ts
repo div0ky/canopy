@@ -244,7 +244,7 @@ function renderFrameworkSource(
   const providerSources: string[] = []
   const managedIdentity = configuration.identityMode !== 'login-only'
   const verificationRoutes =
-    managedIdentity && configuration.hasContactEmail && configuration.verificationMode !== 'trusted'
+    managedIdentity && configuration.hasContactEmail && configuration.verificationMode === 'mapped'
   const recoveryRoutes = managedIdentity && configuration.hasContactEmail
 
   if (opentelemetry) {
