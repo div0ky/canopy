@@ -99,6 +99,7 @@ import {
   UnitOfWork,
 } from '@doxajs/core'
 import {
+  currentModelSessionState,
   type EventDispatcher,
   type JobDispatcher,
   markPrivacySensitiveError,
@@ -1317,7 +1318,6 @@ export class DoxaRuntime {
     if (!this.transactions) {
       throw new OperationDispatchError('No transaction manager is available for action dispatch.')
     }
-    if (operation.access !== 'public') await this.authorization.authorize(operation.access)
     store.operationStack.push('action')
     try {
       return await this.observeObservation(
@@ -1336,27 +1336,15 @@ export class DoxaRuntime {
                   { operation: 'action', id: operation.id },
                   () =>
                     this.transactions!.transaction(store.context, async (unitOfWork) => {
-                      const models = new ModelSession(
-                        unitOfWork,
-                        this.#modelsByConstructor,
-                        this.modelObserverDispatcher(store),
-                        true,
-                        this.modelQueryDiagnosticRecorder(),
-                        this.modelOperationObserver(),
-                      )
-                      return store.scope.withUnitOfWork(unitOfWork, async () =>
-                        runWithModelSession(models, async () => {
-                          try {
-                            const handler = store.scope.resolve(operation.id) as Action<
-                              Input,
-                              Output
-                            >
-                            return (await handler.handle(input)) as Awaited<Output>
-                          } finally {
-                            models.close()
-                          }
-                        }),
-                      )
+                      return store.scope.withUnitOfWork(unitOfWork, async () => {
+                        if (operation.access !== 'public') {
+                          await this.authorization.authorize(operation.access)
+                        }
+                        return this.runWritableModelSession(store, unitOfWork, async () => {
+                          const handler = store.scope.resolve(operation.id) as Action<Input, Output>
+                          return (await handler.handle(input)) as Awaited<Output>
+                        })
+                      })
                     }),
                 ),
             ),
@@ -1374,7 +1362,6 @@ export class DoxaRuntime {
   ): Promise<Awaited<Output>> {
     const store = this.requireExecution('query')
     const operation = this.operationFor(query, 'query')
-    if (operation.access !== 'public') await this.authorization.authorize(operation.access)
     if (!this.transactions) {
       throw new OperationDispatchError('No persistence manager is available for query dispatch.')
     }
@@ -1397,6 +1384,9 @@ export class DoxaRuntime {
               )
               return runWithModelSession(models, async () => {
                 try {
+                  if (operation.access !== 'public') {
+                    await this.authorization.authorize(operation.access)
+                  }
                   const handler = store.scope.resolve(operation.id) as Query<Input, Output>
                   return await handler.handle(input)
                 } finally {
@@ -2333,7 +2323,6 @@ export class DoxaRuntime {
     if (!this.transactions) {
       throw new OperationDispatchError('No transaction manager is available for job execution.')
     }
-    if (manifest.access !== 'public') await this.authorization.authorize(manifest.access)
     store.operationStack.push('job')
     try {
       await this.observeObservation(
@@ -2346,24 +2335,15 @@ export class DoxaRuntime {
         () =>
           this.observeObservation('transaction', 'job transaction', { operation: 'job' }, () =>
             this.transactions!.transaction(store.context, async (unitOfWork) => {
-              const models = new ModelSession(
-                unitOfWork,
-                this.#modelsByConstructor,
-                this.modelObserverDispatcher(store),
-                true,
-                this.modelQueryDiagnosticRecorder(),
-                this.modelOperationObserver(),
-              )
-              return store.scope.withUnitOfWork(unitOfWork, async () =>
-                runWithModelSession(models, async () => {
-                  try {
-                    const handler = store.scope.resolve(manifest.id) as Job
-                    await handler.handle(payload)
-                  } finally {
-                    models.close()
-                  }
-                }),
-              )
+              return store.scope.withUnitOfWork(unitOfWork, async () => {
+                if (manifest.access !== 'public') {
+                  await this.authorization.authorize(manifest.access)
+                }
+                return this.runWritableModelSession(store, unitOfWork, async () => {
+                  const handler = store.scope.resolve(manifest.id) as Job
+                  await handler.handle(payload)
+                })
+              })
             }),
           ),
         manifest.id,
@@ -2486,33 +2466,13 @@ export class DoxaRuntime {
     }
     const permissionSource = this.manifest.permissionSource
     const sourceManagesAbility = permissionSource?.abilities.includes(ability) ?? false
-    if (permissionSource && sourceManagesAbility) {
-      const abilities = await this.resolvePermissionAbilities(store, permissionSource)
-      if (!abilities.has(ability)) {
-        return await this.recordAuthorizationDecision(
-          ability,
-          Object.freeze({
-            effect: 'deny',
-            policy: permissionSource.id,
-            code: 'permission_required',
-          }),
-          store.context,
-        )
-      }
+    if (permissionSource && sourceManagesAbility && this.#permissionSourceResolution.getStore()) {
+      throw new RuntimeIntegrityError(
+        `Permission source ${permissionSource.id} attempted recursive authorization while resolving abilities.`,
+      )
     }
     const manifest = this.#policiesByAbility.get(ability)
-    if (!manifest) {
-      if (permissionSource && sourceManagesAbility) {
-        return await this.recordAuthorizationDecision(
-          ability,
-          Object.freeze({
-            effect: 'allow',
-            policy: permissionSource.id,
-            code: 'permission_granted',
-          }),
-          store.context,
-        )
-      }
+    if (!sourceManagesAbility && !manifest) {
       return await this.recordAuthorizationDecision(
         ability,
         Object.freeze({
@@ -2523,6 +2483,62 @@ export class DoxaRuntime {
         store.context,
       )
     }
+    if (sourceManagesAbility && store.permissionAbilities && !manifest) {
+      const abilities = await store.permissionAbilities
+      return await this.recordAuthorizationDecision(
+        ability,
+        Object.freeze(
+          abilities.has(ability)
+            ? {
+                effect: 'allow',
+                policy: permissionSource!.id,
+                code: 'permission_granted',
+              }
+            : {
+                effect: 'deny',
+                policy: permissionSource!.id,
+                code: 'permission_required',
+              },
+        ),
+        store.context,
+      )
+    }
+    return await this.withAuthorizationModelSession(store, async () => {
+      if (permissionSource && sourceManagesAbility) {
+        const abilities = await this.resolvePermissionAbilities(store, permissionSource)
+        if (!abilities.has(ability)) {
+          return await this.recordAuthorizationDecision(
+            ability,
+            Object.freeze({
+              effect: 'deny',
+              policy: permissionSource.id,
+              code: 'permission_required',
+            }),
+            store.context,
+          )
+        }
+      }
+      if (!manifest) {
+        return await this.recordAuthorizationDecision(
+          ability,
+          Object.freeze({
+            effect: 'allow',
+            policy: permissionSource!.id,
+            code: 'permission_granted',
+          }),
+          store.context,
+        )
+      }
+      return await this.evaluatePolicy(manifest, ability, resource)
+    })
+  }
+
+  private async evaluatePolicy<Resource>(
+    manifest: PolicyManifestEntry,
+    ability: string,
+    resource?: Resource,
+  ): Promise<PolicyDecision> {
+    const store = this.requireExecution('authorization')
     const policy = store.scope.resolve(manifest.id) as Policy<Resource>
     const context = this.currentExecutionContext()
     const decision = await this.observeObservation(
@@ -2551,6 +2567,77 @@ export class DoxaRuntime {
       }),
       context,
     )
+  }
+
+  private async withAuthorizationModelSession<Output>(
+    store: ExecutionStore,
+    work: () => Promise<Output>,
+  ): Promise<Output> {
+    const current = currentModelSessionState()
+    if (current?.active && current.readOnly) return await work()
+    const unitOfWork = store.scope.currentUnitOfWork
+    if (unitOfWork) return await this.runReadOnlyModelSession(store, unitOfWork, work)
+    if (!this.transactions) return await work()
+    return await this.observeObservation(
+      'transaction',
+      'authorization read',
+      { operation: 'authorization' },
+      () =>
+        this.observeTelemetry('persistence.transaction', { operation: 'authorization' }, () =>
+          this.transactions!.read(store.context, (reader) =>
+            this.runReadOnlyModelSession(store, reader, work),
+          ),
+        ),
+    )
+  }
+
+  private async runReadOnlyModelSession<Output>(
+    store: ExecutionStore,
+    reader: import('@doxajs/core').ModelReader,
+    work: () => Promise<Output>,
+  ): Promise<Output> {
+    const models = new ModelSession(
+      reader,
+      this.#modelsByConstructor,
+      this.modelObserverDispatcher(store),
+      false,
+      this.modelQueryDiagnosticRecorder(),
+      this.modelOperationObserver(),
+    )
+    return await runWithModelSession(models, async () => {
+      try {
+        return await work()
+      } finally {
+        models.close()
+      }
+    })
+  }
+
+  private async runWritableModelSession<Output>(
+    store: ExecutionStore,
+    unitOfWork: UnitOfWork,
+    work: () => Promise<Output>,
+  ): Promise<Output> {
+    if (store.operationStack.at(-1) !== 'action' && store.operationStack.at(-1) !== 'job') {
+      throw new RuntimeIntegrityError(
+        'A writable ModelSession requires an action or job operation.',
+      )
+    }
+    const models = new ModelSession(
+      unitOfWork,
+      this.#modelsByConstructor,
+      this.modelObserverDispatcher(store),
+      true,
+      this.modelQueryDiagnosticRecorder(),
+      this.modelOperationObserver(),
+    )
+    return await runWithModelSession(models, async () => {
+      try {
+        return await work()
+      } finally {
+        models.close()
+      }
+    })
   }
 
   private async resolvePermissionAbilities(

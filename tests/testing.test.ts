@@ -3,7 +3,12 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import { compileApplication } from '@doxajs/compiler'
-import { ReadOnlyModelError, UnknownModelAttributeError } from '@doxajs/core'
+import {
+  ReadOnlyExecutionError,
+  ReadOnlyModelError,
+  StaleModelError,
+  UnknownModelAttributeError,
+} from '@doxajs/core'
 import {
   DoxaTestHarness,
   FakeMailTransport,
@@ -26,6 +31,39 @@ import { SaveCounter } from '../examples/persistence-app/dist/counters/actions/s
 import { SaveLegacyCustomer } from '../examples/persistence-app/dist/counters/actions/save-legacy-customer.js'
 import { ExerciseReadOnlyLegacyCustomer } from '../examples/persistence-app/dist/counters/actions/exercise-read-only-legacy-customer.js'
 import { InspectCounterQueries } from '../examples/persistence-app/dist/counters/queries/inspect-counter-queries.js'
+import {
+  authorizedActionUser,
+  authorizedJobUser,
+  authorizedQueryUser,
+  ChangeAuthorizedUserBranch,
+  ChangeAuthorizedUserBranchJob,
+  ReadAuthorizedUser,
+  resetAuthorizationOperationProof,
+  SeedLegacyAccess,
+} from '../examples/persistence-app/dist/authorization/authorization-operations.js'
+import {
+  permissionSourceDeleteError,
+  permissionSourceResolutions,
+  permissionSourceUser,
+  permissionSourceUsers,
+  permissionSourceWriteError,
+  resetPermissionSourceProof,
+} from '../examples/persistence-app/dist/authorization/application-permissions.js'
+import {
+  AUTHORIZATION_POLICY_CANCELLATION_BRANCH,
+  AUTHORIZATION_POLICY_FAILURE_BRANCH,
+  nestedPolicyUser,
+  policyUser,
+  policyWriteError,
+  resetPolicyProof,
+} from '../examples/persistence-app/dist/authorization/application-policy.js'
+import {
+  authorizationEntrypointLog,
+  AuthorizationModelSessionCommand,
+  AuthorizationModelSessionEvent,
+  AuthorizationModelSessionSignal,
+  resetAuthorizationEntrypointLog,
+} from '../examples/persistence-app/dist/authorization/authorization-entrypoints.js'
 import { CounterIncremented } from '../examples/persistence-app/dist/counters/events/counter-incremented.js'
 import { CounterSaved } from '../examples/persistence-app/dist/counters/events/counter-saved.js'
 import { CounterCreated } from '../examples/persistence-app/dist/counters/events/counter-created.js'
@@ -401,6 +439,11 @@ describe('@doxajs/testing', () => {
           hasTags: ['memory-a', 'memory-c'],
           belongsToNoteIds: ['memory-note-1', 'memory-note-2'],
           staticWithIdentityMapped: true,
+          foundId: 'memory-a',
+          foundNotes: ['First', 'Second'],
+          constrainedFindMissing: true,
+          missingFind: true,
+          missingFindOrFailError: 'Counter missing-counter was not found.',
           booleanIds: ['memory-a', 'memory-c'],
           patternIds: ['memory-a', 'memory-b', 'memory-c'],
           nullLabelIds: ['memory-unlabeled'],
@@ -430,8 +473,315 @@ describe('@doxajs/testing', () => {
               storage: { kind: 'entity-state' },
             }),
           }),
+          expect.objectContaining({
+            kind: 'model',
+            name: 'query',
+            phase: 'occurred',
+            roleId: 'model:counters/counter',
+            attributes: expect.objectContaining({
+              model: 'Counter',
+              terminal: 'find',
+              constraintCount: 2,
+              relationshipConstraintCount: 1,
+              ordering: ['id:asc'],
+              eagerLoads: ['notes'],
+              limit: 1,
+              offset: 0,
+            }),
+          }),
+          expect.objectContaining({
+            kind: 'model',
+            name: 'query',
+            phase: 'occurred',
+            roleId: 'model:counters/counter',
+            attributes: expect.objectContaining({
+              model: 'Counter',
+              terminal: 'findOrFail',
+              constraintCount: 1,
+              limit: 1,
+            }),
+          }),
         ]),
       )
+    } finally {
+      await harness.shutdown()
+    }
+  })
+
+  it('gives authorization a bounded read-only model session across runtime paths', async () => {
+    const queue = new FakeQueueManager()
+    const transactions = new MemoryTransactionManager(queue)
+    const telemetry = new MemoryTelemetry()
+    const harness = await DoxaTestHarness.boot(Application, {
+      artifactsDirectory: artifacts,
+      dotenvPath: false,
+      environment: { DATABASE_CONNECTION_STRING: 'test-memory-database' },
+      authProviderId: 'provider:infrastructure/auth',
+      providerOverrides: {
+        'provider:infrastructure/transactions': transactions,
+        'provider:infrastructure/queues': queue,
+        'provider:infrastructure/cache': new MemoryCache(),
+        'provider:infrastructure/mail': new FakeMailTransport(),
+        'provider:infrastructure/sms': new FakeSmsTransport(),
+        'provider:infrastructure/telemetry': telemetry,
+      },
+    })
+    const userId = 'authorization-model-user'
+    const limitedUserId = 'authorization-model-limited-user'
+    const resetProof = () => {
+      resetAuthorizationOperationProof()
+      resetAuthorizationEntrypointLog()
+      resetPermissionSourceProof()
+      resetPolicyProof()
+      telemetry.reset()
+    }
+    const decideFor = (actorId: string, branchTag?: string, cancellation?: AbortSignal) =>
+      harness.runtime.admit(
+        {
+          actor: { kind: 'user', id: actorId },
+          authentication: { state: 'authenticated', identityId: actorId, method: 'test' },
+          transport: { kind: 'test', name: 'test:direct-authorization' },
+          ...(cancellation ? { cancellation } : {}),
+        },
+        () =>
+          harness.runtime.authorization.decide(
+            'authorization.contact.read',
+            branchTag === undefined ? undefined : { branchTag },
+          ),
+      )
+    const authorizationReadTransactions = () =>
+      telemetry.records.filter(
+        (record) =>
+          record.kind === 'metric' &&
+          record.name === 'doxa.persistence.transaction.total' &&
+          record.attributes.operation === 'authorization',
+      )
+
+    try {
+      harness.actingAsSystem()
+      await harness.action(SeedLegacyAccess, { userId, branchTag: 'CHI' })
+      await harness.action(SeedLegacyAccess, {
+        userId: limitedUserId,
+        branchTag: 'CHI',
+        includeGroupOverride: false,
+      })
+      await harness.action(SeedLegacyAccess, {
+        userId: 'doxa:test-scheduler',
+        branchTag: 'CHI',
+      })
+
+      resetProof()
+      harness.actingAsUser(userId)
+      expect(
+        await harness.query(ReadAuthorizedUser, {
+          userId,
+          branchTag: 'STL',
+        }),
+      ).toEqual({
+        id: userId,
+        branchTag: 'CHI',
+        directPermissions: [`${userId}-contact-read`, `${userId}-user-update`],
+        groupPermissions: [`${userId}-branch-override`],
+      })
+      expect(permissionSourceResolutions).toBe(1)
+      expect(permissionSourceUser).toBe(policyUser)
+      expect(policyUser).toBe(authorizedQueryUser)
+      expect(nestedPolicyUser).toBe(policyUser)
+      expect(permissionSourceWriteError).toBe(ReadOnlyExecutionError.name)
+      expect(permissionSourceDeleteError).toBe(ReadOnlyExecutionError.name)
+      expect(policyWriteError).toBe(ReadOnlyExecutionError.name)
+      expect(authorizationReadTransactions()).toEqual([])
+      expect(() => permissionSourceUser!.refresh()).toThrow(StaleModelError)
+
+      resetProof()
+      expect(
+        await harness.action(ChangeAuthorizedUserBranch, {
+          userId,
+          branchTag: 'STL',
+        }),
+      ).toBe('STL')
+      expect(permissionSourceResolutions).toBe(1)
+      expect(permissionSourceUser).not.toBe(authorizedActionUser)
+      expect(policyUser).not.toBe(authorizedActionUser)
+      expect(nestedPolicyUser).toBe(policyUser)
+      expect(permissionSourceWriteError).toBe(ReadOnlyExecutionError.name)
+      expect(permissionSourceDeleteError).toBe(ReadOnlyExecutionError.name)
+      expect(policyWriteError).toBe(ReadOnlyExecutionError.name)
+      expect(authorizationReadTransactions()).toEqual([])
+      expect(transactions.state.entities.get(`model:authorization/user/${userId}`)?.state).toEqual(
+        expect.objectContaining({ branchTag: 'STL' }),
+      )
+
+      resetProof()
+      expect(await decideFor(userId, 'STL')).toEqual({
+        effect: 'allow',
+        policy: 'policy:authorization/application',
+        code: 'allowed',
+      })
+      expect(permissionSourceResolutions).toBe(1)
+      expect(permissionSourceUser).toBe(policyUser)
+      expect(nestedPolicyUser).toBe(policyUser)
+      expect(authorizationReadTransactions()).toHaveLength(1)
+      expect(() => policyUser!.refresh()).toThrow(StaleModelError)
+
+      resetProof()
+      expect(
+        await harness.runtime.admit(
+          {
+            actor: { kind: 'user', id: userId },
+            authentication: {
+              state: 'authenticated',
+              identityId: userId,
+              method: 'bearer',
+              constraints: ['authorization.user.update'],
+            },
+            transport: { kind: 'test', name: 'test:credential-constraint' },
+          },
+          () => harness.runtime.authorization.decide('authorization.contact.read'),
+        ),
+      ).toEqual({
+        effect: 'deny',
+        policy: 'doxa:credential-constraints',
+        code: 'credential_constraint_denied',
+      })
+      expect(permissionSourceResolutions).toBe(0)
+      expect(authorizationReadTransactions()).toEqual([])
+
+      resetProof()
+      expect(
+        await harness.runtime.admit(
+          {
+            actor: { kind: 'user', id: userId },
+            transport: { kind: 'test', name: 'test:default-deny' },
+          },
+          () => harness.runtime.authorization.decide('authorization.undeclared'),
+        ),
+      ).toEqual({
+        effect: 'deny',
+        policy: 'doxa:default-deny',
+        code: 'policy_missing',
+      })
+      expect(permissionSourceResolutions).toBe(0)
+      expect(authorizationReadTransactions()).toEqual([])
+
+      resetProof()
+      expect(await decideFor('authorization-missing-user')).toEqual({
+        effect: 'deny',
+        policy: 'permission-source:authorization/application-permissions',
+        code: 'permission_required',
+      })
+      expect(permissionSourceUser).toBeUndefined()
+      expect(authorizationReadTransactions()).toHaveLength(1)
+
+      resetProof()
+      harness.actingAsUser('authorization-missing-user')
+      await expect(
+        harness.action(ChangeAuthorizedUserBranch, {
+          userId,
+          branchTag: 'DENIED',
+        }),
+      ).rejects.toThrow('not authorized')
+      expect(authorizedActionUser).toBeUndefined()
+      expect(transactions.state.entities.get(`model:authorization/user/${userId}`)?.state).toEqual(
+        expect.objectContaining({ branchTag: 'STL' }),
+      )
+
+      resetProof()
+      harness.actingAsUser(userId)
+      const jobId = await harness.job(ChangeAuthorizedUserBranchJob, {
+        userId,
+        branchTag: 'MSP',
+      })
+      await queue.runNext()
+      expect(jobId).toBeTruthy()
+      expect(permissionSourceResolutions).toBe(1)
+      expect(permissionSourceUser).not.toBe(authorizedJobUser)
+      expect(policyUser).not.toBe(authorizedJobUser)
+      expect(nestedPolicyUser).toBe(policyUser)
+      expect(permissionSourceWriteError).toBe(ReadOnlyExecutionError.name)
+      expect(permissionSourceDeleteError).toBe(ReadOnlyExecutionError.name)
+      expect(policyWriteError).toBe(ReadOnlyExecutionError.name)
+      expect(authorizationReadTransactions()).toEqual([])
+      expect(transactions.state.entities.get(`model:authorization/user/${userId}`)?.state).toEqual(
+        expect.objectContaining({ branchTag: 'MSP' }),
+      )
+
+      resetProof()
+      expect(await decideFor(limitedUserId, 'STL')).toEqual({
+        effect: 'deny',
+        policy: 'policy:authorization/application',
+        code: 'branch_scope_required',
+      })
+      expect(permissionSourceResolutions).toBe(1)
+      expect(authorizationReadTransactions()).toHaveLength(1)
+      expect(() => policyUser!.refresh()).toThrow(StaleModelError)
+
+      resetProof()
+      await expect(decideFor(userId, AUTHORIZATION_POLICY_FAILURE_BRANCH)).rejects.toThrow(
+        'Authorization policy fixture failed.',
+      )
+      expect(() => policyUser!.refresh()).toThrow(StaleModelError)
+
+      resetProof()
+      const cancellation = new AbortController()
+      const cancelled = decideFor(
+        userId,
+        AUTHORIZATION_POLICY_CANCELLATION_BRANCH,
+        cancellation.signal,
+      ).catch((error: unknown) => error)
+      for (let attempt = 0; attempt < 100 && !policyUser; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      }
+      expect(policyUser).toBeDefined()
+      cancellation.abort()
+      expect(await cancelled).toEqual(
+        expect.objectContaining({
+          message: 'Authorization policy fixture cancelled.',
+        }),
+      )
+      expect(() => policyUser!.refresh()).toThrow(StaleModelError)
+
+      resetProof()
+      const concurrent = await Promise.all([decideFor(userId, 'MSP'), decideFor(userId, 'MSP')])
+      expect(concurrent.map((decision) => decision.effect)).toEqual(['allow', 'allow'])
+      expect(permissionSourceResolutions).toBe(2)
+      expect(permissionSourceUsers).toHaveLength(2)
+      expect(permissionSourceUsers[0]).not.toBe(permissionSourceUsers[1])
+      for (const user of permissionSourceUsers) {
+        expect(() => user.refresh()).toThrow(StaleModelError)
+      }
+
+      resetProof()
+      harness.actingAsUser(userId)
+      const route = await harness.request('http://doxa.test/authorization/model-session')
+      expect(route.status).toBe(200)
+      expect(authorizationEntrypointLog).toEqual(['route'])
+      expect(permissionSourceResolutions).toBe(1)
+      expect(authorizationReadTransactions()).toHaveLength(1)
+
+      resetProof()
+      await harness.command(AuthorizationModelSessionCommand.name)
+      expect(authorizationEntrypointLog).toEqual(['command'])
+      expect(permissionSourceResolutions).toBe(1)
+      expect(authorizationReadTransactions()).toHaveLength(1)
+
+      resetProof()
+      await harness.event(AuthorizationModelSessionEvent)
+      expect(authorizationEntrypointLog).toEqual(['listener'])
+      expect(permissionSourceResolutions).toBe(1)
+      expect(authorizationReadTransactions()).toHaveLength(1)
+
+      resetProof()
+      await harness.signal(AuthorizationModelSessionSignal)
+      expect(authorizationEntrypointLog).toEqual(['signal'])
+      expect(permissionSourceResolutions).toBe(1)
+      expect(authorizationReadTransactions()).toHaveLength(1)
+
+      resetProof()
+      await queue.runSchedule('schedule:authorization/authorization-model-session')
+      expect(authorizationEntrypointLog).toEqual(['schedule'])
+      expect(permissionSourceResolutions).toBe(1)
+      expect(authorizationReadTransactions()).toHaveLength(1)
     } finally {
       await harness.shutdown()
     }

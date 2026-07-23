@@ -76,6 +76,8 @@ export interface ModelQueryPlan {
   readonly diagnostic?: {
     readonly terminal:
       | 'get'
+      | 'find'
+      | 'findOrFail'
       | 'first'
       | 'firstOrFail'
       | 'exists'
@@ -493,6 +495,34 @@ export class ModelQuery<
 
   get(): Promise<readonly Instance[]> {
     return this.session().query(this.Constructor, diagnosed(this.plan, 'get'))
+  }
+
+  async find(id: string): Promise<Instance | undefined> {
+    const query = this.where(
+      'id' as AttributeName<Attributes>,
+      id as AttributeValue<Attributes[AttributeName<Attributes>]>,
+    )
+    return (
+      await query.session().query(this.Constructor, {
+        ...diagnosed(query.plan, 'find'),
+        limit: 1,
+      })
+    )[0]
+  }
+
+  async findOrFail(id: string): Promise<Instance> {
+    const query = this.where(
+      'id' as AttributeName<Attributes>,
+      id as AttributeValue<Attributes[AttributeName<Attributes>]>,
+    )
+    const value = (
+      await query.session().query(this.Constructor, {
+        ...diagnosed(query.plan, 'findOrFail'),
+        limit: 1,
+      })
+    )[0]
+    if (!value) throw new ModelNotFoundError(this.Constructor.name, id)
+    return value
   }
 
   async first(): Promise<Instance | undefined> {

@@ -126,6 +126,31 @@ export function registerCompilationAndTheoriaTests(
     )
     expect(result.manifest.models).toEqual([
       expect.objectContaining({
+        id: 'model:authorization/group',
+        entityType: 'model:authorization/group',
+        storage: { kind: 'entity-state' },
+      }),
+      expect.objectContaining({
+        id: 'model:authorization/group-permission',
+        entityType: 'model:authorization/group-permission',
+        storage: { kind: 'entity-state' },
+      }),
+      expect.objectContaining({
+        id: 'model:authorization/permission',
+        entityType: 'model:authorization/permission',
+        storage: { kind: 'entity-state' },
+      }),
+      expect.objectContaining({
+        id: 'model:authorization/user',
+        entityType: 'model:authorization/user',
+        storage: { kind: 'entity-state' },
+      }),
+      expect.objectContaining({
+        id: 'model:authorization/user-permission',
+        entityType: 'model:authorization/user-permission',
+        storage: { kind: 'entity-state' },
+      }),
+      expect.objectContaining({
         id: 'model:counters/counter',
         entityType: 'model:counters/counter',
         attributes: ['id', 'label', 'value'],
@@ -418,6 +443,11 @@ export function registerCompilationAndTheoriaTests(
     )
     expect(result.manifest.schedules).toEqual([
       expect.objectContaining({
+        id: 'schedule:authorization/authorization-model-session',
+        access: 'authorization.contact.read',
+        jobId: 'job:authorization/authorization-model-session-schedule',
+      }),
+      expect.objectContaining({
         id: 'schedule:counters/process-counters',
         jobId: 'job:counters/process-counter',
         cadence: { kind: 'interval', seconds: 3_600 },
@@ -447,17 +477,29 @@ export function registerCompilationAndTheoriaTests(
         ],
       }),
       expect.objectContaining({
+        id: 'policy:authorization/application',
+        abilities: ['authorization.branch.override', 'authorization.contact.read'],
+      }),
+      expect.objectContaining({
         id: 'policy:counters/counter',
         abilities: ['broadcast.subscribe', 'counters.update', 'counters.write'],
       }),
     ])
     expect(result.manifest.signals).toEqual([
       expect.objectContaining({
+        id: 'signal:authorization/authorization-model-session',
+      }),
+      expect.objectContaining({
         id: 'signal:counters/counter-touched',
         dependencies: [expect.objectContaining({ targetId: 'doxa:current-execution' })],
       }),
     ])
     expect(result.manifest.signalHandlers).toEqual([
+      expect.objectContaining({
+        id: 'signal-handler:authorization/authorization-model-session',
+        signalId: 'signal:authorization/authorization-model-session',
+        access: 'authorization.contact.read',
+      }),
       expect.objectContaining({
         id: 'signal-handler:counters/record-counter-touched',
         signalId: 'signal:counters/counter-touched',
@@ -482,6 +524,11 @@ export function registerCompilationAndTheoriaTests(
     ])
     expect(result.manifest.commands).toEqual([
       expect.objectContaining({
+        id: 'command:authorization/authorization-model-session',
+        command: 'authorization:model-session',
+        access: 'authorization.contact.read',
+      }),
+      expect.objectContaining({
         id: 'command:counters/mark-counter',
         command: 'counter:mark',
         access: 'public',
@@ -492,6 +539,16 @@ export function registerCompilationAndTheoriaTests(
         access: 'public',
       }),
     ])
+    expect(result.manifest.permissionSource).toEqual(
+      expect.objectContaining({
+        id: 'permission-source:authorization/application-permissions',
+        abilities: [
+          'authorization.branch.override',
+          'authorization.contact.read',
+          'authorization.user.update',
+        ],
+      }),
+    )
     expect(JSON.stringify(result.manifest)).not.toContain('drizzle')
     expect(JSON.stringify(result.manifest)).not.toContain('node-postgres')
     expect(JSON.stringify(result.manifest)).not.toContain('pg-boss')

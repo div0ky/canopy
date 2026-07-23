@@ -582,6 +582,10 @@ export class ModelSession {
     return this.#active
   }
 
+  get readOnly(): boolean {
+    return !this.writable
+  }
+
   declaredAttributesFor(model: Model): ReadonlySet<string> | undefined {
     return this.definitionFor(model.constructor as Function).attributes
   }
