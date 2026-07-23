@@ -2573,11 +2573,12 @@ export class DoxaRuntime {
     store: ExecutionStore,
     work: () => Promise<Output>,
   ): Promise<Output> {
+    const guardedWork = () => store.scope.withReadOnlyUnitOfWorkInjection(work)
     const current = currentModelSessionState()
-    if (current?.active && current.readOnly) return await work()
+    if (current?.active && current.readOnly) return await guardedWork()
     const unitOfWork = store.scope.currentUnitOfWork
-    if (unitOfWork) return await this.runReadOnlyModelSession(store, unitOfWork, work)
-    if (!this.transactions) return await work()
+    if (unitOfWork) return await this.runReadOnlyModelSession(store, unitOfWork, guardedWork)
+    if (!this.transactions) return await guardedWork()
     return await this.observeObservation(
       'transaction',
       'authorization read',
@@ -2585,7 +2586,7 @@ export class DoxaRuntime {
       () =>
         this.observeTelemetry('persistence.transaction', { operation: 'authorization' }, () =>
           this.transactions!.read(store.context, (reader) =>
-            this.runReadOnlyModelSession(store, reader, work),
+            this.runReadOnlyModelSession(store, reader, guardedWork),
           ),
         ),
     )
@@ -3280,6 +3281,7 @@ class ExecutionScope {
   readonly #disposables: LifecycleParticipant[] = []
   readonly #idByConstructor = new Map<object, string>()
   readonly #readOnlyUnitOfWork = new ReadOnlyUnitOfWork()
+  readonly #readOnlyUnitOfWorkInjection = new AsyncLocalStorage<boolean>()
   #unitOfWork: UnitOfWork | undefined
   #disposed = false
 
@@ -3350,7 +3352,11 @@ class ExecutionScope {
     if (id === 'doxa:sms') return this.sms
     if (id === 'doxa:delivery-ledger') return this.deliveryLedger
     if (id === 'doxa:logger') return this.logger
-    if (id === 'doxa:unit-of-work') return this.#unitOfWork ?? this.#readOnlyUnitOfWork
+    if (id === 'doxa:unit-of-work') {
+      return this.#readOnlyUnitOfWorkInjection.getStore()
+        ? this.#readOnlyUnitOfWork
+        : (this.#unitOfWork ?? this.#readOnlyUnitOfWork)
+    }
     const configuration = this.graph.configurations.get(id)
     if (configuration) return configuration
     const singleton = this.graph.singletonInstances.get(id)
@@ -3499,6 +3505,10 @@ class ExecutionScope {
   get currentUnitOfWork(): UnitOfWork | undefined {
     return this.#unitOfWork
   }
+
+  async withReadOnlyUnitOfWorkInjection<Output>(work: () => Promise<Output>): Promise<Output> {
+    return await this.#readOnlyUnitOfWorkInjection.run(true, work)
+  }
 }
 
 class ReadOnlyUnitOfWork extends UnitOfWork {
@@ -3562,7 +3572,9 @@ class ReadOnlyUnitOfWork extends UnitOfWork {
   }
 
   private error(): ReadOnlyExecutionError {
-    return new ReadOnlyExecutionError('Unit of Work requires an active action transaction.')
+    return new ReadOnlyExecutionError(
+      'Writable Unit of Work access is not available in this execution.',
+    )
   }
 }
 

@@ -329,8 +329,10 @@ another session.
 
 Authorization-owned sessions close after allow, denial, failure, timeout, cancellation, and
 concurrent decisions. Models hydrated by a source or policy reject `create`, `save`, and `delete`
-with `ReadOnlyExecutionError` before observers or persistence. A missing model is an ordinary
-absence; adapter, loading, and integrity failures remain fail-closed infrastructure errors.
+with `ReadOnlyExecutionError` before observers or persistence. A `UnitOfWork` injected into a source
+or policy must expose the read-only execution guard rather than the owning action or job's writable
+Unit of Work. A missing model is an ordinary absence; adapter, loading, and integrity failures
+remain fail-closed infrastructure errors.
 
 Standalone authorization transactions use the existing transaction observation and telemetry
 contracts. Model-query observations are nested under the source or policy that issued them and do

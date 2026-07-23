@@ -113,7 +113,9 @@ import {
 } from '../examples/persistence-app/dist/authorization/application-permissions.js'
 import {
   nestedPolicyUser,
+  policyAfterCommitRan,
   policyUser,
+  policyUnitOfWorkWriteError,
   policyWriteError,
   resetPolicyProof,
 } from '../examples/persistence-app/dist/authorization/application-policy.js'
@@ -2388,6 +2390,8 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(permissionSourceWriteError).toBe(ReadOnlyExecutionError.name)
     expect(permissionSourceDeleteError).toBe(ReadOnlyExecutionError.name)
     expect(policyWriteError).toBe(ReadOnlyExecutionError.name)
+    expect(policyUnitOfWorkWriteError).toBe(ReadOnlyExecutionError.name)
+    expect(policyAfterCommitRan).toBe(false)
     expect(
       telemetryRecords.filter(
         (record) =>
@@ -2422,6 +2426,8 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(policyUser).not.toBe(authorizedActionUser)
     expect(nestedPolicyUser).toBe(policyUser)
     expect(policyWriteError).toBe(ReadOnlyExecutionError.name)
+    expect(policyUnitOfWorkWriteError).toBe(ReadOnlyExecutionError.name)
+    expect(policyAfterCommitRan).toBe(false)
     expect(
       telemetryRecords.filter(
         (record) =>
@@ -2465,6 +2471,8 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(permissionSourceWriteError).toBe(ReadOnlyExecutionError.name)
     expect(permissionSourceDeleteError).toBe(ReadOnlyExecutionError.name)
     expect(policyWriteError).toBe(ReadOnlyExecutionError.name)
+    expect(policyUnitOfWorkWriteError).toBe(ReadOnlyExecutionError.name)
+    expect(policyAfterCommitRan).toBe(false)
     expect(
       telemetryRecords.filter(
         (record) =>
@@ -2500,6 +2508,8 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(policyUser).not.toBe(authorizedJobUser)
     expect(nestedPolicyUser).toBe(policyUser)
     expect(policyWriteError).toBe(ReadOnlyExecutionError.name)
+    expect(policyUnitOfWorkWriteError).toBe(ReadOnlyExecutionError.name)
+    expect(policyAfterCommitRan).toBe(false)
     expect(
       (
         await pool.query<{ branch_tag: string }>(

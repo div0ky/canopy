@@ -68,8 +68,10 @@ decision likewise does not create another model session.
 
 Every authorization-owned session closes after success, denial, failure, timeout, cancellation, or
 concurrent evaluation. Authorization models are read-only: `create`, `save`, and `delete` fail
-before observers or persistence. Loaded permission facts remain execution-local, are cached only as
-the existing canonical ability set, and are never serialized or added to execution context.
+before observers or persistence. An injected `UnitOfWork` remains read-only during source and policy
+evaluation even when the owning action or job transaction supplies the model reader. Loaded
+permission facts remain execution-local, are cached only as the existing canonical ability set, and
+are never serialized or added to execution context.
 
 ## Model-query identity terminals
 

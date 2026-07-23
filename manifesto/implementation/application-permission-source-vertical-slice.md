@@ -78,9 +78,10 @@ identity map over that Unit of Work. Direct authorization and protected routes, 
 listeners, signal handlers, schedules, and WebSocket subscriptions receive bounded read sessions.
 
 Source and policy `create`, `save`, and `delete` attempts fail with `ReadOnlyExecutionError` before
-persistence. Nested policy authorization reuses the current read-only session, and the application
-permission source still resolves at most once per admitted execution. Captured authorization models
-become stale when their session closes.
+persistence. A policy's injected `UnitOfWork` is also guarded read-only and cannot register an
+`afterCommit` callback against the action or job transaction. Nested policy authorization reuses the
+current read-only session, and the application permission source still resolves at most once per
+admitted execution. Captured authorization models become stale when their session closes.
 
 ## Inspection
 

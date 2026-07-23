@@ -53,7 +53,9 @@ import {
   AUTHORIZATION_POLICY_CANCELLATION_BRANCH,
   AUTHORIZATION_POLICY_FAILURE_BRANCH,
   nestedPolicyUser,
+  policyAfterCommitRan,
   policyUser,
+  policyUnitOfWorkWriteError,
   policyWriteError,
   resetPolicyProof,
 } from '../examples/persistence-app/dist/authorization/application-policy.js'
@@ -590,6 +592,8 @@ describe('@doxajs/testing', () => {
       expect(permissionSourceWriteError).toBe(ReadOnlyExecutionError.name)
       expect(permissionSourceDeleteError).toBe(ReadOnlyExecutionError.name)
       expect(policyWriteError).toBe(ReadOnlyExecutionError.name)
+      expect(policyUnitOfWorkWriteError).toBe(ReadOnlyExecutionError.name)
+      expect(policyAfterCommitRan).toBe(false)
       expect(authorizationReadTransactions()).toEqual([])
       expect(() => permissionSourceUser!.refresh()).toThrow(StaleModelError)
 
@@ -607,6 +611,8 @@ describe('@doxajs/testing', () => {
       expect(permissionSourceWriteError).toBe(ReadOnlyExecutionError.name)
       expect(permissionSourceDeleteError).toBe(ReadOnlyExecutionError.name)
       expect(policyWriteError).toBe(ReadOnlyExecutionError.name)
+      expect(policyUnitOfWorkWriteError).toBe(ReadOnlyExecutionError.name)
+      expect(policyAfterCommitRan).toBe(false)
       expect(authorizationReadTransactions()).toEqual([])
       expect(transactions.state.entities.get(`model:authorization/user/${userId}`)?.state).toEqual(
         expect.objectContaining({ branchTag: 'STL' }),
@@ -701,6 +707,8 @@ describe('@doxajs/testing', () => {
       expect(permissionSourceWriteError).toBe(ReadOnlyExecutionError.name)
       expect(permissionSourceDeleteError).toBe(ReadOnlyExecutionError.name)
       expect(policyWriteError).toBe(ReadOnlyExecutionError.name)
+      expect(policyUnitOfWorkWriteError).toBe(ReadOnlyExecutionError.name)
+      expect(policyAfterCommitRan).toBe(false)
       expect(authorizationReadTransactions()).toEqual([])
       expect(transactions.state.entities.get(`model:authorization/user/${userId}`)?.state).toEqual(
         expect.objectContaining({ branchTag: 'MSP' }),

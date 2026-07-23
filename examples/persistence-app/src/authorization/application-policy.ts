@@ -5,6 +5,7 @@ import {
   Policy,
   type PolicyDecision,
   type PolicyRequest,
+  UnitOfWork,
 } from '@doxajs/core'
 
 import { User } from './models/legacy-access.js'
@@ -19,11 +20,15 @@ export const AUTHORIZATION_POLICY_CANCELLATION_BRANCH = 'authorization-policy-ca
 export let policyUser: User | undefined
 export let nestedPolicyUser: User | undefined
 export let policyWriteError: string | undefined
+export let policyUnitOfWorkWriteError: string | undefined
+export let policyAfterCommitRan = false
 
 export function resetPolicyProof(): void {
   policyUser = undefined
   nestedPolicyUser = undefined
   policyWriteError = undefined
+  policyUnitOfWorkWriteError = undefined
+  policyAfterCommitRan = false
 }
 
 export class ApplicationPolicy extends Policy<BranchResource> {
@@ -34,6 +39,7 @@ export class ApplicationPolicy extends Policy<BranchResource> {
   ]
 
   private readonly authorization = this.inject(Authorization)
+  private readonly unitOfWork = this.inject(UnitOfWork)
 
   async decide(request: PolicyRequest<BranchResource>): Promise<PolicyDecision> {
     const actorId = request.actor.kind === 'anonymous' ? undefined : request.actor.id
@@ -58,6 +64,13 @@ export class ApplicationPolicy extends Policy<BranchResource> {
       })
     } catch (error) {
       policyWriteError = error instanceof Error ? error.name : String(error)
+    }
+    try {
+      this.unitOfWork.afterCommit(() => {
+        policyAfterCommitRan = true
+      })
+    } catch (error) {
+      policyUnitOfWorkWriteError = error instanceof Error ? error.name : String(error)
     }
 
     if (request.ability === 'authorization.branch.override') {

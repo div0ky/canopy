@@ -106,7 +106,9 @@ async decide(request: PolicyRequest<{ branchId: string }>) {
 ```
 
 Model `create`, `save`, and `delete` calls from a permission source or policy fail before
-persistence.
+persistence. An explicitly injected `UnitOfWork` remains read-only during authorization, including
+inside an action or job transaction. Infrastructure integrations may continue to inject
+`TransactionManager`, but application authorization normally uses declared models.
 
 The decision order is fixed:
 
