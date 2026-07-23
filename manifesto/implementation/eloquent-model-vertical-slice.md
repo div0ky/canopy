@@ -55,9 +55,12 @@ ownership.
 
 ## Model session and identity
 
-Every admitted action transaction receives exactly one `ModelSession`. It is attached to the
-existing execution scope and Unit of Work rather than creating another container scope.
-`ModelSession` is private runtime integration machinery and is not exported from the ordinary
+Every admitted action transaction owns one Unit of Work. Its handler receives one writable
+`ModelSession` attached to the existing execution scope and Unit of Work rather than another
+container scope. Protected actions may first receive an isolated read-only authorization session
+over that same Unit of Work under the later
+[authorization model-session decision](../decisions/0035-read-only-model-sessions-during-authorization.md).
+`ModelSession` remains private runtime integration machinery and is not exported from the ordinary
 `@doxajs/core` application surface.
 
 Within that execution:
@@ -76,6 +79,10 @@ used after its action ends fails with `StaleModelError`. Missing required state 
 Static model access was initially enabled only for mutating action executions in this proof. The
 later [typed model query and relationship slice](typed-model-query-relationship-vertical-slice.md)
 adds the accepted read-only query session, builder, relationships, pagination, and eager loading.
+The later
+[authorization model-session decision](../decisions/0035-read-only-model-sessions-during-authorization.md)
+extends read-only model access to permission sources and policies without adding application-facing
+persistence plumbing.
 
 ## Persistence semantics
 

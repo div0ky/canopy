@@ -36,6 +36,7 @@ still be intelligible if an engine is replaced.
 | Additional credential methods            | Optional Doxa auth plugins                                                             | Accepted              | [Authentication](0003-first-party-authentication.md)                                                     |
 | Authorization                            | Doxa-owned ability pipeline with application permission sources and resource policies  | Accepted              | [Actor and execution context](../specifications/actor-execution-context-authorization.md)                |
 | Application permission source            | One execution-cached adapter for application-owned permission facts                    | Accepted              | [Permission sources](0034-application-permission-sources.md)                                             |
+| Authorization model access               | Ambient read-only model sessions sharing the owning persistence boundary               | Accepted              | [Authorization model sessions](0035-read-only-model-sessions-during-authorization.md)                    |
 | First-party roles and permission storage | Deferred; applications supply permission facts through the selected source             | Deferred              | [Permissions](0022-defer-first-party-permissions.md)                                                     |
 | Execution context                        | Immutable actor and causal context                                                     | Accepted              | [Actor and execution context](../specifications/actor-execution-context-authorization.md)                |
 | Project installer and generators         | First-party Doxa CLI                                                                   | Accepted              | [CLI and generators](0004-first-party-cli-generators.md)                                                 |
@@ -179,6 +180,9 @@ observable programming contract remains to be specified.
     Accepted on 2026-07-16.
 34. [Accept application-supplied permission sources](0034-application-permission-sources.md) —
     Accepted on 2026-07-17; first-party role and permission storage remains deferred.
+35. [Provide read-only model sessions during authorization](0035-read-only-model-sessions-during-authorization.md)
+    — Accepted on 2026-07-23; authorization shares an owning operation's persistence boundary or
+    opens one bounded read transaction.
 
 ## Adding a decision
 

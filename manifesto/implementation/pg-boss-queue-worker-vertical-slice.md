@@ -129,9 +129,11 @@ default and is tracked as a high-severity release blocker in the
 `CurrentJob` exposes the stable ID, one-based attempt, maximum attempts, and optional idempotency
 key through constructor injection.
 
-Each declared job attempt opens a Doxa transaction and ModelSession. Job handlers therefore use the
-same hydrated model, dirty tracking, journal, outbox, and optimistic-concurrency APIs as actions. A
-failed attempt rolls its local mutation back before pg-boss applies retry policy.
+Each declared job attempt opens a Doxa transaction and gives its handler a writable `ModelSession`.
+Protected jobs first authorize through a separate read-only session over the same Unit of Work.
+Handlers therefore use the same hydrated model, dirty tracking, journal, outbox, and
+optimistic-concurrency APIs as actions. A failed attempt rolls its local mutation back before
+pg-boss applies retry policy.
 
 ## Retries, failure, delay, and idempotency
 
@@ -182,7 +184,8 @@ PostgreSQL conformance proves:
 3. No queued job survives a failed action transaction.
 4. One retry preserves job, actor, correlation, and causation identity while creating distinct
    attempt execution IDs.
-5. Every job attempt receives a writable transaction and ModelSession.
+5. Every job attempt receives a writable transaction and handler `ModelSession`; protected attempts
+   isolate authorization reads over that same Unit of Work.
 6. Retry exhaustion retains a terminal failed job with attempt metadata.
 7. Repeated idempotent dispatch returns one stable job and executes it once.
 8. Delayed jobs do not execute before their availability boundary.

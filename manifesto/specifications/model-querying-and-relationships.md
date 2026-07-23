@@ -62,6 +62,7 @@ The accepted terminals are:
 
 ```text
 get
+find | findOrFail
 first | firstOrFail
 exists | count
 value | pluck
@@ -71,8 +72,18 @@ cursorPaginate
 cursor
 ```
 
-`get`, `first`, pagination, and cursor iteration return fully hydrated models. `value`, `pluck`, and
-aggregates return scalars and must not construct partial models.
+`get`, `find`, `findOrFail`, `first`, pagination, and cursor iteration return fully hydrated models.
+`value`, `pluck`, and aggregates return scalars and must not construct partial models.
+
+Builder-level `find(id)` appends an exact logical `id` equality constraint to the existing immutable
+query. It preserves existing constraints, ordering, offset, relationship constraints, and eager
+loads, forces a one-row limit, and returns the matching model or `undefined`. Existing constraints
+still apply, so a record with the requested ID that does not satisfy the query is absent.
+
+`findOrFail(id)` has the same plan semantics and throws `ModelNotFoundError` containing the
+requested ID when no row matches. Both terminals emit their own `find` or `findOrFail` diagnostic.
+They do not replace or change the existing static `Model.find(id)` and `Model.findOrFail(id)`
+identity fast paths.
 
 For mapped tables, "fully hydrated" means every attribute in the compiler-declared model contract.
 It does not mean every physical column in the relation. All model-producing terminals, eager loads,
@@ -102,6 +113,10 @@ Every model query requires an active Doxa execution and `ModelSession`.
 
 - Actions and jobs use the active Unit of Work as a writable model reader.
 - Query handlers use a read-only model reader and read-only `ModelSession`.
+- Permission sources and policies use the read-only authorization session defined by
+  [Decision 0035](../decisions/0035-read-only-model-sessions-during-authorization.md). Query
+  authorization shares the query session; action and job authorization receives a separate read-only
+  identity map over the owning Unit of Work.
 - Query results pass through the session identity map.
 - A read-only session observes one stable persistence snapshot across pagination, cursor, aggregate,
   and relationship-loading statements.
@@ -217,6 +232,9 @@ Query observations must identify the model, terminal, constraint count, ordering
 and eager-loaded relationship names without recording sensitive values. Diagnostics must be able to
 show the logical plan and resolved mapping separately from engine SQL.
 
+`find` and `findOrFail` are distinct terminal names in query observations even though both append
+the same identity constraint and force a one-row limit.
+
 ## Conformance scenarios
 
 1. Equality, operator, nested boolean, membership, null, and range queries return identical results
@@ -231,6 +249,9 @@ show the logical plan and resolved mapping separately from engine SQL.
 9. Unloaded relationship access fails rather than lazy loading implicitly.
 10. Invalid plans, mappings, relationships, and cursors fail closed with stable errors.
 11. Model queries expose no bulk mutation terminal.
+12. Builder `find` and `findOrFail` preserve existing plan clauses, eager-load relationships, report
+    distinct diagnostics, become stale with their bound session, and return or fail with the exact
+    requested identity.
 
 ## Deferred question
 

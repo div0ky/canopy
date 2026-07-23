@@ -40,17 +40,17 @@ applications and tools do not depend on undocumented behavior.
 
 ## Foundation and operations
 
-| Capability                             | State    | Acceptance evidence                                                                                                                                                         |
-| -------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Application and Feature declarations   | Complete | Compiled declarations, generators, and diagnostics agree.                                                                                                                   |
-| Manifest and constructor registry      | Complete | Versioned JSON, constructor registry, hashes, compatibility, and inspection fail closed.                                                                                    |
-| Container and scopes                   | Complete | Autowiring, ownership, provider overrides, scopes, lifecycle, and fakes are proven.                                                                                         |
-| Configuration and secrets              | Complete | Declared-only environment loading, typed groups, secrets, diagnostics, and overrides are proven.                                                                            |
-| Runtime lifecycle                      | Complete | Independent roles, bounded boot/readiness/drain/stop/dispose, unwind, and lifecycle telemetry are proven.                                                                   |
-| Actions and queries                    | Complete | Transactions, read-only enforcement, authorization, resources, and operation rules are proven.                                                                              |
-| HTTP envelopes, errors, and validation | Complete | Automatic payload wrapping, discriminated failures, validation details, trace headers, auth errors, raw exceptions, and shutdown behavior are proven.                       |
-| Eloquent-style models and persistence  | Complete | Hydration, immutable identity, typed cloned mutation, dirty state, save/delete/refresh, observers, entrypoint operation boundaries, concurrency, and migrations are proven. |
-| Journal and outbox                     | Complete | Atomic writes, causal context, rollback, visibility, queue handoff, and inspection are proven.                                                                              |
+| Capability                             | State    | Acceptance evidence                                                                                                                                                                             |
+| -------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Application and Feature declarations   | Complete | Compiled declarations, generators, and diagnostics agree.                                                                                                                                       |
+| Manifest and constructor registry      | Complete | Versioned JSON, constructor registry, hashes, compatibility, and inspection fail closed.                                                                                                        |
+| Container and scopes                   | Complete | Autowiring, ownership, provider overrides, scopes, lifecycle, and fakes are proven.                                                                                                             |
+| Configuration and secrets              | Complete | Declared-only environment loading, typed groups, secrets, diagnostics, and overrides are proven.                                                                                                |
+| Runtime lifecycle                      | Complete | Independent roles, bounded boot/readiness/drain/stop/dispose, unwind, and lifecycle telemetry are proven.                                                                                       |
+| Actions and queries                    | Complete | Transactions, read-only enforcement, shared query authorization snapshots, isolated action/job authorization sessions, resources, and operation rules are proven.                               |
+| HTTP envelopes, errors, and validation | Complete | Automatic payload wrapping, discriminated failures, validation details, trace headers, auth errors, raw exceptions, and shutdown behavior are proven.                                           |
+| Eloquent-style models and persistence  | Complete | Hydration, immutable identity, typed queries and identity terminals, cloned mutation, dirty state, save/delete/refresh, observers, authorization reads, concurrency, and migrations are proven. |
+| Journal and outbox                     | Complete | Atomic writes, causal context, rollback, visibility, queue handoff, and inspection are proven.                                                                                                  |
 
 ## Reactive and asynchronous model
 
@@ -70,7 +70,7 @@ applications and tools do not depend on undocumented behavior.
 | Browser sessions                 | Complete                   | Digest-only storage, CSRF, rotation, bounded grace, replay rejection, listing, revocation, and pruning are proven.                                                                                          |
 | Opaque bearer access tokens      | Complete                   | Issuance, constraints, ambiguity rejection, rotation, revocation, audit, fakes, and CLI management are proven.                                                                                              |
 | Authentication abuse controls    | Complete                   | Durable hashed buckets, stable 429/Retry-After, recovery privacy, dummy verification, and audit are proven.                                                                                                 |
-| Authorization                    | Complete                   | Every entry role, application permission sources, resource decisions, default denial, bearer narrowing, audit, fakes, and diagnostics are proven.                                                           |
+| Authorization                    | Complete                   | Every entry role, ambient read-only model access, application permission sources, resource decisions, default denial, bearer narrowing, audit, fakes, and diagnostics are proven.                           |
 | Auth testing                     | Complete                   | `actingAs`, HTTP identity override, stateful identity/session/token fakes, and revocation assertions are proven.                                                                                            |
 | Security review and release gate | Complete (release blocked) | Threat model, internal negative review, provenance/boundary audit, redaction, and a mandatory external pre-1.0 gate are documented; the current audit's critical and high findings remain release blockers. |
 
