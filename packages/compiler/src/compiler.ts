@@ -709,10 +709,8 @@ export async function compileApplication(
       const timestamps = requiredObjectFieldObject(identity, 'timestamps')
       const createdAt = requiredObjectString(timestamps, 'createdAt')
       const updatedAt = requiredObjectString(timestamps, 'updatedAt')
-      const configuredVerification = compileModelVerification(
-        requiredObjectFieldObject(identity, 'verification'),
-        model,
-      )
+      const verificationObject = objectFieldObject(identity, 'verification')
+      const configuredVerification = compileModelVerification(verificationObject, model)
       const verification = contactEmail
         ? configuredVerification
         : ({ mode: 'unsupported' } as const)
@@ -761,9 +759,6 @@ export async function compileApplication(
           registerProvider(declaration, model.ownerId, 'service')
         registrationFactoryId = provider.id
       }
-      if (mode === 'login-only' && verification.mode === 'sidecar') {
-        fail(identity, 'Login-only identity mappings cannot use writable sidecar verification.')
-      }
       return {
         mode,
         source: 'model',
@@ -781,12 +776,9 @@ export async function compileApplication(
           ...(contactEmail ? { contactEmail } : {}),
           createdAt,
           updatedAt,
-          ...(verification.mode === 'mapped'
+          ...(verification.mode === 'mapped' && verificationObject
             ? {
-                verification: requiredObjectString(
-                  requiredObjectFieldObject(identity, 'verification'),
-                  'attribute',
-                ),
+                verification: requiredObjectString(verificationObject, 'attribute'),
               }
             : {}),
         },
@@ -797,8 +789,7 @@ export async function compileApplication(
         ...(registrationFactoryId ? { registrationFactoryId } : {}),
         routes: {
           registration: mode === 'managed',
-          verification:
-            mode === 'managed' && Boolean(contactEmail) && verification.mode !== 'trusted',
+          verification: mode === 'managed' && verification.mode === 'mapped',
           recovery: mode === 'managed' && Boolean(contactEmail),
           passwordChange: mode === 'managed',
         },
@@ -816,19 +807,23 @@ export async function compileApplication(
     const contactEmail = optionalDatabaseIdentifier(columns, 'contactEmail')
     const createdAt = requiredDatabaseIdentifier(columns, 'createdAt')
     const updatedAt = requiredDatabaseIdentifier(columns, 'updatedAt')
-    const verificationObject = requiredObjectFieldObject(identity, 'verification')
-    const verificationMode = requiredObjectString(verificationObject, 'mode')
+    const verificationObject = objectFieldObject(identity, 'verification')
+    const verificationMode = verificationObject
+      ? requiredObjectString(verificationObject, 'mode')
+      : undefined
     const verification =
-      verificationMode === 'trusted'
-        ? ({ mode: 'trusted' } as const)
-        : verificationMode === 'mapped'
-          ? ({
-              mode: 'mapped',
-              column:
-                optionalDatabaseIdentifier(columns, 'verification') ??
-                fail(columns, 'Mapped raw verification requires columns.verification.'),
-            } as const)
-          : fail(verificationObject, 'Raw verification mode must be mapped or trusted.')
+      verificationMode === undefined
+        ? ({ mode: 'unsupported' } as const)
+        : verificationMode === 'trusted'
+          ? ({ mode: 'trusted' } as const)
+          : verificationMode === 'mapped'
+            ? ({
+                mode: 'mapped',
+                column:
+                  optionalDatabaseIdentifier(columns, 'verification') ??
+                  fail(columns, 'Mapped raw verification requires columns.verification.'),
+              } as const)
+            : fail(verificationObject!, 'Raw verification mode must be mapped or trusted.')
     return {
       mode: 'login-only',
       source: 'table',
@@ -871,13 +866,14 @@ export async function compileApplication(
   }
 
   function compileModelVerification(
-    object: ts.ObjectLiteralExpression,
+    object: ts.ObjectLiteralExpression | undefined,
     model: ModelManifestEntry,
   ): AuthenticationManifestEntry['verification'] {
+    if (!object) return { mode: 'unsupported' }
     const mode = requiredObjectString(object, 'mode')
-    if (mode === 'trusted' || mode === 'sidecar') return { mode }
+    if (mode === 'trusted') return { mode }
     if (mode !== 'mapped') {
-      fail(object, 'Auth verification mode must be mapped, sidecar, or trusted.')
+      fail(object, 'Auth verification mode must be mapped or trusted.')
     }
     const attribute = requiredObjectString(object, 'attribute')
     if (!model.attributes.includes(attribute)) {

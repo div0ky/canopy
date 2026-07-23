@@ -191,7 +191,7 @@ describe('compiled authentication identity mappings', () => {
     )
   })
 
-  it('compiles explicit never and rejects removed password-sidecar configuration', async () => {
+  it('compiles explicit never and rejects removed sidecar verification', async () => {
     const never = await compileFixture(`
       import { DoxaApplication, Feature } from '@doxajs/core'
       class AppFeature extends Feature { id = 'app' }
@@ -220,7 +220,7 @@ describe('compiled authentication identity mappings', () => {
         import { DoxaApplication, Feature } from '@doxajs/core'
         class AppFeature extends Feature { id = 'app' }
         export class Application extends DoxaApplication {
-          id = 'removed-sidecar'; features = [AppFeature]
+          id = 'removed-sidecar-verification'; features = [AppFeature]
           framework = { auth: { identity: {
             mode: 'login-only', table: 'employees',
             columns: {
@@ -228,16 +228,16 @@ describe('compiled authentication identity mappings', () => {
               createdAt: 'created_at', updatedAt: 'updated_at',
             },
             identifier: { kind: 'username', normalize: { preset: 'lowercase' } },
-            verification: { mode: 'trusted' },
+            verification: { mode: 'sidecar' },
             credentials: {
               table: 'employees', identityId: 'employee_id',
               readers: [{ preset: 'sha256-hex', hash: 'password' }],
-              write: { format: 'doxa-argon2id', destination: 'sidecar' },
+              upgrade: 'never',
             },
           } } } as const
         }
       `),
-    ).rejects.toThrow('credentials.write was removed')
+    ).rejects.toThrow('not assignable to type')
   })
 
   it('fails closed when a model mapping references an undeclared logical attribute', async () => {
@@ -297,6 +297,63 @@ describe('compiled authentication identity mappings', () => {
     expect(result.manifest.authentication.routes).toEqual(
       expect.objectContaining({ verification: false, recovery: false }),
     )
+  })
+
+  it('disables verification when an external identity does not map a verification column', async () => {
+    const result = await compileFixture(`
+      import { DoxaApplication, Feature, Model, type ModelAttributes } from '@doxajs/core'
+      interface UserAttributes extends ModelAttributes {
+        id: string; email: string; createdAt: Date; updatedAt: Date
+      }
+      class User extends Model<UserAttributes> {
+        static override readonly id = 'user'
+        static override readonly table = 'users'
+      }
+      class AppFeature extends Feature { id = 'app'; models = [User] }
+      export class Application extends DoxaApplication {
+        id = 'unverified-external-auth'; features = [AppFeature]
+        framework = { auth: { identity: {
+          mode: 'managed', model: User,
+          identifier: { kind: 'email', attribute: 'email', normalize: { preset: 'email' } },
+          contactEmail: 'email',
+          timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
+          credentials: {
+            table: 'users', identityId: 'id', readers: [{ preset: 'doxa-argon2id', hash: 'password' }],
+            upgrade: { mode: 'in-place', format: 'doxa-argon2id', password: 'password' },
+          },
+        } } } as const
+      }
+    `)
+
+    expect(result.manifest.authentication.verification).toEqual({ mode: 'unsupported' })
+    expect(result.manifest.authentication.routes).toEqual(
+      expect.objectContaining({ verification: false, recovery: true }),
+    )
+  })
+
+  it('compiles a raw external table without verification as unsupported', async () => {
+    const result = await compileFixture(`
+      import { DoxaApplication, Feature } from '@doxajs/core'
+      class AppFeature extends Feature { id = 'app' }
+      export class Application extends DoxaApplication {
+        id = 'raw-unverified-external-auth'; features = [AppFeature]
+        framework = { auth: { identity: {
+          mode: 'login-only', table: 'employees',
+          columns: {
+            id: 'employee_id', identifier: 'email', contactEmail: 'email',
+            createdAt: 'created_at', updatedAt: 'updated_at',
+          },
+          identifier: { kind: 'email', normalize: { preset: 'email' } },
+          credentials: {
+            table: 'employees', identityId: 'employee_id',
+            readers: [{ preset: 'bcrypt', hash: 'password' }],
+          },
+        } } } as const
+      }
+    `)
+
+    expect(result.manifest.authentication.verification).toEqual({ mode: 'unsupported' })
+    expect(result.manifest.authentication.routes.verification).toBe(false)
   })
 
   it('rejects incompatible identifier kinds and normalization presets', async () => {

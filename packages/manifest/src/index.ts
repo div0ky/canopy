@@ -177,7 +177,6 @@ export interface AuthenticationManifestEntry {
   }
   readonly verification:
     | { readonly mode: 'mapped'; readonly column: string }
-    | { readonly mode: 'sidecar' }
     | { readonly mode: 'trusted' }
     | { readonly mode: 'unsupported' }
   readonly eligibility: readonly AuthenticationEligibilityPredicate[]
@@ -655,7 +654,7 @@ function assertAuthenticationManifest(value: Record<string, unknown>): void {
       String(value.identifier.normalization.preset),
     ) ||
     !isRecord(value.verification) ||
-    !['mapped', 'sidecar', 'trusted', 'unsupported'].includes(String(value.verification.mode)) ||
+    !['mapped', 'trusted', 'unsupported'].includes(String(value.verification.mode)) ||
     !Array.isArray(value.eligibility) ||
     !isRecord(value.credentials) ||
     !nonEmptyString(value.credentials.table) ||

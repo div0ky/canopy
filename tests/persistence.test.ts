@@ -1,4 +1,4 @@
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import {
   createHash,
   createHmac,
@@ -12,11 +12,7 @@ import path from 'node:path'
 
 import { compileApplication } from '@doxajs/compiler'
 import { runPraxis } from '@doxajs/praxis'
-import {
-  DOXA_AUTH_MAPPING_MIGRATION_URL,
-  DOXA_AUTH_VERIFICATION_SIDECAR_MIGRATION_URL,
-  installAuthSchema,
-} from '@doxajs/auth-postgres'
+import { installAuthSchema } from '@doxajs/auth-postgres'
 import { PostgresAuth } from '@doxajs/auth-postgres/framework'
 import {
   AfterCommitError,
@@ -847,7 +843,7 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     expect(errors).toEqual([])
   })
 
-  it('selects verification-sidecar creation only for the compiled verification policy', async () => {
+  it('selects only Doxa-owned infrastructure migrations for external identity mappings', async () => {
     const root = await temporaryDirectory()
     await mkdir(path.join(root, '.doxa'))
     await writeFile(
@@ -855,39 +851,20 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       `${JSON.stringify({ dependencies: { '@doxajs/auth-postgres': 'workspace:*' } })}\n`,
     )
     const manifestPath = path.join(root, '.doxa/manifest.json')
-    const status = async (verification: 'trusted' | 'sidecar') => {
-      await writeFile(
-        manifestPath,
-        `${JSON.stringify({
-          authentication: {
-            source: 'table',
-            verification: { mode: verification },
-          },
-        })}\n`,
-      )
-      const output: string[] = []
-      expect(
-        await runPraxis(['migrate:status', `--database=${connectionString}`], root, {
-          out: (message) => output.push(message),
-          error: () => undefined,
-        }),
-      ).toBe(0)
-      return output.filter((line) => line.includes('framework/auth-postgres/'))
-    }
-
-    const trusted = await status('trusted')
-    expect(trusted.some((line) => line.includes('0004_remove_mapped_password_sidecar.sql'))).toBe(
-      true,
+    await writeFile(
+      manifestPath,
+      `${JSON.stringify({ authentication: { source: 'table', verification: { mode: 'trusted' } } })}\n`,
     )
-    expect(trusted.some((line) => line.includes('0005_mapped_auth_verifications.sql'))).toBe(false)
-    expect(trusted.some((line) => line.includes('0002_mapped_auth_sidecars.sql'))).toBe(false)
-
-    const sidecar = await status('sidecar')
-    expect(sidecar.some((line) => line.includes('0004_remove_mapped_password_sidecar.sql'))).toBe(
-      true,
-    )
-    expect(sidecar.some((line) => line.includes('0005_mapped_auth_verifications.sql'))).toBe(true)
-    expect(sidecar.some((line) => line.includes('0002_mapped_auth_sidecars.sql'))).toBe(false)
+    const output: string[] = []
+    expect(
+      await runPraxis(['migrate:status', `--database=${connectionString}`], root, {
+        out: (message) => output.push(message),
+        error: () => undefined,
+      }),
+    ).toBe(0)
+    const migrations = output.filter((line) => line.includes('framework/auth-postgres/'))
+    expect(migrations.some((line) => line.includes('0000_auth_infrastructure.sql'))).toBe(true)
+    expect(migrations.some((line) => line.includes('sidecar'))).toBe(false)
   })
 
   it('runs HTTP, scheduler, and worker as independent roles from one manifest', async () => {
@@ -3743,115 +3720,6 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
     }
   })
 
-  it('preserves verification sidecars and refuses to discard password-sidecar rows', async () => {
-    await pool.query(`
-      CREATE TABLE doxa_auth_mapped_passwords (
-        identity_id text PRIMARY KEY,
-        password_record text NOT NULL,
-        updated_at timestamptz NOT NULL
-      );
-      CREATE TABLE doxa_auth_mapped_verifications (
-        identity_id text PRIMARY KEY,
-        contact_email_digest text NOT NULL,
-        verified_at timestamptz NOT NULL
-      );
-      INSERT INTO doxa_auth_mapped_verifications
-        VALUES ('verification-1', 'contact-digest', now())
-    `)
-    await pool.query(
-      `INSERT INTO doxa_auth_mapped_passwords VALUES ('transition-1', 'current-record', now())`,
-    )
-    const migration = await readFile(DOXA_AUTH_MAPPING_MIGRATION_URL, 'utf8')
-    await expect(pool.query(migration)).rejects.toThrow(
-      'doxa_auth_mapped_passwords still contains credentials',
-    )
-    expect(
-      (await pool.query(`SELECT to_regclass('doxa_auth_mapped_passwords') AS relation`)).rows[0]
-        ?.relation,
-    ).toBe('doxa_auth_mapped_passwords')
-
-    await pool.query(`DELETE FROM doxa_auth_mapped_passwords`)
-    await pool.query(migration)
-    expect(
-      (await pool.query(`SELECT to_regclass('doxa_auth_mapped_passwords') AS relation`)).rows[0]
-        ?.relation,
-    ).toBeNull()
-    expect(
-      (await pool.query(`SELECT to_regclass('doxa_auth_mapped_verifications') AS relation`)).rows[0]
-        ?.relation,
-    ).toBe('doxa_auth_mapped_verifications')
-    expect(
-      (
-        await pool.query(
-          `SELECT 1 FROM doxa_auth_mapped_verifications WHERE identity_id = 'verification-1'`,
-        )
-      ).rowCount,
-    ).toBe(1)
-  })
-
-  it('does not drop a password row committed while sidecar retirement waits', async () => {
-    await pool.query(`
-      CREATE TABLE doxa_auth_mapped_passwords (
-        identity_id text PRIMARY KEY,
-        password_record text NOT NULL,
-        updated_at timestamptz NOT NULL
-      )
-    `)
-    const blocker = await pool.connect()
-    const migrator = await pool.connect()
-    try {
-      await blocker.query('BEGIN')
-      await blocker.query(`LOCK TABLE doxa_auth_mapped_passwords IN ROW EXCLUSIVE MODE`)
-      await blocker.query(
-        `INSERT INTO doxa_auth_mapped_passwords VALUES ('racing-1', 'current-record', now())`,
-      )
-      const pid = (await migrator.query<{ pid: number }>(`SELECT pg_backend_pid() AS pid`)).rows[0]!
-        .pid
-      const migration = migrator.query(await readFile(DOXA_AUTH_MAPPING_MIGRATION_URL, 'utf8'))
-      let observedWaiting = false
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        const waiting = await pool.query<{ waiting: boolean }>(
-          `SELECT EXISTS (
-             SELECT 1 FROM pg_locks
-             WHERE pid = $1 AND relation = 'doxa_auth_mapped_passwords'::regclass AND NOT granted
-           ) AS waiting`,
-          [pid],
-        )
-        if (waiting.rows[0]?.waiting) {
-          observedWaiting = true
-          break
-        }
-        await new Promise((resolve) => setTimeout(resolve, 10))
-      }
-      expect(observedWaiting).toBe(true)
-      await blocker.query('COMMIT')
-      await expect(migration).rejects.toThrow(
-        'doxa_auth_mapped_passwords still contains credentials',
-      )
-      expect(
-        (
-          await pool.query(
-            `SELECT 1 FROM doxa_auth_mapped_passwords WHERE identity_id = 'racing-1'`,
-          )
-        ).rowCount,
-      ).toBe(1)
-    } finally {
-      await blocker.query('ROLLBACK').catch(() => undefined)
-      blocker.release()
-      migrator.release()
-      await pool.query(`DROP TABLE IF EXISTS doxa_auth_mapped_passwords`)
-    }
-  })
-
-  it('creates a verification sidecar independently of password-sidecar retirement', async () => {
-    await pool.query(`DROP TABLE IF EXISTS doxa_auth_mapped_verifications`)
-    await pool.query(await readFile(DOXA_AUTH_VERIFICATION_SIDECAR_MIGRATION_URL, 'utf8'))
-    expect(
-      (await pool.query(`SELECT to_regclass('doxa_auth_mapped_verifications') AS relation`)).rows[0]
-        ?.relation,
-    ).toBe('doxa_auth_mapped_verifications')
-  })
-
   it('registers managed identities through the Model lifecycle and rolls every participant back atomically', async () => {
     await pool.query(`
       CREATE TABLE managed_registration_users (
@@ -4271,11 +4139,6 @@ describe('PostgreSQL and Drizzle persistence slice', () => {
       await expect(
         auth.resetPassword('unowned-token', 'replacement password'),
       ).rejects.toMatchObject({ code: 'invalid_credentials' })
-      expect(
-        (await pool.query(`SELECT to_regclass('doxa_auth_mapped_passwords') AS relation`)).rows[0]
-          ?.relation,
-      ).toBeNull()
-
       const replacementHash = createHash('sha256').update('external replacement').digest('hex')
       await pool.query(
         `UPDATE legacy_login_only_users SET password_hash = $1 WHERE user_id = 'login-only-1'`,
@@ -5053,7 +4916,7 @@ function mappedAuthentication(options: {
     },
     routes: {
       registration: options.mode === 'managed',
-      verification: options.mode === 'managed' && options.verification.mode !== 'trusted',
+      verification: options.mode === 'managed' && options.verification.mode === 'mapped',
       recovery: options.mode === 'managed',
       passwordChange: options.mode === 'managed',
     },

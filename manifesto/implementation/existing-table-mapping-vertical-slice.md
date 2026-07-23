@@ -96,10 +96,10 @@ without forcing an established application to replace its users table.
 The configured external password column is the sole credential authority. Omitted or explicit
 `never` upgrade policy verifies in place without mutation. Explicit in-place upgrade uses
 compare-and-swap and shares one transaction with session and audit persistence; it never overwrites
-a concurrent external password change. Password sidecars are not part of the current contract. The
-historical sidecar migration remains immutable. Forward migrations select verification-sidecar
-creation independently, and password-sidecar removal fails while old password rows remain so
-operators must complete a schema-specific safe transition.
+a concurrent external password change. Doxa does not create auxiliary mapped-auth relations.
+Doxa-owned identities persist verification in their native `email_verified_at` column, while
+external mappings must provide their own writable verification column or compile with verification
+unsupported.
 
 The compiler resolves logical attributes to physical storage in the authentication artifact. Mapped
 columns are checked during lifecycle readiness. Missing or incompatible columns, composite keys,
@@ -139,8 +139,8 @@ The PostgreSQL conformance suite proves:
 11. In-place bcrypt and SHA-256 upgrades replace only the exact observed authoritative value,
     atomically persist the session and audit event, and issue no session after a compare-and-swap or
     transaction failure.
-12. Verification sidecars remain supported while password sidecars have no runtime, compiler,
-    manifest, or migration-selection path.
+12. External auth mappings without a native verification column compile with verification
+    unsupported and have no runtime, compiler, manifest, or migration-selection auxiliary relation.
 
 Multiple identity realms, separate auth databases, permission mapping, OAuth, MFA, and application-
 defined hashers remain explicit future work.

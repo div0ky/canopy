@@ -103,7 +103,7 @@ export interface AuthIdentityTableMapping {
   readonly updatedAt: string
   readonly identifierKind?: 'email' | 'username' | 'custom'
   readonly normalization?: CompiledAuthenticationConfiguration['identifier']['normalization']
-  readonly verificationMode?: 'mapped' | 'sidecar' | 'trusted' | 'unsupported'
+  readonly verificationMode?: 'mapped' | 'trusted' | 'unsupported'
   readonly eligibility?: CompiledAuthenticationConfiguration['eligibility']
 }
 
@@ -561,6 +561,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
 
   async issueEmailVerification(identityId: string): Promise<AuthChallengeGrant> {
     this.#assertMappedMutationAllowed()
+    this.#assertMappedVerificationAvailable()
     const identity = await this.findIdentity(identityId)
     if (!identity?.contactEmail || identity.verification === 'unsupported') {
       throw new AuthenticationError('invalid_credentials', 'Email verification is unavailable.')
@@ -570,6 +571,7 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
 
   async verifyEmail(token: string): Promise<AuthIdentity> {
     this.#assertMappedMutationAllowed()
+    this.#assertMappedVerificationAvailable()
     const now = new Date()
     const database = this.#requireDatabase()
     const verify = async (
@@ -1415,6 +1417,13 @@ export class PostgresAuth extends Auth implements Starts, Disposes {
       throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
     }
   }
+
+  #assertMappedVerificationAvailable(): void {
+    const verificationMode = this.#mappedTables?.identities.verificationMode
+    if (verificationMode === 'trusted' || verificationMode === 'unsupported') {
+      throw new AuthenticationError('invalid_credentials', 'Email verification is unavailable.')
+    }
+  }
 }
 
 interface StoredIdentity {
@@ -1811,11 +1820,9 @@ async function findMappedIdentity(
       i.${quoteIdentifier(mapping.email)} AS email,
       ${mapping.contactEmail ? `i.${quoteIdentifier(mapping.contactEmail)} AS contact_email` : 'NULL::text AS contact_email'},
       ${verificationSelect(mapping, 'i')},
-      ${verificationDigestSelect(mapping)},
       i.${quoteIdentifier(mapping.createdAt)} AS created_at,
       i.${quoteIdentifier(mapping.updatedAt)} AS updated_at
     FROM ${quoteQualified(mapping.table)} i
-    ${verificationJoin(mapping, 'i')}
     WHERE ${
       by === 'email'
         ? mappedIdentifierPredicate(mapping, 'i', identifierUsesDirectComparison)
@@ -1867,7 +1874,6 @@ interface MappedIdentityRow extends QueryResultRow {
   readonly email: string
   readonly contact_email: string | null
   readonly email_verified_at: Date | null
-  readonly verification_contact_digest: string | null
   readonly created_at: Date
   readonly updated_at: Date
 }
@@ -1878,10 +1884,7 @@ function mappedIdentity(row: MappedIdentityRow): StoredIdentity {
     id: String(row.id),
     email: row.email,
     ...(row.contact_email ? { contactEmail: row.contact_email } : {}),
-    emailVerifiedAt:
-      row.verification_contact_digest && row.verification_contact_digest !== digest(contactEmail)
-        ? null
-        : row.email_verified_at,
+    emailVerifiedAt: row.email_verified_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -1926,12 +1929,10 @@ async function findMappedLogin(
       i.${quoteIdentifier(identity.email)} AS email,
       ${identity.contactEmail ? `i.${quoteIdentifier(identity.contactEmail)} AS contact_email` : 'NULL::text AS contact_email'},
       ${verificationSelect(identity, 'i')},
-      ${verificationDigestSelect(identity)},
       i.${quoteIdentifier(identity.createdAt)} AS created_at,
       i.${quoteIdentifier(identity.updatedAt)} AS updated_at,
       p.${quoteIdentifier(password.password)} AS password_record
     FROM ${quoteQualified(identity.table)} i
-    ${verificationJoin(identity, 'i')}
     INNER JOIN ${quoteQualified(password.table)} p
       ON p.${quoteIdentifier(password.identityId)}::text = i.${quoteIdentifier(identity.id)}::text
     WHERE ${mappedIdentifierPredicate(identity, 'i', identifierUsesDirectComparison)}
@@ -2067,28 +2068,6 @@ async function updateMappedIdentityVerification(
   now: Date,
 ): Promise<void> {
   if (mapping.verificationMode === 'trusted') return
-  if (mapping.verificationMode === 'sidecar') {
-    const result = await queryable.query<{ contact_email: string } & QueryResultRow>(
-      `SELECT ${quoteIdentifier(mapping.contactEmail ?? mapping.email)} AS contact_email
-       FROM ${quoteQualified(mapping.table)}
-       WHERE ${quoteIdentifier(mapping.id)}::text = $1
-       LIMIT 1`,
-      [identityId],
-    )
-    const contactEmail = result.rows[0]?.contact_email
-    if (!contactEmail)
-      throw new AuthenticationError('invalid_credentials', 'Authentication is required.')
-    await queryable.query(
-      `INSERT INTO doxa_auth_mapped_verifications (
-         identity_id, contact_email_digest, verified_at
-       ) VALUES ($1, $2, $3)
-       ON CONFLICT (identity_id) DO UPDATE SET
-         contact_email_digest = EXCLUDED.contact_email_digest,
-         verified_at = EXCLUDED.verified_at`,
-      [identityId, digest(contactEmail), now],
-    )
-    return
-  }
   if (!mapping.emailVerifiedAt) {
     throw new AuthenticationError('invalid_credentials', 'Email verification is unavailable.')
   }
@@ -2109,7 +2088,8 @@ function identityFrom(row: typeof authIdentities.$inferSelect): AuthIdentity {
 }
 
 function identityFromStored(row: StoredIdentity, mapping?: AuthIdentityTableMapping): AuthIdentity {
-  const verificationMode = mapping?.verificationMode ?? 'mapped'
+  const verificationMode =
+    mapping?.verificationMode ?? (mapping && !mapping.emailVerifiedAt ? 'unsupported' : 'mapped')
   return Object.freeze({
     id: row.id,
     identifier: mapping
@@ -2153,21 +2133,8 @@ function mappedIdentifierPredicate(
 
 function verificationSelect(mapping: AuthIdentityTableMapping, alias?: string): string {
   if (mapping.verificationMode === 'trusted') return 'CURRENT_TIMESTAMP AS email_verified_at'
-  if (mapping.verificationMode === 'sidecar') return 'av.verified_at AS email_verified_at'
   if (!mapping.emailVerifiedAt) return 'NULL::timestamptz AS email_verified_at'
   return `${alias ? `${alias}.` : ''}${quoteIdentifier(mapping.emailVerifiedAt)} AS email_verified_at`
-}
-
-function verificationDigestSelect(mapping: AuthIdentityTableMapping): string {
-  return mapping.verificationMode === 'sidecar'
-    ? 'av.contact_email_digest AS verification_contact_digest'
-    : 'NULL::text AS verification_contact_digest'
-}
-
-function verificationJoin(mapping: AuthIdentityTableMapping, alias: string): string {
-  return mapping.verificationMode === 'sidecar'
-    ? `LEFT JOIN doxa_auth_mapped_verifications av ON av.identity_id = ${alias}.${quoteIdentifier(mapping.id)}::text`
-    : ''
 }
 
 function accessTokenMaterial(

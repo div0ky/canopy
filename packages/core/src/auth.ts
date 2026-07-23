@@ -125,7 +125,7 @@ export interface AuthStorageDescription {
       readonly normalization: string
     }
     readonly contactEmail?: string
-    readonly verification: 'mapped' | 'sidecar' | 'trusted' | 'unsupported'
+    readonly verification: 'mapped' | 'trusted' | 'unsupported'
     readonly eligibility: readonly string[]
     readonly hashers: readonly string[]
     readonly credentialUpgrade: 'never' | 'in-place'
